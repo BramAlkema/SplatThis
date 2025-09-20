@@ -56,7 +56,7 @@ We will use SLIC superpixel segmentation with covariance-based splat parameter e
 ### Consequences
 - Positive: Fast processing, no GPU requirements, predictable output
 - Negative: Lower fidelity than trained Gaussian splats
-- Mitigation: Implement optional `--checkpoint` support for trained models
+- Mitigation: Implement optional `--checkpoint` support for Image-GS models (https://github.com/NYU-ICL/image-gs)
 
 ---
 
