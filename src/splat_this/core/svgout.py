@@ -82,10 +82,10 @@ class SVGGenerator:
 
         # Create radial gradient for gaussian splats
         gradient_def = '''    <defs>
-        <radialGradient id="gaussianGradient" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" style="stop-opacity:1"/>
-            <stop offset="70%" style="stop-opacity:0.7"/>
-            <stop offset="100%" style="stop-opacity:0"/>
+        <radialGradient id="gaussianGradient" cx="50%" cy="50%" r="50%" gradientUnits="objectBoundingBox">
+            <stop offset="0%" stop-color="currentColor" stop-opacity="1"/>
+            <stop offset="70%" stop-color="currentColor" stop-opacity="0.7"/>
+            <stop offset="100%" stop-color="currentColor" stop-opacity="0"/>
         </radialGradient>
     </defs>'''
 
@@ -143,8 +143,13 @@ class SVGGenerator:
 
         if gaussian_mode:
             # Use gradient fill for gaussian appearance
-            fill = f'url(#gaussianGradient)'
-            style = f'fill: {fill}; fill-opacity: {alpha}; stroke: none;'
+            fill = 'url(#gaussianGradient)'
+            style = (
+                f'color: {color}; '
+                f'fill: {fill}; '
+                f'fill-opacity: {alpha}; '
+                'stroke: none;'
+            )
         else:
             # Use solid color fill
             fill = f'rgba({splat.r}, {splat.g}, {splat.b}, {alpha})'
