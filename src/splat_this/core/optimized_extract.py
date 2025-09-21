@@ -251,8 +251,14 @@ class OptimizedSplatExtractor:
             rx = max(1.0, np.sqrt(eigenvalues[0]) * self.k)
             ry = max(1.0, np.sqrt(eigenvalues[1]) * self.k)
 
-            # Calculate rotation angle from primary eigenvector
-            theta = np.arctan2(eigenvectors[0, 1], eigenvectors[0, 0])
+            # Calculate rotation angle from principal eigenvector (largest eigenvalue)
+            principal_idx = int(np.argmax(eigenvalues))
+            theta = float(
+                np.arctan2(
+                    eigenvectors[1, principal_idx],
+                    eigenvectors[0, principal_idx],
+                )
+            )
 
         except (np.linalg.LinAlgError, ValueError) as e:
             logger.debug(f"Eigendecomposition failed for segment {segment_id}: {e}")
