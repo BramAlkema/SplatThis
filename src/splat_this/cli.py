@@ -165,11 +165,14 @@ def main(
 
         # Step 5: Generate SVG
         progress.update("Generating SVG")
-        generator = SVGGenerator(width, height)
-
-        svg_content = generator.generate_svg(
-            layer_data, parallax_strength=parallax_strength, gaussian_mode=gaussian
+        generator = SVGGenerator(
+            width,
+            height,
+            parallax_strength=parallax_strength,
+            interactive_top=interactive_top
         )
+
+        svg_content = generator.generate_svg(layer_data, gaussian_mode=gaussian)
 
         # Step 6: Save output
         progress.update("Saving file")

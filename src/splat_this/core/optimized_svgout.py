@@ -150,10 +150,10 @@ class OptimizedSVGGenerator:
 
         gradient_def = '''
     <defs>
-        <radialGradient id="gaussianGradient" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" style="stop-opacity:1"/>
-            <stop offset="70%" style="stop-opacity:0.7"/>
-            <stop offset="100%" style="stop-opacity:0"/>
+        <radialGradient id="gaussianGradient" cx="50%" cy="50%" r="50%" gradientUnits="objectBoundingBox">
+            <stop offset="0%" stop-color="currentColor" stop-opacity="1"/>
+            <stop offset="70%" stop-color="currentColor" stop-opacity="0.7"/>
+            <stop offset="100%" stop-color="currentColor" stop-opacity="0"/>
         </radialGradient>
     </defs>'''
 
@@ -459,7 +459,12 @@ class OptimizedSVGGenerator:
         # Optimize color formatting
         if gaussian_mode:
             # Use gradient fill for gaussian appearance
-            style = f'fill: url(#gaussianGradient); fill-opacity: {self._format_number(splat.a)}; stroke: none;'
+            style = (
+                f'color: rgb({splat.r}, {splat.g}, {splat.b}); '
+                f'fill: url(#gaussianGradient); '
+                f'fill-opacity: {self._format_number(splat.a)}; '
+                'stroke: none;'
+            )
             color_attr = f' data-color="rgb({splat.r}, {splat.g}, {splat.b})"'
         else:
             # Use optimized RGBA format
@@ -501,10 +506,10 @@ class OptimizedSVGGenerator:
             return "    <defs></defs>"
 
         gradient_def = '''    <defs>
-        <radialGradient id="gaussianGradient" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" style="stop-opacity:1"/>
-            <stop offset="70%" style="stop-opacity:0.7"/>
-            <stop offset="100%" style="stop-opacity:0"/>
+        <radialGradient id="gaussianGradient" cx="50%" cy="50%" r="50%" gradientUnits="objectBoundingBox">
+            <stop offset="0%" stop-color="currentColor" stop-opacity="1"/>
+            <stop offset="70%" stop-color="currentColor" stop-opacity="0.7"/>
+            <stop offset="100%" stop-color="currentColor" stop-opacity="0"/>
         </radialGradient>
     </defs>'''
 

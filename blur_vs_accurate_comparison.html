@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blur vs Research-Accurate Comparison - SplatThis</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            margin-bottom: 20px;
+        }
+
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+
+        .comparison-panel {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .panel-title {
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .blur-title {
+            color: #ff6b6b;
+        }
+
+        .accurate-title {
+            color: #51cf66;
+        }
+
+        .svg-container {
+            width: 100%;
+            height: 500px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            overflow: hidden;
+            background: white;
+            position: relative;
+        }
+
+        .svg-container svg {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .stats-overlay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 0.9rem;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+
+        .analysis {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+            margin-top: 30px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .analysis h2 {
+            margin-top: 0;
+            color: #ffd43b;
+        }
+
+        .comparison-table {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .comparison-header {
+            font-weight: bold;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .comparison-cell {
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .blur-cell {
+            border-left: 4px solid #ff6b6b;
+        }
+
+        .accurate-cell {
+            border-left: 4px solid #51cf66;
+        }
+
+        .problem-highlight {
+            background: rgba(255, 107, 107, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #ff6b6b;
+            margin: 15px 0;
+        }
+
+        .solution-highlight {
+            background: rgba(81, 207, 102, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #51cf66;
+            margin: 15px 0;
+        }
+
+        .instructions {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            border-left: 4px solid #ffd43b;
+        }
+
+        @media (max-width: 1000px) {
+            .comparison-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .comparison-table {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔬 Blur vs Research-Accurate Comparison</h1>
+            <div class="subtitle">
+                Visual assessment of proper Gaussian splatting implementation
+            </div>
+        </div>
+
+        <div class="instructions">
+            <h3>📋 Assessment Instructions</h3>
+            <p><strong>Move your mouse over both SVGs</strong> to test parallax motion and visual quality. Compare:</p>
+            <ul>
+                <li><strong>Detail preservation:</strong> Can you see fine details vs blur?</li>
+                <li><strong>Splat visibility:</strong> Are individual splats appropriately sized?</li>
+                <li><strong>Edge definition:</strong> Are edges sharp or overly smoothed?</li>
+                <li><strong>Parallax gaps:</strong> Any visible holes during motion?</li>
+            </ul>
+        </div>
+
+        <div class="comparison-grid">
+            <div class="comparison-panel">
+                <div class="panel-title blur-title">❌ Old Blurry Version</div>
+                <div class="svg-container">
+                    <div class="stats-overlay">
+                        k=2.5→5.5<br>
+                        Size: 60-70px<br>
+                        Base: 1σ + huge k
+                    </div>
+                    <object data="truly_adaptive_test.svg" type="image/svg+xml" width="100%" height="100%"></object>
+                </div>
+            </div>
+
+            <div class="comparison-panel">
+                <div class="panel-title accurate-title">✅ Research-Accurate Version</div>
+                <div class="svg-container">
+                    <div class="stats-overlay">
+                        k=0.8→1.2<br>
+                        Size: 30-40px<br>
+                        Base: 3σ proper
+                    </div>
+                    <object data="research_accurate_test.svg" type="image/svg+xml" width="100%" height="100%"></object>
+                </div>
+            </div>
+        </div>
+
+        <div class="analysis">
+            <h2>📊 Technical Comparison</h2>
+
+            <div class="comparison-table">
+                <div class="comparison-header">Metric</div>
+                <div class="comparison-header blur-title">Old Blurry (k=5.5)</div>
+                <div class="comparison-header accurate-title">Research-Accurate (k=1.2)</div>
+
+                <div class="comparison-cell"><strong>Base Formula</strong></div>
+                <div class="comparison-cell blur-cell">sqrt(eigenvalue) × k</div>
+                <div class="comparison-cell accurate-cell">3×sqrt(eigenvalue) × k</div>
+
+                <div class="comparison-cell"><strong>Coverage</strong></div>
+                <div class="comparison-cell blur-cell">~68% (1σ) × large k</div>
+                <div class="comparison-cell accurate-cell">99.73% (3σ) × small k</div>
+
+                <div class="comparison-cell"><strong>Typical Size</strong></div>
+                <div class="comparison-cell blur-cell">60-70px (too large)</div>
+                <div class="comparison-cell accurate-cell">30-40px (research std)</div>
+
+                <div class="comparison-cell"><strong>Research Basis</strong></div>
+                <div class="comparison-cell blur-cell">❌ Custom scaling</div>
+                <div class="comparison-cell accurate-cell">✅ INRIA/GitHub standards</div>
+
+                <div class="comparison-cell"><strong>Detail Quality</strong></div>
+                <div class="comparison-cell blur-cell">❌ Over-smoothed</div>
+                <div class="comparison-cell accurate-cell">✅ Detail preserved</div>
+
+                <div class="comparison-cell"><strong>Parallax Gaps</strong></div>
+                <div class="comparison-cell blur-cell">✅ No gaps (overkill)</div>
+                <div class="comparison-cell accurate-cell">✅ No gaps (precise)</div>
+            </div>
+
+            <div class="problem-highlight">
+                <strong>Problem with Old Version:</strong> Massive k=2.5→5.5 scaling on 1σ base created splats 3-4x larger than research standards, causing loss of detail and over-smoothing despite proper parallax coverage.
+            </div>
+
+            <div class="solution-highlight">
+                <strong>Research-Accurate Solution:</strong> Proper 3σ base sizing with small k=0.8→1.2 adjustment follows actual Gaussian splatting papers while maintaining parallax gap prevention through conservative scaling.
+            </div>
+
+            <h3>🔍 Visual Assessment Criteria</h3>
+            <ul>
+                <li><strong>Sharpness:</strong> Research-accurate version should show crisp edges and fine details</li>
+                <li><strong>Splat Visibility:</strong> Individual splats should be appropriately sized, not massive blobs</li>
+                <li><strong>Content Adaptation:</strong> Splats should vary in size/orientation based on image content</li>
+                <li><strong>Parallax Quality:</strong> Smooth motion without visible gaps between layers</li>
+                <li><strong>Authenticity:</strong> Should look like real Gaussian splatting, not just enlarged circles</li>
+            </ul>
+
+            <h3>🎯 Expected Results</h3>
+            <p>The research-accurate version should demonstrate:</p>
+            <ul>
+                <li>Better detail preservation without over-smoothing</li>
+                <li>Appropriate splat sizes following academic standards</li>
+                <li>Maintained parallax gap prevention with precision</li>
+                <li>Natural variation in splat size and orientation</li>
+                <li>Visual quality that matches published Gaussian splatting results</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Add loading indicators
+        document.addEventListener('DOMContentLoaded', function() {
+            const objects = document.querySelectorAll('object');
+            objects.forEach((obj, index) => {
+                obj.onload = function() {
+                    console.log(`SVG ${index + 1} loaded successfully`);
+                };
+                obj.onerror = function() {
+                    console.error(`Failed to load SVG ${index + 1}:`, obj.data);
+                    const container = obj.parentElement;
+                    const errorMsg = document.createElement('div');
+                    errorMsg.innerHTML = '<p style="text-align: center; padding: 20px; color: #ff6b6b;">⚠️ Failed to load SVG file</p>';
+                    container.appendChild(errorMsg);
+                };
+            });
+        });
+    </script>
+</body>
+</html>

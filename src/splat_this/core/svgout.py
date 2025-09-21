@@ -80,16 +80,8 @@ class SVGGenerator:
         if not gaussian_mode:
             return "    <defs></defs>"
 
-        # Create radial gradient for gaussian splats
-        gradient_def = '''    <defs>
-        <radialGradient id="gaussianGradient" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" style="stop-opacity:1"/>
-            <stop offset="70%" style="stop-opacity:0.7"/>
-            <stop offset="100%" style="stop-opacity:0"/>
-        </radialGradient>
-    </defs>'''
-
-        return gradient_def
+        # Empty defs - gradients will be generated per splat
+        return "    <defs></defs>"
 
     def _generate_layer_groups(self, layers: Dict[int, List["Gaussian"]], gaussian_mode: bool) -> str:
         """Generate layer groups with proper depth attributes."""
@@ -142,21 +134,31 @@ class SVGGenerator:
         transform = f' transform="rotate({rotation_deg} {cx} {cy})"' if abs(splat.theta) > 1e-6 else ''
 
         if gaussian_mode:
-            # Use gradient fill for gaussian appearance
-            fill = f'url(#gaussianGradient)'
+            # Generate unique gradient ID for this splat
+            gradient_id = f"grad_{splat.r}_{splat.g}_{splat.b}_{abs(hash(f'{splat.x}{splat.y}'))%10000}"
+
+            # Create inline gradient definition
+            gradient_def = f'''<defs>
+        <radialGradient id="{gradient_id}" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="{color}" stop-opacity="1"/>
+            <stop offset="70%" stop-color="{color}" stop-opacity="0.7"/>
+            <stop offset="100%" stop-color="{color}" stop-opacity="0"/>
+        </radialGradient>
+    </defs>'''
+
+            fill = f'url(#{gradient_id})'
             style = f'fill: {fill}; fill-opacity: {alpha}; stroke: none;'
+
+            # Generate ellipse with embedded gradient
+            ellipse = gradient_def + f'\n<ellipse cx="{cx}" cy="{cy}" rx="{rx}" ry="{ry}"'
+            ellipse += f' style="{style}"'
+            ellipse += f' data-color="{color}"'
         else:
             # Use solid color fill
             fill = f'rgba({splat.r}, {splat.g}, {splat.b}, {alpha})'
             style = f'fill: {fill}; stroke: none;'
-
-        # Generate ellipse element
-        ellipse = f'<ellipse cx="{cx}" cy="{cy}" rx="{rx}" ry="{ry}"'
-        ellipse += f' style="{style}"'
-
-        if gaussian_mode:
-            # For gaussian mode, set the gradient color
-            ellipse += f' data-color="{color}"'
+            ellipse = f'<ellipse cx="{cx}" cy="{cy}" rx="{rx}" ry="{ry}"'
+            ellipse += f' style="{style}"'
 
         if transform:
             ellipse += transform

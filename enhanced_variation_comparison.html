@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Variation Test - True Splat Diversity</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #6a4c93 0%, #a8e6cf 100%);
+            color: white;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            margin-bottom: 20px;
+        }
+
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+
+        .comparison-panel {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .panel-title {
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .old-title {
+            color: #ff6b6b;
+        }
+
+        .enhanced-title {
+            color: #51cf66;
+        }
+
+        .svg-container {
+            width: 100%;
+            height: 500px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            overflow: hidden;
+            background: white;
+            position: relative;
+        }
+
+        .svg-container svg {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .stats-overlay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 0.9rem;
+            font-family: 'Monaco', 'Menlo', monospace;
+            line-height: 1.4;
+        }
+
+        .analysis {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+            margin-top: 30px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .analysis h2 {
+            margin-top: 0;
+            color: #ffd43b;
+        }
+
+        .enhancement-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .enhancement-item {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #51cf66;
+        }
+
+        .enhancement-title {
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #51cf66;
+        }
+
+        .problem-highlight {
+            background: rgba(255, 107, 107, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #ff6b6b;
+            margin: 15px 0;
+        }
+
+        .solution-highlight {
+            background: rgba(81, 207, 102, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #51cf66;
+            margin: 15px 0;
+        }
+
+        @media (max-width: 1000px) {
+            .comparison-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎨 Enhanced Variation Test</h1>
+            <div class="subtitle">
+                True splat diversity: More angles, gradients, and size variation
+            </div>
+        </div>
+
+        <div class="comparison-grid">
+            <div class="comparison-panel">
+                <div class="panel-title old-title">❌ Old Research-Accurate (Conservative)</div>
+                <div class="svg-container">
+                    <div class="stats-overlay">
+                        k=0.8→1.2<br>
+                        Variation: ±20%<br>
+                        Gradient: 30% blend<br>
+                        Conservative sizing
+                    </div>
+                    <object data="research_accurate_test.svg" type="image/svg+xml" width="100%" height="100%"></object>
+                </div>
+            </div>
+
+            <div class="comparison-panel">
+                <div class="panel-title enhanced-title">✅ Enhanced Variation (True Research)</div>
+                <div class="svg-container">
+                    <div class="stats-overlay">
+                        k=0.8→1.2<br>
+                        Variation: -60% to +80%<br>
+                        Gradient: 80% blend<br>
+                        Content-adaptive
+                    </div>
+                    <object data="enhanced_variation_test.svg" type="image/svg+xml" width="100%" height="100%"></object>
+                </div>
+            </div>
+        </div>
+
+        <div class="analysis">
+            <h2>🔬 Enhanced Variation Implementation</h2>
+
+            <div class="problem-highlight">
+                <strong>Previous Issue:</strong> Too conservative variation (±20%) created uniform-looking splats that didn't capture the true diversity of real Gaussian splatting implementations.
+            </div>
+
+            <div class="solution-highlight">
+                <strong>Enhanced Solution:</strong> Dramatic content-adaptive sizing (-60% to +80%) with strong gradient alignment (up to 80%) creates authentic splat diversity.
+            </div>
+
+            <h3>🎯 Key Enhancements</h3>
+            <div class="enhancement-list">
+                <div class="enhancement-item">
+                    <div class="enhancement-title">🔍 Sharp Detail Detection</div>
+                    <ul>
+                        <li>Complexity > 0.8: 60% smaller splats</li>
+                        <li>Enhanced entropy analysis</li>
+                        <li>Gradient std deviation scoring</li>
+                        <li>Precise foreground detail capture</li>
+                    </ul>
+                </div>
+
+                <div class="enhancement-item">
+                    <div class="enhancement-title">📐 Strong Gradient Alignment</div>
+                    <ul>
+                        <li>High detail: 80% gradient direction</li>
+                        <li>Medium detail: 60% gradient direction</li>
+                        <li>Smooth areas: 10% gradient direction</li>
+                        <li>Anisotropic ellipse orientation</li>
+                    </ul>
+                </div>
+
+                <div class="enhancement-item">
+                    <div class="enhancement-title">📏 Dramatic Size Variation</div>
+                    <ul>
+                        <li>Very smooth: +80% larger (1.8x)</li>
+                        <li>Smooth: +40% larger (1.4x)</li>
+                        <li>Sharp: -60% smaller (0.4x)</li>
+                        <li>Minimum size: 0.5px (vs 1.0px)</li>
+                    </ul>
+                </div>
+
+                <div class="enhancement-item">
+                    <div class="enhancement-title">🧠 Enhanced Complexity Analysis</div>
+                    <ul>
+                        <li>5 complexity metrics (vs 3)</li>
+                        <li>More sensitive thresholds</li>
+                        <li>Shannon entropy included</li>
+                        <li>Gradient variance analysis</li>
+                    </ul>
+                </div>
+            </div>
+
+            <h3>📊 Expected Visual Differences</h3>
+            <ul>
+                <li><strong>Tiny Foreground Splats:</strong> Sharp UI elements should have much smaller, precisely placed splats</li>
+                <li><strong>Large Background Coverage:</strong> Smooth gradient areas should have noticeably larger splats</li>
+                <li><strong>Varied Orientations:</strong> Splats should align with edge directions, not just follow covariance</li>
+                <li><strong>Natural Anisotropy:</strong> More elongated ellipses following image structure</li>
+                <li><strong>Authentic Research Look:</strong> True diversity matching published Gaussian splatting papers</li>
+            </ul>
+
+            <h3>🎮 Interactive Assessment</h3>
+            <p><strong>Move your mouse over both SVGs</strong> to compare:</p>
+            <ul>
+                <li>Splat size diversity in different regions</li>
+                <li>Orientation variation and edge alignment</li>
+                <li>Detail preservation vs smooth area coverage</li>
+                <li>Parallax motion quality with varied splat sizes</li>
+            </ul>
+
+            <p><em>The enhanced version should show dramatic variation in splat sizes and orientations, with tiny precise splats for sharp details and large coverage splats for smooth areas.</em></p>
+        </div>
+    </div>
+
+    <script>
+        // Add loading indicators
+        document.addEventListener('DOMContentLoaded', function() {
+            const objects = document.querySelectorAll('object');
+            objects.forEach((obj, index) => {
+                obj.onload = function() {
+                    console.log(`SVG ${index + 1} loaded successfully`);
+                };
+                obj.onerror = function() {
+                    console.error(`Failed to load SVG ${index + 1}:`, obj.data);
+                    const container = obj.parentElement;
+                    const errorMsg = document.createElement('div');
+                    errorMsg.innerHTML = '<p style="text-align: center; padding: 20px; color: #ff6b6b;">⚠️ Failed to load SVG file</p>';
+                    container.appendChild(errorMsg);
+                };
+            });
+        });
+    </script>
+</body>
+</html>
