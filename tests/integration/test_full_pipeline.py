@@ -216,8 +216,8 @@ class TestFullPipelineIntegration:
 
             # Validate gaussian mode specifics
             if gaussian_mode:
-                assert 'radialGradient id="gaussianGradient"' in svg_content
-                assert 'url(#gaussianGradient)' in svg_content
+                assert 'radialGradient id="gaussian-gradient-' in svg_content
+                assert 'url(#gaussian-gradient-' in svg_content
             else:
                 assert 'rgba(' in svg_content
 

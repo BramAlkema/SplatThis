@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 class OptimizedSVGGenerator:
     """Optimized SVG generator for large splat counts."""
 
+    DEFS_PLACEHOLDER = "__GRADIENT_DEFS__"
+
     def __init__(
         self,
         width: int,
@@ -33,6 +35,8 @@ class OptimizedSVGGenerator:
         self.interactive_top = interactive_top
         self.chunk_size = chunk_size
         self.memory_processor = MemoryEfficientProcessor()
+        self._gradient_counter = 0
+        self._gradient_defs: List[str] = []
 
     @global_profiler.profile_function("svg_generation")
     def generate_svg(
@@ -52,6 +56,8 @@ class OptimizedSVGGenerator:
 
         # Check memory requirements
         self.memory_processor.ensure_memory_limit("svg_generation_start")
+
+        self._reset_gradient_registry()
 
         # Use streaming approach for very large splat counts
         if total_splats > 5000:
@@ -74,8 +80,8 @@ class OptimizedSVGGenerator:
         # Write header
         self._write_header(output, title)
 
-        # Write definitions
-        self._write_defs(output, gaussian_mode)
+        # Write placeholder for definitions (will be replaced after splat processing)
+        output.write(f"\n    <!--{self.DEFS_PLACEHOLDER}-->")
 
         # Process layers in chunks
         sorted_layers = sorted(layers.items(), key=lambda x: x[0])
@@ -96,6 +102,9 @@ class OptimizedSVGGenerator:
         result = output.getvalue()
         output.close()
 
+        defs_content = self._generate_defs(gaussian_mode)
+        result = result.replace(f"<!--{self.DEFS_PLACEHOLDER}-->", defs_content, 1)
+
         # Validate result
         if not self._validate_svg_structure(result):
             logger.error("Generated streaming SVG failed basic validation")
@@ -112,8 +121,8 @@ class OptimizedSVGGenerator:
         """Generate SVG using standard approach for smaller splat counts."""
         # Generate SVG components
         header = self._generate_header(title)
-        defs = self._generate_defs(gaussian_mode)
         layer_groups = self._generate_layer_groups_optimized(layers, gaussian_mode)
+        defs = self._generate_defs(gaussian_mode)
         styles = self._generate_styles()
         scripts = self._generate_scripts()
         footer = self._generate_footer()
@@ -141,23 +150,6 @@ class OptimizedSVGGenerator:
      data-interactive-top="{self.interactive_top}">{title_elem}'''
 
         output.write(header)
-
-    def _write_defs(self, output: TextIO, gaussian_mode: bool) -> None:
-        """Write SVG definitions to output stream."""
-        if not gaussian_mode:
-            output.write("\n    <defs></defs>")
-            return
-
-        gradient_def = '''
-    <defs>
-        <radialGradient id="gaussianGradient" cx="50%" cy="50%" r="50%" gradientUnits="objectBoundingBox">
-            <stop offset="0%" stop-color="currentColor" stop-opacity="1"/>
-            <stop offset="70%" stop-color="currentColor" stop-opacity="0.7"/>
-            <stop offset="100%" stop-color="currentColor" stop-opacity="0"/>
-        </radialGradient>
-    </defs>'''
-
-        output.write(gradient_def)
 
     @global_profiler.profile_function("chunked_layer_writing")
     def _write_layer_chunked(
@@ -458,27 +450,21 @@ class OptimizedSVGGenerator:
 
         # Optimize color formatting
         if gaussian_mode:
-            # Use gradient fill for gaussian appearance
+            gradient_id = self._register_gradient(splat)
             style = (
-                f'color: rgb({splat.r}, {splat.g}, {splat.b}); '
-                f'fill: url(#gaussianGradient); '
+                f'fill: url(#{gradient_id}); '
                 f'fill-opacity: {self._format_number(splat.a)}; '
                 'stroke: none;'
             )
-            color_attr = f' data-color="rgb({splat.r}, {splat.g}, {splat.b})"'
         else:
             # Use optimized RGBA format
             style = f'fill: rgba({splat.r}, {splat.g}, {splat.b}, {self._format_number(splat.a)}); stroke: none;'
-            color_attr = ''
 
         # Build element efficiently
         element_parts = [
             f'<ellipse cx="{cx}" cy="{cy}" rx="{rx}" ry="{ry}"',
             f' style="{style}"'
         ]
-
-        if color_attr:
-            element_parts.append(color_attr)
 
         if transform:
             element_parts.append(transform)
@@ -500,20 +486,36 @@ class OptimizedSVGGenerator:
      data-parallax-strength="{self.parallax_strength}"
      data-interactive-top="{self.interactive_top}">{title_elem}'''
 
+    def _reset_gradient_registry(self) -> None:
+        """Reset gradient definitions prior to SVG generation."""
+        self._gradient_counter = 0
+        self._gradient_defs = []
+
+    def _register_gradient(self, splat: Gaussian) -> str:
+        """Register a gaussian gradient for a splat and return the assigned ID."""
+        gradient_id = f"gaussian-gradient-{self._gradient_counter}"
+        self._gradient_counter += 1
+
+        color = f"rgb({splat.r}, {splat.g}, {splat.b})"
+        gradient_def = (
+            "        <radialGradient id=\"{gradient_id}\" cx=\"50%\" cy=\"50%\" r=\"50%\" "
+            "gradientUnits=\"objectBoundingBox\">\n"
+            "            <stop offset=\"0%\" stop-color=\"{color}\" stop-opacity=\"1\"/>\n"
+            "            <stop offset=\"70%\" stop-color=\"{color}\" stop-opacity=\"0.7\"/>\n"
+            "            <stop offset=\"100%\" stop-color=\"{color}\" stop-opacity=\"0\"/>\n"
+            "        </radialGradient>"
+        ).format(gradient_id=gradient_id, color=color)
+
+        self._gradient_defs.append(gradient_def)
+        return gradient_id
+
     def _generate_defs(self, gaussian_mode: bool) -> str:
         """Generate SVG definitions including gradients for gaussian mode."""
-        if not gaussian_mode:
+        if not gaussian_mode or not self._gradient_defs:
             return "    <defs></defs>"
 
-        gradient_def = '''    <defs>
-        <radialGradient id="gaussianGradient" cx="50%" cy="50%" r="50%" gradientUnits="objectBoundingBox">
-            <stop offset="0%" stop-color="currentColor" stop-opacity="1"/>
-            <stop offset="70%" stop-color="currentColor" stop-opacity="0.7"/>
-            <stop offset="100%" stop-color="currentColor" stop-opacity="0"/>
-        </radialGradient>
-    </defs>'''
-
-        return gradient_def
+        gradient_defs = "\n".join(self._gradient_defs)
+        return f"    <defs>\n{gradient_defs}\n    </defs>"
 
     def _generate_styles(self) -> str:
         """Generate CSS styles for layers and animation."""

@@ -153,8 +153,7 @@ class SVGGenerator:
         # Convert rotation from degrees to radians for transform
         rotation_deg = self._format_number(math.degrees(splat.theta))
 
-        # Format color and alpha
-        color = f"rgb({splat.r}, {splat.g}, {splat.b})"
+        # Format alpha
         alpha = self._format_number(splat.a)
 
         # Create rotation transform if needed

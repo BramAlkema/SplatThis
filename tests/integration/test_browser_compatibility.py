@@ -126,11 +126,11 @@ class TestSVGBrowserCompatibility:
 
         # Check for proper gradient definition
         assert 'radialGradient' in gradient_svg
-        assert 'id="gaussianGradient"' in gradient_svg
+        assert 'id="gaussian-gradient-0"' in gradient_svg
         assert 'cx="50%" cy="50%" r="50%"' in gradient_svg
 
         # Check gradient is properly referenced
-        assert 'url(#gaussianGradient)' in gradient_svg
+        assert 'url(#gaussian-gradient-0)' in gradient_svg
 
     def test_transform_compatibility(self):
         """Test transform attribute compatibility."""

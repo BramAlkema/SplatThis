@@ -202,8 +202,8 @@ class TestVisualRegression:
         gaussian_svg = generator.generate_svg(layers, gaussian_mode=True)
 
         # Should contain gradient references
-        assert 'url(#gaussianGradient)' in gaussian_svg
-        assert 'data-color="rgb(255, 128, 64)"' in gaussian_svg or 'data-color="rgb(255,128,64)"' in gaussian_svg
+        assert 'url(#gaussian-gradient-' in gaussian_svg
+        assert 'stop-color="rgb(255, 128, 64)"' in gaussian_svg or 'stop-color="rgb(255,128,64)"' in gaussian_svg
 
     def test_animation_code_stability(self):
         """Test that animation JavaScript code is stable."""
