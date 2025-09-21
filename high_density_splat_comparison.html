@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>High-Density Splat Comparison - 4000 Splats</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            color: #ffffff;
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            margin-bottom: 20px;
+        }
+
+        .density-highlight {
+            background: rgba(138, 43, 226, 0.2);
+            padding: 20px;
+            border-radius: 15px;
+            border-left: 4px solid #8a2be2;
+            margin-bottom: 30px;
+        }
+
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 40px;
+        }
+
+        .comparison-panel {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .panel-title {
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+            text-align: center;
+            font-weight: 600;
+            padding: 8px;
+            border-radius: 5px;
+        }
+
+        .original-title {
+            background: rgba(74, 144, 226, 0.2);
+            color: #4a90e2;
+            border: 1px solid #4a90e2;
+        }
+
+        .count-640-title {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+            border: 1px solid #ffc107;
+        }
+
+        .count-2500-title {
+            background: rgba(46, 204, 113, 0.2);
+            color: #2ecc71;
+            border: 1px solid #2ecc71;
+        }
+
+        .count-4000-title {
+            background: rgba(138, 43, 226, 0.2);
+            color: #8a2be2;
+            border: 1px solid #8a2be2;
+        }
+
+        .image-container {
+            width: 100%;
+            height: 500px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            overflow: hidden;
+            background: white;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .image-container img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .image-container svg {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .image-stats {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-family: 'Monaco', 'Menlo', monospace;
+            line-height: 1.3;
+        }
+
+        .analysis {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 25px;
+            margin-top: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .analysis h2 {
+            margin-top: 0;
+            color: #8a2be2;
+            text-align: center;
+        }
+
+        .density-metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin: 25px 0;
+        }
+
+        .metric-card {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 18px;
+            border-radius: 8px;
+            border-left: 4px solid #8a2be2;
+        }
+
+        .metric-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #8a2be2;
+        }
+
+        .instructions {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            border-left: 4px solid #4a90e2;
+        }
+
+        .progression-table {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .progression-table table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .progression-table th,
+        .progression-table td {
+            padding: 10px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .progression-table th {
+            background: rgba(255, 255, 255, 0.1);
+            font-weight: bold;
+        }
+
+        .quality-scale {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .quality-level {
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .quality-sparse {
+            background: rgba(255, 193, 7, 0.15);
+            border-left: 4px solid #ffc107;
+        }
+
+        .quality-good {
+            background: rgba(46, 204, 113, 0.15);
+            border-left: 4px solid #2ecc71;
+        }
+
+        .quality-dense {
+            background: rgba(138, 43, 226, 0.15);
+            border-left: 4px solid #8a2be2;
+        }
+
+        @media (max-width: 1600px) {
+            .comparison-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 900px) {
+            .comparison-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .image-container {
+                height: 400px;
+            }
+        }
+
+        .zoom-indicator {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 High-Density Splat Comparison</h1>
+            <div class="subtitle">
+                From sparse coverage to ultra-dense: 640 → 2500 → 4000 splats
+            </div>
+        </div>
+
+        <div class="density-highlight">
+            <h3>📊 Maximum Detail Density Analysis</h3>
+            <p><strong>Question:</strong> How much does ultra-high splat density (4000) improve detail coverage and quality?</p>
+            <p><strong>Focus:</strong> Processing time is not a concern - we want maximum detail preservation</p>
+            <p><strong>Assessment:</strong> Visual quality vs file size trade-offs at extreme density</p>
+        </div>
+
+        <div class="instructions">
+            <h3>🔍 Detailed Assessment Instructions</h3>
+            <p><strong>Compare these specific aspects across all four versions:</strong></p>
+            <ul>
+                <li><strong>Coverage Density:</strong> Are there visible gaps or sparse areas?</li>
+                <li><strong>Chameleon Detail:</strong> Can you see facial features, eyes, skin texture clearly?</li>
+                <li><strong>Edge Sharpness:</strong> How well are sharp edges preserved vs blurred?</li>
+                <li><strong>Color Accuracy:</strong> Better color representation with more splats?</li>
+                <li><strong>Parallax Quality:</strong> Smoother motion with higher density?</li>
+                <li><strong>File Size Impact:</strong> Is the quality improvement worth the size increase?</li>
+            </ul>
+        </div>
+
+        <div class="comparison-grid">
+            <div class="comparison-panel">
+                <div class="panel-title original-title">📸 Original PNG</div>
+                <div class="image-container">
+                    <div class="image-stats">
+                        Format: PNG<br>
+                        Size: 476×502<br>
+                        Detail: Maximum<br>
+                        Coverage: 100%<br>
+                        Reference
+                    </div>
+                    <img src="SCR-20250921-omxs.png" alt="Original PNG" />
+                    <div class="zoom-indicator">100% Original</div>
+                </div>
+            </div>
+
+            <div class="comparison-panel">
+                <div class="panel-title count-640-title">⚠️ 640 Splats</div>
+                <div class="image-container">
+                    <div class="image-stats">
+                        Splats: 640<br>
+                        Density: 2.7/k px²<br>
+                        File: ~0.5MB<br>
+                        Time: ~1s<br>
+                        Sparse
+                    </div>
+                    <object data="detail_preserving_test.svg" type="image/svg+xml" width="100%" height="100%"></object>
+                    <div class="zoom-indicator">Interactive</div>
+                </div>
+            </div>
+
+            <div class="comparison-panel">
+                <div class="panel-title count-2500-title">✅ 2500 Splats</div>
+                <div class="image-container">
+                    <div class="image-stats">
+                        Splats: 2400<br>
+                        Density: 10.1/k px²<br>
+                        File: ~1.3MB<br>
+                        Time: ~3s<br>
+                        Good
+                    </div>
+                    <object data="detail_preservation_2500_test.svg" type="image/svg+xml" width="100%" height="100%"></object>
+                    <div class="zoom-indicator">Interactive</div>
+                </div>
+            </div>
+
+            <div class="comparison-panel">
+                <div class="panel-title count-4000-title">🚀 4000 Splats</div>
+                <div class="image-container">
+                    <div class="image-stats">
+                        Splats: 3780<br>
+                        Density: 15.9/k px²<br>
+                        File: ~1.9MB<br>
+                        Time: ~4s<br>
+                        Ultra-Dense
+                    </div>
+                    <object data="high_density_4000_test.svg" type="image/svg+xml" width="100%" height="100%"></object>
+                    <div class="zoom-indicator">Interactive</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="analysis">
+            <h2>📈 Density Progression Analysis</h2>
+
+            <div class="progression-table">
+                <h3>📊 Quantitative Comparison</h3>
+                <table>
+                    <tr>
+                        <th>Metric</th>
+                        <th>640 Splats</th>
+                        <th>2500 Splats</th>
+                        <th>4000 Splats</th>
+                        <th>Improvement</th>
+                    </tr>
+                    <tr>
+                        <td><strong>Actual Count</strong></td>
+                        <td>640</td>
+                        <td>2400</td>
+                        <td>3780</td>
+                        <td>5.9x increase</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Density (per 1000px²)</strong></td>
+                        <td>2.7 splats</td>
+                        <td>10.1 splats</td>
+                        <td>15.9 splats</td>
+                        <td>5.9x denser</td>
+                    </tr>
+                    <tr>
+                        <td><strong>File Size</strong></td>
+                        <td>~0.5MB</td>
+                        <td>~1.3MB</td>
+                        <td>~1.9MB</td>
+                        <td>3.8x larger</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Processing Time</strong></td>
+                        <td>~1s</td>
+                        <td>~3s</td>
+                        <td>~4s</td>
+                        <td>4x longer</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Coverage Quality</strong></td>
+                        <td>Sparse</td>
+                        <td>Good</td>
+                        <td>Ultra-Dense</td>
+                        <td>Comprehensive</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="density-metrics">
+                <div class="metric-card">
+                    <div class="metric-title">🎯 Coverage Analysis</div>
+                    <ul>
+                        <li><strong>640 splats:</strong> Potential gaps, sparse coverage</li>
+                        <li><strong>2500 splats:</strong> Good coverage, minimal gaps</li>
+                        <li><strong>4000 splats:</strong> Ultra-dense, comprehensive coverage</li>
+                        <li><strong>Expectation:</strong> 4000 should eliminate all gaps</li>
+                    </ul>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-title">🦎 Chameleon Detail Quality</div>
+                    <ul>
+                        <li><strong>Eyes & facial features:</strong> Progressively clearer</li>
+                        <li><strong>Skin texture patterns:</strong> More detailed capture</li>
+                        <li><strong>Edge definition:</strong> Sharper with higher density</li>
+                        <li><strong>Color gradations:</strong> Smoother transitions</li>
+                    </ul>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-title">⚡ Performance vs Quality</div>
+                    <ul>
+                        <li><strong>640:</strong> Fast but potentially sparse</li>
+                        <li><strong>2500:</strong> Balanced quality/performance</li>
+                        <li><strong>4000:</strong> Maximum quality, acceptable cost</li>
+                        <li><strong>Trade-off:</strong> 4s processing for best quality</li>
+                    </ul>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-title">💾 File Size Consideration</div>
+                    <ul>
+                        <li><strong>640:</strong> 0.5MB - very lightweight</li>
+                        <li><strong>2500:</strong> 1.3MB - reasonable size</li>
+                        <li><strong>4000:</strong> 1.9MB - premium quality</li>
+                        <li><strong>Scaling:</strong> Not linear, good efficiency</li>
+                    </ul>
+                </div>
+            </div>
+
+            <h3>🎯 Quality Progression Scale</h3>
+
+            <div class="quality-scale">
+                <div class="quality-sparse">
+                    <h4>640 Splats - Sparse</h4>
+                    <p>Basic coverage with potential gaps. Fast processing, small files. Good for quick previews.</p>
+                </div>
+
+                <div class="quality-good">
+                    <h4>2500 Splats - Balanced</h4>
+                    <p>Good coverage density. Reasonable processing time. Balanced quality/performance. Current default.</p>
+                </div>
+
+                <div class="quality-dense">
+                    <h4>4000 Splats - Ultra-Dense</h4>
+                    <p>Maximum detail coverage. Premium quality. When processing time is not a concern.</p>
+                </div>
+            </div>
+
+            <h3>🔍 Assessment Questions</h3>
+            <p><strong>Move your mouse over each SVG version</strong> and evaluate:</p>
+            <ul>
+                <li><strong>Gap Analysis:</strong> Does 4000 splats eliminate visible gaps that exist in lower counts?</li>
+                <li><strong>Detail Clarity:</strong> Are the chameleon's facial features noticeably clearer with ultra-high density?</li>
+                <li><strong>Edge Quality:</strong> Better edge definition and sharpness with more splats?</li>
+                <li><strong>Parallax Smoothness:</strong> Does the ultra-dense version feel smoother during interaction?</li>
+                <li><strong>Value Assessment:</strong> Is the quality improvement worth the 1.9MB file size and 4s processing?</li>
+                <li><strong>Optimal Choice:</strong> Which density level provides the best balance for your use case?</li>
+            </ul>
+
+            <h3>💡 Recommendations</h3>
+            <ul>
+                <li><strong>Fast Previews:</strong> Use 640-1000 splats for quick testing</li>
+                <li><strong>Production Use:</strong> 2500 splats offers excellent balance</li>
+                <li><strong>Premium Quality:</strong> 4000+ splats when detail is paramount</li>
+                <li><strong>Interactive Content:</strong> Consider user's device capabilities</li>
+                <li><strong>Web Optimization:</strong> Balance quality with loading times</li>
+            </ul>
+
+            <p><em>This ultra-high density comparison demonstrates the limits of detail preservation with our current small-splat approach. The question is: does 4000 splats represent the optimal maximum?</em></p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const objects = document.querySelectorAll('object');
+            const img = document.querySelector('img');
+
+            objects.forEach((obj, index) => {
+                obj.onload = function() {
+                    console.log(`SVG ${index + 1} loaded successfully`);
+                };
+                obj.onerror = function() {
+                    console.error(`Failed to load SVG ${index + 1}:`, obj.data);
+                };
+            });
+
+            img.onload = function() {
+                console.log('Original PNG loaded successfully');
+            };
+            img.onerror = function() {
+                console.error('Failed to load original PNG');
+            };
+        });
+    </script>
+</body>
+</html>
