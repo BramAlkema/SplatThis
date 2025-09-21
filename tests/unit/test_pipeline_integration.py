@@ -105,9 +105,9 @@ class TestPipelineIntegration:
         )
 
         # Verify gaussian-specific features
-        assert 'radialGradient id="gaussianGradient"' in svg_content
-        assert 'url(#gaussianGradient)' in svg_content
-        assert 'data-color=' in svg_content
+        assert 'radialGradient id="gaussian-gradient-' in svg_content
+        assert 'url(#gaussian-gradient-' in svg_content
+        assert 'stop-color="rgb(' in svg_content
 
     def test_empty_pipeline_handling(self):
         """Test pipeline handling with empty inputs."""

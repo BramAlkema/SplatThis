@@ -94,13 +94,21 @@ class TestSVGGenerator:
     def test_generate_defs_gaussian_mode(self):
         """Test definitions generation for gaussian mode."""
         generator = SVGGenerator(width=800, height=600)
+        layers = {
+            0: [
+                Gaussian(x=10, y=10, rx=5, ry=5, theta=0, r=200, g=100, b=50, a=0.8),
+                Gaussian(x=30, y=30, rx=7, ry=6, theta=0, r=25, g=50, b=75, a=0.6),
+            ]
+        }
+
+        generator._generate_layer_groups(layers, gaussian_mode=True)
         defs = generator._generate_defs(gaussian_mode=True)
 
         assert '<defs>' in defs
-        assert 'radialGradient id="gaussianGradient"' in defs
-        assert 'stop offset="0%"' in defs
-        assert 'stop offset="70%"' in defs
-        assert 'stop offset="100%"' in defs
+        assert 'radialGradient id="gaussian-gradient-0"' in defs
+        assert 'radialGradient id="gaussian-gradient-1"' in defs
+        assert 'stop-color="rgb(200, 100, 50)"' in defs
+        assert 'stop-color="rgb(25, 50, 75)"' in defs
 
     def test_generate_splat_element_solid_mode(self):
         """Test splat element generation in solid mode."""
@@ -135,9 +143,11 @@ class TestSVGGenerator:
 
         element = generator._generate_splat_element(splat, gaussian_mode=True)
 
-        assert 'fill: url(#gaussianGradient)' in element
+        assert 'fill: url(#gaussian-gradient-0)' in element
         assert 'fill-opacity: 0.900' in element
-        assert 'data-color="rgb(200, 100, 50)"' in element
+        assert 'stroke: none' in element
+        assert generator._gradient_defs
+        assert 'stop-color="rgb(200, 100, 50)"' in generator._gradient_defs[0]
 
     def test_generate_splat_element_no_rotation(self):
         """Test splat element generation without rotation."""
@@ -304,9 +314,9 @@ class TestSVGGenerator:
         svg_content = generator.generate_svg(layers, gaussian_mode=True)
 
         # Check gaussian-specific elements
-        assert 'radialGradient id="gaussianGradient"' in svg_content
-        assert 'url(#gaussianGradient)' in svg_content
-        assert 'data-color="rgb(255, 0, 0)"' in svg_content
+        assert 'radialGradient id="gaussian-gradient-0"' in svg_content
+        assert 'stop-color="rgb(255, 0, 0)"' in svg_content
+        assert 'url(#gaussian-gradient-0)' in svg_content
 
     def test_get_svg_info(self):
         """Test SVG info generation."""
@@ -362,9 +372,9 @@ class TestSVGGenerator:
 
         # Try to save to an invalid path
         invalid_path = Path("/invalid/path/that/should/not/exist/test.svg")
-
-        with pytest.raises(Exception):
-            generator.save_svg("<svg></svg>", invalid_path)
+        with patch("builtins.open", side_effect=OSError("Cannot write")):
+            with pytest.raises(Exception):
+                generator.save_svg("<svg></svg>", invalid_path)
 
     def test_edge_case_very_small_dimensions(self):
         """Test SVG generation with very small dimensions."""
