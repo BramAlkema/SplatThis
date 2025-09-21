@@ -98,9 +98,11 @@ class TestSVGGenerator:
 
         assert '<defs>' in defs
         assert 'radialGradient id="gaussianGradient"' in defs
+        assert 'gradientUnits="objectBoundingBox"' in defs
         assert 'stop offset="0%"' in defs
         assert 'stop offset="70%"' in defs
         assert 'stop offset="100%"' in defs
+        assert 'stop-color="currentColor"' in defs
 
     def test_generate_splat_element_solid_mode(self):
         """Test splat element generation in solid mode."""
@@ -137,6 +139,7 @@ class TestSVGGenerator:
 
         assert 'fill: url(#gaussianGradient)' in element
         assert 'fill-opacity: 0.900' in element
+        assert 'color: rgb(200, 100, 50);' in element
         assert 'data-color="rgb(200, 100, 50)"' in element
 
     def test_generate_splat_element_no_rotation(self):

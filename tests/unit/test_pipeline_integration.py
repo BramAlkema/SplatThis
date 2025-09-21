@@ -106,7 +106,10 @@ class TestPipelineIntegration:
 
         # Verify gaussian-specific features
         assert 'radialGradient id="gaussianGradient"' in svg_content
+        assert 'gradientUnits="objectBoundingBox"' in svg_content
+        assert 'stop-color="currentColor"' in svg_content
         assert 'url(#gaussianGradient)' in svg_content
+        assert 'color: rgb(' in svg_content
         assert 'data-color=' in svg_content
 
     def test_empty_pipeline_handling(self):
