@@ -46,9 +46,9 @@ class ProgressBar:
 @click.option("--frame", default=0, help="GIF frame number (default: 0)", type=int)
 @click.option(
     "--splats",
-    default=1500,
-    help="Target splat count (default: 1500)",
-    type=click.IntRange(100, 10000),
+    default=2500,
+    help="Target splat count (default: 2500)",
+    type=click.IntRange(100, 15000),
 )
 @click.option(
     "--layers",
@@ -58,9 +58,9 @@ class ProgressBar:
 )
 @click.option(
     "--k",
-    default=2.5,
-    help="Splat size multiplier (default: 2.5)",
-    type=click.FloatRange(1.0, 5.0),
+    default=1.2,
+    help="Splat size multiplier (default: 1.2)",
+    type=click.FloatRange(0.5, 5.0),
 )
 @click.option(
     "--alpha",

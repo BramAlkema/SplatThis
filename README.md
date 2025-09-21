@@ -73,9 +73,9 @@ splatlify texture.png --k 3.0 --alpha 0.8 --layers 5 -o custom.svg
 |--------|-------------|---------|-------|
 | `INPUT_FILE` | Source image (JPG, PNG, GIF) | Required | - |
 | `--output, -o` | Output SVG file path | Required | - |
-| `--splats` | Number of Gaussian splats | 1500 | 100-10000 |
+| `--splats` | Number of Gaussian splats | 2500 | 100-15000 |
 | `--layers` | Depth layers for parallax | 4 | 2-8 |
-| `--k` | Splat size multiplier | 2.5 | 1.0-5.0 |
+| `--k` | Splat size multiplier | 1.2 | 0.5-5.0 |
 | `--alpha` | Base transparency | 0.65 | 0.1-1.0 |
 | `--parallax-strength` | Motion sensitivity | 40 | 0-200 |
 | `--interactive-top` | Interactive top splats | 0 | 0-5000 |
