@@ -30,6 +30,8 @@ class SVGGenerator:
         self.precision = precision
         self.parallax_strength = parallax_strength
         self.interactive_top = interactive_top
+        self._gradient_counter = 0
+        self._gradient_defs: List[str] = []
 
     def generate_svg(
         self,
@@ -45,10 +47,12 @@ class SVGGenerator:
         logger.info(f"Generating SVG with {len(layers)} layers, "
                    f"gaussian_mode={gaussian_mode}, size={self.width}×{self.height}")
 
+        self._reset_gradient_registry()
+
         # Generate SVG components
         header = self._generate_header(title)
-        defs = self._generate_defs(gaussian_mode)
         layer_groups = self._generate_layer_groups(layers, gaussian_mode)
+        defs = self._generate_defs(gaussian_mode)
         styles = self._generate_styles()
         scripts = self._generate_scripts()
         footer = self._generate_footer()
@@ -75,13 +79,36 @@ class SVGGenerator:
      data-parallax-strength="{self.parallax_strength}"
      data-interactive-top="{self.interactive_top}">{title_elem}'''
 
+    def _reset_gradient_registry(self) -> None:
+        """Reset gradient definitions for a new SVG generation."""
+        self._gradient_counter = 0
+        self._gradient_defs = []
+
+    def _register_gradient(self, splat: "Gaussian") -> str:
+        """Register a gaussian gradient for the given splat and return its ID."""
+        gradient_id = f"gaussian-gradient-{self._gradient_counter}"
+        self._gradient_counter += 1
+
+        color = f"rgb({splat.r}, {splat.g}, {splat.b})"
+        gradient_def = (
+            "        <radialGradient id=\"{gradient_id}\" cx=\"50%\" cy=\"50%\" r=\"50%\" "
+            "gradientUnits=\"objectBoundingBox\">\n"
+            "            <stop offset=\"0%\" stop-color=\"{color}\" stop-opacity=\"1\"/>\n"
+            "            <stop offset=\"70%\" stop-color=\"{color}\" stop-opacity=\"0.7\"/>\n"
+            "            <stop offset=\"100%\" stop-color=\"{color}\" stop-opacity=\"0\"/>\n"
+            "        </radialGradient>"
+        ).format(gradient_id=gradient_id, color=color)
+
+        self._gradient_defs.append(gradient_def)
+        return gradient_id
+
     def _generate_defs(self, gaussian_mode: bool) -> str:
         """Generate SVG definitions including gradients for gaussian mode."""
-        if not gaussian_mode:
+        if not gaussian_mode or not self._gradient_defs:
             return "    <defs></defs>"
 
-        # Empty defs - gradients will be generated per splat
-        return "    <defs></defs>"
+        gradient_defs = "\n".join(self._gradient_defs)
+        return f"    <defs>\n{gradient_defs}\n    </defs>"
 
     def _generate_layer_groups(self, layers: Dict[int, List["Gaussian"]], gaussian_mode: bool) -> str:
         """Generate layer groups with proper depth attributes."""
@@ -134,25 +161,12 @@ class SVGGenerator:
         transform = f' transform="rotate({rotation_deg} {cx} {cy})"' if abs(splat.theta) > 1e-6 else ''
 
         if gaussian_mode:
-            # Generate unique gradient ID for this splat
-            gradient_id = f"grad_{splat.r}_{splat.g}_{splat.b}_{abs(hash(f'{splat.x}{splat.y}'))%10000}"
-
-            # Create inline gradient definition
-            gradient_def = f'''<defs>
-        <radialGradient id="{gradient_id}" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stop-color="{color}" stop-opacity="1"/>
-            <stop offset="70%" stop-color="{color}" stop-opacity="0.7"/>
-            <stop offset="100%" stop-color="{color}" stop-opacity="0"/>
-        </radialGradient>
-    </defs>'''
-
+            gradient_id = self._register_gradient(splat)
             fill = f'url(#{gradient_id})'
             style = f'fill: {fill}; fill-opacity: {alpha}; stroke: none;'
 
-            # Generate ellipse with embedded gradient
-            ellipse = gradient_def + f'\n<ellipse cx="{cx}" cy="{cy}" rx="{rx}" ry="{ry}"'
+            ellipse = f'<ellipse cx="{cx}" cy="{cy}" rx="{rx}" ry="{ry}"'
             ellipse += f' style="{style}"'
-            ellipse += f' data-color="{color}"'
         else:
             # Use solid color fill
             fill = f'rgba({splat.r}, {splat.g}, {splat.b}, {alpha})'
