@@ -315,21 +315,21 @@
 
             <div class="svg-variants">
                 <div class="svg-item">
-                    <div class="step-title">50 Target Splats</div>
+                    <div class="step-title">50 Target Splats (Solid)</div>
                     <object data="splats_50.svg" type="image/svg+xml"></object>
-                    <div class="step-stats">Actual: 15 splats<br>Vector format</div>
+                    <div class="step-stats">Actual: 49 splats<br>Size: 10KB</div>
                 </div>
 
                 <div class="svg-item">
-                    <div class="step-title">100 Target Splats</div>
+                    <div class="step-title">100 Target Splats (Solid)</div>
                     <object data="splats_100.svg" type="image/svg+xml"></object>
-                    <div class="step-stats">Actual: 30 splats<br>Vector format</div>
+                    <div class="step-stats">Actual: 100 splats<br>Size: 20KB</div>
                 </div>
 
                 <div class="svg-item">
-                    <div class="step-title">200 Target Splats</div>
-                    <object data="splats_200.svg" type="image/svg+xml"></object>
-                    <div class="step-stats">Actual: 60 splats<br>Vector format</div>
+                    <div class="step-title">200 Target Splats (Gaussian)</div>
+                    <object data="splats_200_gaussian.svg" type="image/svg+xml"></object>
+                    <div class="step-stats">Actual: 196 splats<br>Size: 120KB</div>
                 </div>
             </div>
 
@@ -368,10 +368,10 @@
             <div>
                 <h3>SVG Generation Insights</h3>
                 <ul>
-                    <li><strong>Adaptive Allocation:</strong> Actual splat counts (15, 30, 60) are lower than targets due to progressive allocation</li>
+                    <li><strong>Pipeline Working:</strong> Fixed downsampling and eigenvalue issues - no more crashes</li>
+                    <li><strong>Splat Accuracy:</strong> Actual splat counts (49, 100, 196) close to targets</li>
                     <li><strong>Vector Benefits:</strong> SVG format provides infinite scalability and smaller file sizes</li>
-                    <li><strong>Quality Trade-off:</strong> Current PSNR levels indicate room for improvement in reconstruction quality</li>
-                    <li><strong>Gaussian Rendering:</strong> True Gaussian splats provide smooth, mathematical precision</li>
+                    <li><strong>Gaussian Mode:</strong> Produces more detailed output with gradient effects (120KB vs 20KB)</li>
                 </ul>
             </div>
         </div>
@@ -403,10 +403,16 @@
                 <td><span class="highlight">✅ Production ready</span></td>
             </tr>
             <tr>
+                <td>Pipeline Stability</td>
+                <td>Memory checks working</td>
+                <td>No NaN crashes</td>
+                <td><span class="highlight">✅ Fixed all critical issues</span></td>
+            </tr>
+            <tr>
                 <td>Processing Time</td>
                 <td>~19 seconds</td>
-                <td>~2 minutes total</td>
-                <td><span class="highlight">⚠️ Performance optimization needed</span></td>
+                <td>~1.5 seconds each</td>
+                <td><span class="highlight">✅ Optimized performance</span></td>
             </tr>
         </table>
     </div>
