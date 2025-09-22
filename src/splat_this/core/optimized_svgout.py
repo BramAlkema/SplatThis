@@ -112,7 +112,7 @@ class OptimizedSVGGenerator:
         """Generate SVG using standard approach for smaller splat counts."""
         # Generate SVG components
         header = self._generate_header(title)
-        defs = self._generate_defs(gaussian_mode)
+        defs = self._generate_defs(gaussian_mode, layers)
         layer_groups = self._generate_layer_groups_optimized(layers, gaussian_mode)
         styles = self._generate_styles()
         scripts = self._generate_scripts()
@@ -458,14 +458,16 @@ class OptimizedSVGGenerator:
 
         # Optimize color formatting
         if gaussian_mode:
-            # Use gradient fill for gaussian appearance
+            # Use gradient fill for gaussian appearance with color-specific gradient
+            color_rgb = f"rgb({splat.r}, {splat.g}, {splat.b})"
+            color_id = color_rgb.replace("rgb(", "").replace(")", "").replace(", ", "_").replace(" ", "")
             style = (
-                f'color: rgb({splat.r}, {splat.g}, {splat.b}); '
-                f'fill: url(#gaussianGradient); '
+                f'color: {color_rgb}; '
+                f'fill: url(#grad_{color_id}); '
                 f'fill-opacity: {self._format_number(splat.a)}; '
                 'stroke: none;'
             )
-            color_attr = f' data-color="rgb({splat.r}, {splat.g}, {splat.b})"'
+            color_attr = f' data-color="{color_rgb}"'
         else:
             # Use optimized RGBA format
             style = f'fill: rgba({splat.r}, {splat.g}, {splat.b}, {self._format_number(splat.a)}); stroke: none;'
@@ -500,20 +502,38 @@ class OptimizedSVGGenerator:
      data-parallax-strength="{self.parallax_strength}"
      data-interactive-top="{self.interactive_top}">{title_elem}'''
 
-    def _generate_defs(self, gaussian_mode: bool) -> str:
+    def _generate_defs(self, gaussian_mode: bool, layers: Dict[int, List[Gaussian]] = None) -> str:
         """Generate SVG definitions including gradients for gaussian mode."""
         if not gaussian_mode:
             return "    <defs></defs>"
 
-        gradient_def = '''    <defs>
-        <radialGradient id="gaussianGradient" cx="50%" cy="50%" r="50%" gradientUnits="objectBoundingBox">
-            <stop offset="0%" stop-color="currentColor" stop-opacity="1"/>
-            <stop offset="70%" stop-color="currentColor" stop-opacity="0.7"/>
-            <stop offset="100%" stop-color="currentColor" stop-opacity="0"/>
-        </radialGradient>
-    </defs>'''
+        if not layers:
+            # Fallback to simple approach
+            return '''    <defs></defs>'''
 
-        return gradient_def
+        # Collect unique colors from all splats
+        unique_colors = set()
+        for layer_splats in layers.values():
+            for splat in layer_splats:
+                rgb = f"rgb({splat.r}, {splat.g}, {splat.b})"
+                unique_colors.add(rgb)
+
+        # Generate individual gradient for each color
+        gradients = []
+        for color in unique_colors:
+            # Create safe ID from color
+            color_id = color.replace("rgb(", "").replace(")", "").replace(", ", "_").replace(" ", "")
+            gradient = f'''        <radialGradient id="grad_{color_id}" cx="50%" cy="50%" r="50%" gradientUnits="objectBoundingBox">
+            <stop offset="0%" stop-color="{color}" stop-opacity="1"/>
+            <stop offset="70%" stop-color="{color}" stop-opacity="0.7"/>
+            <stop offset="100%" stop-color="{color}" stop-opacity="0"/>
+        </radialGradient>'''
+            gradients.append(gradient)
+
+        defs_content = "\n".join(gradients)
+        return f'''    <defs>
+{defs_content}
+    </defs>'''
 
     def _generate_styles(self) -> str:
         """Generate CSS styles for layers and animation."""

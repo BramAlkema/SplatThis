@@ -16,8 +16,26 @@ from skimage.segmentation import slic, felzenszwalb
 from skimage.filters import gaussian, sobel
 from skimage.measure import regionprops
 from scipy.optimize import minimize
-from scipy.ndimage import binary_dilation
+from scipy.ndimage import binary_dilation, maximum_filter
 import math
+
+
+def peak_local_maxima(image: np.ndarray, min_distance: int = 1,
+                     threshold_abs: float = None) -> Tuple[np.ndarray, np.ndarray]:
+    """Simple implementation of peak local maxima detection."""
+    if threshold_abs is None:
+        threshold_abs = np.mean(image)
+
+    # Use maximum filter to find local maxima
+    neighborhood = np.ones((min_distance*2+1, min_distance*2+1))
+    local_maxima = maximum_filter(image, footprint=neighborhood) == image
+
+    # Apply threshold
+    above_threshold = image > threshold_abs
+    peaks = local_maxima & above_threshold
+
+    # Return coordinates as tuple of arrays (row, col)
+    return np.where(peaks)
 
 from .extract import Gaussian
 from ..utils.math import safe_eigendecomposition, clamp_value
@@ -454,7 +472,7 @@ class AdaptiveSplatExtractor:
                 x=float(x), y=float(y),
                 rx=float(rx), ry=float(ry),
                 theta=float(theta),
-                r=int(mean_color[0]), g=int(mean_color[1]), b=int(mean_color[2]),
+                r=int(mean_color[0] * 255), g=int(mean_color[1] * 255), b=int(mean_color[2] * 255),
                 a=float(alpha),
                 score=float(region_saliency)
             )
