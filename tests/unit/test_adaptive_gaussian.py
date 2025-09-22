@@ -230,7 +230,7 @@ class TestAdaptiveGaussian2D:
         radius = gaussian.compute_3sigma_radius_px(image_size)
 
         assert radius > 0
-        assert isinstance(radius, float)
+        assert isinstance(radius, (float, np.floating))
 
         # Larger Gaussian should have larger radius
         larger_gaussian = AdaptiveGaussian2D(inv_s=np.array([0.2, 0.2]))

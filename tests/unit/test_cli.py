@@ -339,8 +339,10 @@ class TestCLIMain:
             mock_layer_assigner.assert_called_with(n_layers=6)
 
             # Check SVG generation parameters
-            call_kwargs = mock_generator_instance.generate_svg.call_args[1]
-            assert call_kwargs['parallax_strength'] == 60
+            # Verify SVGGenerator was called with correct parameters
+            generator_call_args = mock_svg_gen.call_args
+            assert generator_call_args[1]['parallax_strength'] == 60
+            assert generator_call_args[1]['interactive_top'] == 5
 
     def test_cli_parameter_validation(self):
         """Test CLI parameter validation."""

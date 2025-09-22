@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PNG vs SVG - Simple Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .comparison { display: flex; gap: 20px; }
+        .image-box { text-align: center; }
+        .image-box img, .image-box object { max-width: 500px; height: auto; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <h1>🎯 PNG vs SVG - Simple Test</h1>
+
+    <div class="comparison">
+        <div class="image-box">
+            <h2>📷 Original PNG</h2>
+            <img src="simple_original.png" alt="Original PNG">
+            <p>Format: Raster (PNG)<br>Resolution: 512×512</p>
+        </div>
+
+        <div class="image-box">
+            <h2>🎨 1000 Gaussian Splats</h2>
+            <object data="simple_1000_splats.svg" type="image/svg+xml" width="500"></object>
+            <p>Format: Vector (SVG)<br>Splats: 1000</p>
+        </div>
+    </div>
+</body>
+</html>

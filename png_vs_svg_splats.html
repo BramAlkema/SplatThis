@@ -1,0 +1,306 @@
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>🎯 PNG vs SVG Gaussian Splats Comparison</title>
+        <style>
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                margin: 0;
+                padding: 20px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                min-height: 100vh;
+            }
+
+            .header {
+                text-align: center;
+                margin-bottom: 30px;
+                padding: 30px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 15px;
+                backdrop-filter: blur(10px);
+            }
+
+            .header h1 {
+                margin: 0;
+                font-size: 2.5em;
+                font-weight: 300;
+                text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            }
+
+            .header p {
+                margin: 10px 0 0 0;
+                font-size: 1.2em;
+                opacity: 0.9;
+            }
+
+            .comparison-container {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 30px;
+                margin-bottom: 30px;
+                background: rgba(255, 255, 255, 0.1);
+                padding: 30px;
+                border-radius: 15px;
+                backdrop-filter: blur(10px);
+            }
+
+            .image-section {
+                text-align: center;
+            }
+
+            .image-section h2 {
+                margin: 0 0 20px 0;
+                font-size: 1.8em;
+                color: #fff;
+                text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+            }
+
+            .original-image {
+                max-width: 100%;
+                height: auto;
+                border-radius: 10px;
+                box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+                border: 3px solid rgba(255,255,255,0.3);
+            }
+
+            .svg-container {
+                margin-bottom: 20px;
+                background: rgba(255, 255, 255, 0.05);
+                padding: 15px;
+                border-radius: 10px;
+                transition: transform 0.2s ease;
+            }
+
+            .svg-container:hover {
+                transform: scale(1.02);
+                background: rgba(255, 255, 255, 0.1);
+            }
+
+            .svg-container h3 {
+                margin: 0 0 10px 0;
+                color: #fff;
+                font-size: 1.2em;
+            }
+
+            .svg-display {
+                width: 100%;
+                max-width: 500px;
+                height: auto;
+                border-radius: 8px;
+                background: white;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            }
+
+            .svg-info {
+                margin-top: 10px;
+                font-size: 0.9em;
+                color: rgba(255,255,255,0.8);
+            }
+
+            .controls {
+                text-align: center;
+                margin: 20px 0;
+            }
+
+            .splat-selector {
+                background: rgba(255, 255, 255, 0.2);
+                border: none;
+                color: white;
+                padding: 10px 20px;
+                margin: 5px;
+                border-radius: 25px;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                font-size: 1em;
+            }
+
+            .splat-selector:hover {
+                background: rgba(255, 255, 255, 0.3);
+                transform: translateY(-2px);
+            }
+
+            .splat-selector.active {
+                background: rgba(255, 255, 255, 0.4);
+                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            }
+
+            .download-links {
+                margin-top: 20px;
+                text-align: center;
+            }
+
+            .download-link {
+                display: inline-block;
+                background: rgba(72, 187, 120, 0.8);
+                color: white;
+                padding: 10px 20px;
+                margin: 5px;
+                border-radius: 25px;
+                text-decoration: none;
+                transition: all 0.3s ease;
+            }
+
+            .download-link:hover {
+                background: rgba(72, 187, 120, 1);
+                transform: translateY(-2px);
+                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>🎯 PNG vs SVG Gaussian Splats</h1>
+            <p>Real Vector Graphics from Adaptive Gaussian Splatting</p>
+        </div>
+
+        <div class="comparison-container">
+            <div class="image-section">
+                <h2>📷 Original PNG</h2>
+                <img src="original_image.png" alt="Original Image" class="original-image">
+                <div class="svg-info">
+                    Resolution: 512×512<br>
+                    Format: Raster (PNG)<br>
+                    Channels: RGB
+                </div>
+            </div>
+
+            <div class="image-section">
+                <h2>🎨 SVG Gaussian Splats</h2>
+
+                <div class="controls">
+                    <h3>Select Splat Count:</h3>
+    
+                    <button class="splat-selector " onclick="showSVG(50)">
+                        50 Splats
+                    </button>
+        
+                    <button class="splat-selector " onclick="showSVG(100)">
+                        100 Splats
+                    </button>
+        
+                    <button class="splat-selector active" onclick="showSVG(200)">
+                        200 Splats
+                    </button>
+        
+                    <button class="splat-selector " onclick="showSVG(500)">
+                        500 Splats
+                    </button>
+        
+                    <button class="splat-selector " onclick="showSVG(1000)">
+                        1000 Splats
+                    </button>
+        
+                </div>
+
+                <div id="svg-display-area">
+    
+                    <div class="svg-container" id="svg-50" style="display: none;">
+                        <h3>🔸 50 Gaussian Splats</h3>
+                        <object data="splats_50.svg" type="image/svg+xml" class="svg-display"></object>
+                        <div class="svg-info">
+                            Format: Vector (SVG)<br>
+                            Actual Splats: 50<br>
+                            File: splats_50.svg
+                        </div>
+                    </div>
+        
+                    <div class="svg-container" id="svg-100" style="display: none;">
+                        <h3>🔸 100 Gaussian Splats</h3>
+                        <object data="splats_100.svg" type="image/svg+xml" class="svg-display"></object>
+                        <div class="svg-info">
+                            Format: Vector (SVG)<br>
+                            Actual Splats: 100<br>
+                            File: splats_100.svg
+                        </div>
+                    </div>
+        
+                    <div class="svg-container" id="svg-200" style="display: block;">
+                        <h3>🔸 200 Gaussian Splats</h3>
+                        <object data="splats_200.svg" type="image/svg+xml" class="svg-display"></object>
+                        <div class="svg-info">
+                            Format: Vector (SVG)<br>
+                            Actual Splats: 200<br>
+                            File: splats_200.svg
+                        </div>
+                    </div>
+        
+                    <div class="svg-container" id="svg-500" style="display: none;">
+                        <h3>🔸 500 Gaussian Splats</h3>
+                        <object data="splats_500.svg" type="image/svg+xml" class="svg-display"></object>
+                        <div class="svg-info">
+                            Format: Vector (SVG)<br>
+                            Actual Splats: 500<br>
+                            File: splats_500.svg
+                        </div>
+                    </div>
+        
+                    <div class="svg-container" id="svg-1000" style="display: none;">
+                        <h3>🔸 1000 Gaussian Splats</h3>
+                        <object data="splats_1000.svg" type="image/svg+xml" class="svg-display"></object>
+                        <div class="svg-info">
+                            Format: Vector (SVG)<br>
+                            Actual Splats: 1000<br>
+                            File: splats_1000.svg
+                        </div>
+                    </div>
+        
+                </div>
+
+                <div class="download-links">
+                    <h3>📥 Download SVG Files:</h3>
+    
+                    <a href="splats_50.svg" download class="download-link">
+                        50 Splats SVG
+                    </a>
+        
+                    <a href="splats_100.svg" download class="download-link">
+                        100 Splats SVG
+                    </a>
+        
+                    <a href="splats_200.svg" download class="download-link">
+                        200 Splats SVG
+                    </a>
+        
+                    <a href="splats_500.svg" download class="download-link">
+                        500 Splats SVG
+                    </a>
+        
+                    <a href="splats_1000.svg" download class="download-link">
+                        1000 Splats SVG
+                    </a>
+        
+                </div>
+            </div>
+        </div>
+
+        <div style="text-align: center; padding: 20px; background: rgba(255, 255, 255, 0.1); border-radius: 15px;">
+            <h3>🎯 Key Benefits of SVG Gaussian Splats:</h3>
+            <p>✅ <strong>Infinite Scalability</strong> - Vector graphics scale to any resolution</p>
+            <p>✅ <strong>Small File Sizes</strong> - Efficient representation with mathematical curves</p>
+            <p>✅ <strong>Web Compatible</strong> - Direct browser rendering without plugins</p>
+            <p>✅ <strong>Animation Ready</strong> - Easy to animate individual splats</p>
+            <p>✅ <strong>Content Adaptive</strong> - Splats placed based on image analysis</p>
+        </div>
+
+        <script>
+            function showSVG(splatCount) {
+                // Hide all SVG containers
+                const containers = document.querySelectorAll('.svg-container');
+                containers.forEach(container => container.style.display = 'none');
+
+                // Show selected SVG container
+                document.getElementById(`svg-${splatCount}`).style.display = 'block';
+
+                // Update button states
+                const buttons = document.querySelectorAll('.splat-selector');
+                buttons.forEach(button => button.classList.remove('active'));
+                event.target.classList.add('active');
+            }
+        </script>
+    </body>
+    </html>
+    

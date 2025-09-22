@@ -198,7 +198,7 @@ class TestTileRenderer:
         radius = renderer.compute_3sigma_radius_px(gaussian)
 
         assert radius > 0
-        assert isinstance(radius, float)
+        assert isinstance(radius, (float, np.floating))
 
         # Should be cached
         radius2 = renderer.compute_3sigma_radius_px(gaussian)

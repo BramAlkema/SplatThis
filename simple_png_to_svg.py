@@ -32,7 +32,7 @@ def main():
     print("=" * 50)
 
     # Load the image
-    image_path = "SCR-20250921-omxs.png"
+    image_path = "simple_original.png"
     if not Path(image_path).exists():
         print(f"❌ Image not found: {image_path}")
         return

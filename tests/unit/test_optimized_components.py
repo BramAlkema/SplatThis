@@ -383,8 +383,9 @@ class TestOptimizedSVGGenerator:
         generator = OptimizedSVGGenerator(width=300, height=200)
         svg_content = generator.generate_svg(self.test_layers, gaussian_mode=True)
 
-        assert 'radialGradient id="gaussianGradient"' in svg_content
-        assert 'url(#gaussianGradient)' in svg_content
+        # Check for color-specific gradients (new implementation)
+        assert 'radialGradient id="grad_' in svg_content
+        assert 'url(#grad_' in svg_content
 
     def test_generate_svg_empty_layers(self):
         """Test SVG generation with empty layers."""

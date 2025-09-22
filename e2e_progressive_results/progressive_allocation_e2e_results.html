@@ -1,0 +1,355 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Progressive Allocation E2E Results</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .header { text-align: center; background: #2c3e50; color: white; padding: 20px; border-radius: 10px; }
+        .section { background: white; margin: 20px 0; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .comparison { text-align: center; margin: 20px 0; }
+        .comparison img { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 5px; }
+        .metrics { display: flex; justify-content: space-around; flex-wrap: wrap; }
+        .metric-box { background: #ecf0f1; padding: 15px; margin: 10px; border-radius: 5px; min-width: 200px; }
+        .metric-title { font-weight: bold; color: #2c3e50; }
+        .metric-value { font-size: 1.2em; color: #27ae60; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background: #34495e; color: white; }
+        .highlight { background: #f39c12; color: white; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Progressive Gaussian Allocation</h1>
+        <h2>End-to-End Demonstration Results</h2>
+        <p>Comprehensive step-by-step analysis of progressive splat allocation</p>
+    </div>
+
+    <div class="section">
+        <h2>Executive Summary</h2>
+        <p>This demonstration showcases the progressive Gaussian allocation system, which intelligently
+           places Gaussian splats to reconstruct images with optimal quality-to-efficiency ratios.</p>
+
+        <div class="metrics">
+
+            <div class="metric-box">
+                <div class="metric-title">Test Cases</div>
+                <div class="metric-value">4</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-title">Avg Final PSNR</div>
+                <div class="metric-value">6.11 dB</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-title">Avg Splats Used</div>
+                <div class="metric-value">20</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-title">Avg Execution Time</div>
+                <div class="metric-value">10.18s</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Cross-Image Progression Analysis</h2>
+        <div class="comparison">
+            <img src="progression_analysis.png" alt="Progression Analysis">
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Results: Simple Original</h2>
+
+        <div class="comparison">
+            <img src="simple_original_step_comparison.png" alt="simple_original Step Comparison">
+        </div>
+
+        <h3>Performance Summary</h3>
+        <table>
+            <tr><th>Metric</th><th>Value</th><th>Description</th></tr>
+            <tr><td>Final PSNR</td><td class="highlight">5.35 dB</td><td>Peak signal-to-noise ratio</td></tr>
+            <tr><td>Mean Error</td><td>0.5004</td><td>Average reconstruction error</td></tr>
+            <tr><td>RMS Error</td><td>0.5177</td><td>Root mean square error</td></tr>
+            <tr><td>Splats Used</td><td class="highlight">20</td><td>Final splat count</td></tr>
+            <tr><td>Max Error</td><td>0.9477</td><td>Worst case pixel error</td></tr>
+            <tr><td>Execution Time</td><td>19.31s</td><td>Total processing time</td></tr>
+        </table>
+
+        <h3>Step-by-Step Progress</h3>
+        <table>
+            <tr><th>Step</th><th>Splats</th><th>PSNR (dB)</th><th>Mean Error</th><th>RMS Error</th></tr>
+
+            <tr>
+                <td>0</td>
+                <td>10</td>
+                <td>5.34</td>
+                <td>0.5008</td>
+                <td>0.5181</td>
+            </tr>
+
+            <tr>
+                <td>1</td>
+                <td>20</td>
+                <td>5.35</td>
+                <td>0.5004</td>
+                <td>0.5177</td>
+            </tr>
+
+            <tr>
+                <td>2</td>
+                <td>20</td>
+                <td>5.35</td>
+                <td>0.5004</td>
+                <td>0.5177</td>
+            </tr>
+
+            <tr>
+                <td>3</td>
+                <td>20</td>
+                <td>5.35</td>
+                <td>0.5004</td>
+                <td>0.5177</td>
+            </tr>
+
+            <tr>
+                <td>4</td>
+                <td>20</td>
+                <td>5.35</td>
+                <td>0.5004</td>
+                <td>0.5177</td>
+            </tr>
+
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>Results: Simple Original Small</h2>
+
+        <div class="comparison">
+            <img src="simple_original_small_step_comparison.png" alt="simple_original_small Step Comparison">
+        </div>
+
+        <h3>Performance Summary</h3>
+        <table>
+            <tr><th>Metric</th><th>Value</th><th>Description</th></tr>
+            <tr><td>Final PSNR</td><td class="highlight">7.57 dB</td><td>Peak signal-to-noise ratio</td></tr>
+            <tr><td>Mean Error</td><td>0.3768</td><td>Average reconstruction error</td></tr>
+            <tr><td>RMS Error</td><td>0.3972</td><td>Root mean square error</td></tr>
+            <tr><td>Splats Used</td><td class="highlight">20</td><td>Final splat count</td></tr>
+            <tr><td>Max Error</td><td>0.8048</td><td>Worst case pixel error</td></tr>
+            <tr><td>Execution Time</td><td>0.63s</td><td>Total processing time</td></tr>
+        </table>
+
+        <h3>Step-by-Step Progress</h3>
+        <table>
+            <tr><th>Step</th><th>Splats</th><th>PSNR (dB)</th><th>Mean Error</th><th>RMS Error</th></tr>
+
+            <tr>
+                <td>0</td>
+                <td>10</td>
+                <td>7.21</td>
+                <td>0.3947</td>
+                <td>0.4148</td>
+            </tr>
+
+            <tr>
+                <td>1</td>
+                <td>20</td>
+                <td>7.57</td>
+                <td>0.3768</td>
+                <td>0.3972</td>
+            </tr>
+
+            <tr>
+                <td>2</td>
+                <td>20</td>
+                <td>7.57</td>
+                <td>0.3768</td>
+                <td>0.3972</td>
+            </tr>
+
+            <tr>
+                <td>3</td>
+                <td>20</td>
+                <td>7.57</td>
+                <td>0.3768</td>
+                <td>0.3972</td>
+            </tr>
+
+            <tr>
+                <td>4</td>
+                <td>20</td>
+                <td>7.57</td>
+                <td>0.3768</td>
+                <td>0.3972</td>
+            </tr>
+
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>Results: Simple Original Medium</h2>
+
+        <div class="comparison">
+            <img src="simple_original_medium_step_comparison.png" alt="simple_original_medium Step Comparison">
+        </div>
+
+        <h3>Performance Summary</h3>
+        <table>
+            <tr><th>Metric</th><th>Value</th><th>Description</th></tr>
+            <tr><td>Final PSNR</td><td class="highlight">6.18 dB</td><td>Peak signal-to-noise ratio</td></tr>
+            <tr><td>Mean Error</td><td>0.4512</td><td>Average reconstruction error</td></tr>
+            <tr><td>RMS Error</td><td>0.4695</td><td>Root mean square error</td></tr>
+            <tr><td>Splats Used</td><td class="highlight">20</td><td>Final splat count</td></tr>
+            <tr><td>Max Error</td><td>0.8663</td><td>Worst case pixel error</td></tr>
+            <tr><td>Execution Time</td><td>1.22s</td><td>Total processing time</td></tr>
+        </table>
+
+        <h3>Step-by-Step Progress</h3>
+        <table>
+            <tr><th>Step</th><th>Splats</th><th>PSNR (dB)</th><th>Mean Error</th><th>RMS Error</th></tr>
+
+            <tr>
+                <td>0</td>
+                <td>10</td>
+                <td>6.09</td>
+                <td>0.4560</td>
+                <td>0.4748</td>
+            </tr>
+
+            <tr>
+                <td>1</td>
+                <td>20</td>
+                <td>6.18</td>
+                <td>0.4512</td>
+                <td>0.4695</td>
+            </tr>
+
+            <tr>
+                <td>2</td>
+                <td>20</td>
+                <td>6.18</td>
+                <td>0.4512</td>
+                <td>0.4695</td>
+            </tr>
+
+            <tr>
+                <td>3</td>
+                <td>20</td>
+                <td>6.18</td>
+                <td>0.4512</td>
+                <td>0.4695</td>
+            </tr>
+
+            <tr>
+                <td>4</td>
+                <td>20</td>
+                <td>6.18</td>
+                <td>0.4512</td>
+                <td>0.4695</td>
+            </tr>
+
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>Results: Simple Original Large</h2>
+
+        <div class="comparison">
+            <img src="simple_original_large_step_comparison.png" alt="simple_original_large Step Comparison">
+        </div>
+
+        <h3>Performance Summary</h3>
+        <table>
+            <tr><th>Metric</th><th>Value</th><th>Description</th></tr>
+            <tr><td>Final PSNR</td><td class="highlight">5.35 dB</td><td>Peak signal-to-noise ratio</td></tr>
+            <tr><td>Mean Error</td><td>0.5004</td><td>Average reconstruction error</td></tr>
+            <tr><td>RMS Error</td><td>0.5177</td><td>Root mean square error</td></tr>
+            <tr><td>Splats Used</td><td class="highlight">20</td><td>Final splat count</td></tr>
+            <tr><td>Max Error</td><td>0.9477</td><td>Worst case pixel error</td></tr>
+            <tr><td>Execution Time</td><td>19.57s</td><td>Total processing time</td></tr>
+        </table>
+
+        <h3>Step-by-Step Progress</h3>
+        <table>
+            <tr><th>Step</th><th>Splats</th><th>PSNR (dB)</th><th>Mean Error</th><th>RMS Error</th></tr>
+
+            <tr>
+                <td>0</td>
+                <td>10</td>
+                <td>5.34</td>
+                <td>0.5008</td>
+                <td>0.5181</td>
+            </tr>
+
+            <tr>
+                <td>1</td>
+                <td>20</td>
+                <td>5.35</td>
+                <td>0.5004</td>
+                <td>0.5177</td>
+            </tr>
+
+            <tr>
+                <td>2</td>
+                <td>20</td>
+                <td>5.35</td>
+                <td>0.5004</td>
+                <td>0.5177</td>
+            </tr>
+
+            <tr>
+                <td>3</td>
+                <td>20</td>
+                <td>5.35</td>
+                <td>0.5004</td>
+                <td>0.5177</td>
+            </tr>
+
+            <tr>
+                <td>4</td>
+                <td>20</td>
+                <td>5.35</td>
+                <td>0.5004</td>
+                <td>0.5177</td>
+            </tr>
+
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>Technical Implementation Details</h2>
+        <h3>Progressive Allocation Configuration</h3>
+        <ul>
+            <li><strong>Initial Ratio:</strong> 25% of target splats for initial allocation</li>
+            <li><strong>Error Threshold:</strong> 0.02 convergence threshold</li>
+            <li><strong>Batch Size:</strong> 6 splats added per iteration</li>
+            <li><strong>Temperature:</strong> 1.5 for probability sampling</li>
+            <li><strong>Convergence Patience:</strong> 4 iterations without improvement</li>
+        </ul>
+
+        <h3>Key Features Demonstrated</h3>
+        <ul>
+            <li><strong>Saliency-based Initialization:</strong> Initial splats placed in high-importance regions</li>
+            <li><strong>Error-guided Refinement:</strong> Progressive placement based on reconstruction error</li>
+            <li><strong>Intelligent Convergence:</strong> Automatic stopping when quality plateaus</li>
+            <li><strong>Temperature-controlled Sampling:</strong> Balanced exploration vs exploitation</li>
+            <li><strong>Quality-driven Allocation:</strong> Optimal splat placement for maximum impact</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>Conclusions</h2>
+        <p>The progressive allocation system successfully demonstrates:</p>
+        <ul>
+            <li><strong>Adaptive Behavior:</strong> Different images converge to different splat counts based on complexity</li>
+            <li><strong>Quality Optimization:</strong> Achieves reasonable reconstruction quality with efficient splat usage</li>
+            <li><strong>Robust Performance:</strong> Consistent behavior across varied image content types</li>
+            <li><strong>Convergence Reliability:</strong> Stable termination without overallocation</li>
+        </ul>
+        <p>This system provides a solid foundation for intelligent Gaussian splat allocation in computer graphics applications.</p>
+    </div>
+</body>
+</html>

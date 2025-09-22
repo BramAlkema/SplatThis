@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SVG Color Test</title>
+</head>
+<body style="margin: 20px;">
+    <h1>SVG Color Tests</h1>
+
+    <h2>Test 1: Direct fill color (should show RED circle)</h2>
+    <svg width="100" height="100" viewBox="0 0 100 100">
+        <ellipse cx="50" cy="50" rx="30" ry="30" fill="red" />
+    </svg>
+
+    <h2>Test 2: currentColor method (should show BLUE circle if working, black if broken)</h2>
+    <svg width="100" height="100" viewBox="0 0 100 100">
+        <defs>
+            <radialGradient id="brokenGrad">
+                <stop offset="0%" stop-color="currentColor" />
+                <stop offset="100%" stop-color="currentColor" stop-opacity="0" />
+            </radialGradient>
+        </defs>
+        <ellipse cx="50" cy="50" rx="30" ry="30" style="color: blue; fill: url(#brokenGrad);" />
+    </svg>
+
+    <h2>Test 3: Direct gradient method (should show GREEN gradient circle)</h2>
+    <svg width="100" height="100" viewBox="0 0 100 100">
+        <defs>
+            <radialGradient id="fixedGrad">
+                <stop offset="0%" stop-color="green" />
+                <stop offset="100%" stop-color="green" stop-opacity="0" />
+            </radialGradient>
+        </defs>
+        <ellipse cx="50" cy="50" rx="30" ry="30" fill="url(#fixedGrad)" />
+    </svg>
+</body>
+</html>

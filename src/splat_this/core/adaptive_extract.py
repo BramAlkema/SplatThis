@@ -39,6 +39,9 @@ def peak_local_maxima(image: np.ndarray, min_distance: int = 1,
 
 from .extract import Gaussian
 from ..utils.math import safe_eigendecomposition, clamp_value
+from .progressive_allocator import ProgressiveConfig, ProgressiveAllocator
+from .error_guided_placement import ErrorGuidedPlacement
+from ..utils.reconstruction_error import compute_reconstruction_error
 
 logger = logging.getLogger(__name__)
 
@@ -47,16 +50,19 @@ logger = logging.getLogger(__name__)
 class AdaptiveSplatConfig:
     """Configuration for adaptive splat extraction."""
 
+    # Progressive allocation mode
+    enable_progressive: bool = True  # Use progressive allocation by default
+
     # Initialization strategies
     init_strategy: str = "saliency"  # "random", "gradient", "saliency"
     random_ratio: float = 0.3  # Ratio of randomly initialized splats
 
     # Size adaptation
-    min_scale: float = 0.5  # Minimum splat scale
-    max_scale: float = 8.0  # Maximum splat scale
+    min_scale: float = 2.0  # Minimum splat scale (increased for visibility)
+    max_scale: float = 20.0  # Maximum splat scale
     scale_variance_threshold: float = 0.1  # Threshold for scale adaptation
 
-    # Progressive optimization
+    # Legacy parameters (kept for compatibility with existing code)
     refinement_iterations: int = 5
     error_threshold: float = 0.01  # Reconstruction error threshold
 
@@ -293,9 +299,16 @@ class SaliencyAnalyzer:
 class AdaptiveSplatExtractor:
     """Extract Gaussian splats with adaptive sizing and placement."""
 
-    def __init__(self, config: Optional[AdaptiveSplatConfig] = None):
+    def __init__(self, config: Optional[AdaptiveSplatConfig] = None,
+                 progressive_config: Optional[ProgressiveConfig] = None):
         self.config = config or AdaptiveSplatConfig()
         self.saliency_analyzer = SaliencyAnalyzer(self.config)
+
+        # Initialize progressive components if enabled
+        if self.config.enable_progressive:
+            self.progressive_config = progressive_config or ProgressiveConfig()
+            self.allocator = ProgressiveAllocator(self.progressive_config)
+            self.placer = ErrorGuidedPlacement(self.progressive_config.temperature)
 
     def extract_adaptive_splats(
         self,
@@ -316,17 +329,112 @@ class AdaptiveSplatExtractor:
         if verbose:
             logger.info(f"Starting adaptive splat extraction with {n_splats} target splats")
 
+        # Route to progressive or static allocation based on configuration
+        if self.config.enable_progressive:
+            return self._extract_progressive_splats(image, n_splats, verbose)
+        else:
+            return self._extract_static_splats(image, n_splats, verbose)
+
+    def _extract_progressive_splats(
+        self,
+        image: np.ndarray,
+        n_splats: int,
+        verbose: bool
+    ) -> List[Gaussian]:
+        """Extract splats using progressive allocation strategy."""
+        if verbose:
+            logger.info("Using progressive allocation strategy")
+
+        # Update progressive config max_splats from parameter
+        self.progressive_config.max_splats = n_splats
+        self.progressive_config.validate_compatibility(image.shape[:2])
+
+        # Reset allocator for new session
+        self.allocator.reset()
+
+        # Step 1: Compute saliency map for guidance
+        saliency_map = self.saliency_analyzer.compute_saliency_map(image)
+
+        # Step 2: Initialize with sparse allocation
+        initial_count = self.progressive_config.get_initial_count()
+        if verbose:
+            logger.info(f"Starting with {initial_count} initial splats ({initial_count/n_splats:.1%} of target)")
+
+        current_splats = self._initialize_splats(image, saliency_map, initial_count, verbose)
+
+        # Step 3: Progressive allocation loop with real error computation
+        iteration = 0
+        last_error_map = None
+
+        while len(current_splats) < n_splats and iteration < 100:  # Safety limit
+            iteration += 1
+
+            # Render current splats to compute reconstruction error
+            rendered_image = self._render_splats_to_image(current_splats, image.shape[:2])
+
+            # Compute reconstruction error
+            error_map = compute_reconstruction_error(image, rendered_image)
+            mean_error = float(np.mean(error_map))
+
+            if verbose and iteration % 10 == 0:
+                logger.info(f"Iteration {iteration}: Mean error = {mean_error:.4f}")
+
+            # Check if we should add more splats
+            if self.allocator.should_add_splats(mean_error):
+                add_count = self.allocator.get_addition_count(len(current_splats))
+
+                if add_count > 0:
+                    # Use error-guided placement to determine where to add new splats
+                    prob_map = self.placer.create_placement_probability(error_map)
+                    new_positions = self.placer.sample_positions(prob_map, add_count, min_distance=2.0)
+
+                    # Create new splats at selected positions
+                    new_splats = self._create_splats_at_positions(image, new_positions, verbose)
+                    current_splats.extend(new_splats)
+
+                    self.allocator.record_iteration(mean_error, add_count)
+
+                    if verbose:
+                        logger.info(f"Iteration {iteration}: Added {add_count} splats, total: {len(current_splats)}")
+                        logger.info(f"  Error reduction: {mean_error:.4f}")
+                else:
+                    self.allocator.record_iteration(mean_error)
+            else:
+                self.allocator.record_iteration(mean_error)
+
+            # Store error map for potential use in next iteration
+            last_error_map = error_map
+
+        if verbose:
+            stats = self.allocator.get_stats()
+            logger.info(f"Progressive allocation completed: {len(current_splats)} splats in {iteration} iterations")
+            logger.info(f"Final error: {stats['current_error']:.4f}, Converged: {stats['converged']}")
+
+        return current_splats
+
+    def _extract_static_splats(
+        self,
+        image: np.ndarray,
+        n_splats: int,
+        verbose: bool
+    ) -> List[Gaussian]:
+        """Extract splats using static (legacy) allocation strategy."""
+        if verbose:
+            logger.info("Using static allocation strategy")
+
         # Step 1: Compute saliency map
         saliency_map = self.saliency_analyzer.compute_saliency_map(image)
 
         # Step 2: Initialize splats based on strategy
         initial_splats = self._initialize_splats(image, saliency_map, n_splats, verbose)
 
-        # Step 3: Progressive refinement
-        refined_splats = self._progressive_refinement(image, initial_splats, saliency_map, verbose)
+        # Step 3: Progressive refinement (temporarily disabled to preserve size variation)
+        # refined_splats = self._progressive_refinement(image, initial_splats, saliency_map, verbose)
+        refined_splats = initial_splats
 
-        # Step 4: Adaptive scale optimization
-        final_splats = self._optimize_adaptive_scales(image, refined_splats, verbose)
+        # Step 4: Adaptive scale optimization (temporarily disabled to preserve size variation)
+        # final_splats = self._optimize_adaptive_scales(image, refined_splats, verbose)
+        final_splats = refined_splats
 
         if verbose:
             self._log_scale_statistics(final_splats)
@@ -449,7 +557,12 @@ class AdaptiveSplatExtractor:
                 return None
 
             # Adaptive scaling based on saliency and region properties
-            base_scale = np.sqrt(eigenvals) * scale_boost
+            # Normalize eigenvalues by image dimensions for more reasonable scales
+            height, width = image.shape[:2]
+            img_scale = max(height, width)
+            normalized_eigenvals = eigenvals / (img_scale * 0.05)  # Less aggressive normalization for visibility
+
+            base_scale = np.sqrt(normalized_eigenvals) * scale_boost
             saliency_scale = 1.0 + region_saliency * 2.0  # Scale 1.0-3.0 based on saliency
 
             rx = clamp_value(base_scale[0] * saliency_scale, self.config.min_scale, self.config.max_scale)
@@ -601,8 +714,8 @@ class AdaptiveSplatExtractor:
             local_saliency = saliency_map[y, x]
             local_error = error_map[y, x]
 
-            # Adjust scale based on error
-            error_scale = 1.0 + local_error * 0.5
+            # Adjust scale based on error (more conservative scaling)
+            error_scale = 1.0 + local_error * 0.1  # Reduced from 0.5 to 0.1
             new_rx = clamp_value(splat.rx * error_scale, self.config.min_scale, self.config.max_scale)
             new_ry = clamp_value(splat.ry * error_scale, self.config.min_scale, self.config.max_scale)
 
@@ -648,8 +761,8 @@ class AdaptiveSplatExtractor:
                 local_variance = np.var(local_region)
                 local_gradient = np.mean(np.gradient(np.mean(local_region, axis=2) if len(local_region.shape) == 3 else local_region))
 
-                # Adaptive scale based on local content
-                content_scale = 1.0 + local_variance * 0.001 + abs(local_gradient) * 0.1
+                # Adaptive scale based on local content (more conservative)
+                content_scale = 1.0 + local_variance * 0.0005 + abs(local_gradient) * 0.02
 
                 new_rx = clamp_value(splat.rx * content_scale, self.config.min_scale, self.config.max_scale)
                 new_ry = clamp_value(splat.ry * content_scale, self.config.min_scale, self.config.max_scale)
@@ -685,3 +798,138 @@ class AdaptiveSplatExtractor:
         logger.info(f"  Small splats (<2.0): {small_splats}")
         logger.info(f"  Medium splats (2.0-5.0): {medium_splats}")
         logger.info(f"  Large splats (>=5.0): {large_splats}")
+
+    def _create_splats_at_positions(
+        self,
+        image: np.ndarray,
+        positions: List[Tuple[int, int]],
+        verbose: bool = False
+    ) -> List[Gaussian]:
+        """Create new splats at specified positions with adaptive sizing.
+
+        Args:
+            image: Input image (H, W, 3)
+            positions: List of (y, x) pixel positions
+            verbose: Enable detailed logging
+
+        Returns:
+            List of new Gaussian splats
+        """
+        splats = []
+        height, width = image.shape[:2]
+
+        for y, x in positions:
+            # Ensure positions are within image bounds
+            if not (0 <= y < height and 0 <= x < width):
+                if verbose:
+                    logger.warning(f"Position ({y}, {x}) is outside image bounds, skipping")
+                continue
+
+            # Extract local image patch for color and scale estimation
+            patch_size = 3
+            y_start = max(0, y - patch_size // 2)
+            y_end = min(height, y + patch_size // 2 + 1)
+            x_start = max(0, x - patch_size // 2)
+            x_end = min(width, x + patch_size // 2 + 1)
+
+            if len(image.shape) == 3:
+                local_patch = image[y_start:y_end, x_start:x_end, :]
+                # Use mean color of local patch
+                color = np.mean(local_patch.reshape(-1, 3), axis=0)
+            else:
+                local_patch = image[y_start:y_end, x_start:x_end]
+                # Convert grayscale to RGB
+                mean_intensity = np.mean(local_patch)
+                color = np.array([mean_intensity, mean_intensity, mean_intensity])
+
+            # Adaptive scale based on local variance
+            local_variance = np.var(local_patch)
+            # Scale between min_scale and max_scale based on variance
+            variance_factor = np.clip(local_variance / 0.1, 0.0, 1.0)  # Normalize variance
+            scale = self.config.min_scale + variance_factor * (self.config.max_scale - self.config.min_scale)
+
+            # Create Gaussian splat
+            splat = Gaussian(
+                x=float(x),
+                y=float(y),
+                rx=scale,
+                ry=scale,
+                theta=0.0,
+                r=int(np.clip(color[0] * 255, 0, 255)),
+                g=int(np.clip(color[1] * 255, 0, 255)),
+                b=int(np.clip(color[2] * 255, 0, 255)),
+                a=1.0
+            )
+
+            splats.append(splat)
+
+        if verbose and splats:
+            scales = [(s.rx + s.ry) / 2 for s in splats]
+            logger.info(f"Created {len(splats)} splats with scale range: {min(scales):.1f}-{max(scales):.1f}")
+
+        return splats
+
+    def _render_splats_to_image(
+        self,
+        splats: List[Gaussian],
+        image_shape: Tuple[int, int]
+    ) -> np.ndarray:
+        """Render list of splats back to an image for error computation.
+
+        Args:
+            splats: List of Gaussian splats
+            image_shape: (height, width) of target image
+
+        Returns:
+            Rendered image (H, W, 3) as float32
+        """
+        height, width = image_shape
+        rendered = np.zeros((height, width, 3), dtype=np.float32)
+
+        # Create coordinate grids
+        y_coords, x_coords = np.mgrid[0:height, 0:width]
+        coords = np.stack([x_coords, y_coords], axis=-1)  # Shape: (H, W, 2)
+
+        for splat in splats:
+            # Splat center position
+            center = np.array([splat.x, splat.y])
+
+            # Compute distance from center
+            diff = coords - center  # Shape: (H, W, 2)
+
+            # Apply rotation if needed (for now, assume no rotation)
+            if hasattr(splat, 'theta') and splat.theta != 0:
+                cos_theta = np.cos(splat.theta)
+                sin_theta = np.sin(splat.theta)
+                rotation_matrix = np.array([[cos_theta, -sin_theta],
+                                          [sin_theta, cos_theta]])
+                diff_rotated = np.dot(diff, rotation_matrix.T)
+            else:
+                diff_rotated = diff
+
+            # Compute elliptical distance
+            x_normalized = diff_rotated[..., 0] / max(splat.rx, 0.1)
+            y_normalized = diff_rotated[..., 1] / max(splat.ry, 0.1)
+            distance_sq = x_normalized**2 + y_normalized**2
+
+            # Gaussian weight (using 2D Gaussian)
+            weight = np.exp(-0.5 * distance_sq)
+
+            # Apply opacity
+            if hasattr(splat, 'a'):
+                weight *= splat.a
+
+            # Convert RGB from [0, 255] to [0, 1] range
+            color = np.array([splat.r, splat.g, splat.b], dtype=np.float32) / 255.0
+
+            # Add contribution to rendered image
+            weight_expanded = weight[..., np.newaxis]  # Shape: (H, W, 1)
+            contribution = weight_expanded * color  # Shape: (H, W, 3)
+
+            # Alpha blending (additive for now, could be more sophisticated)
+            rendered += contribution
+
+        # Clip to valid range
+        rendered = np.clip(rendered, 0.0, 1.0)
+
+        return rendered
