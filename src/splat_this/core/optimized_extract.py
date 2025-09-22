@@ -18,10 +18,10 @@ logger = logging.getLogger(__name__)
 class OptimizedSplatExtractor:
     """Optimized Gaussian splat extractor with performance monitoring."""
 
-    def __init__(self, k: float = 2.5, base_alpha: float = 0.65, max_workers: Optional[int] = None):
+    def __init__(self, k: float = 2.5, base_alpha: float = 0.65, max_workers: Optional[int] = None, max_memory_mb: Optional[int] = None):
         self.k = k
         self.base_alpha = base_alpha
-        self.memory_processor = MemoryEfficientProcessor()
+        self.memory_processor = MemoryEfficientProcessor(max_memory_mb=max_memory_mb) if max_memory_mb else MemoryEfficientProcessor()
 
         # Determine optimal number of workers
         if max_workers is None:
@@ -305,9 +305,12 @@ class OptimizedSplatExtractor:
 class BatchSplatExtractor:
     """Batch processor for multiple images with shared optimization."""
 
-    def __init__(self, **extractor_kwargs):
+    def __init__(self, max_memory_mb: Optional[int] = None, **extractor_kwargs):
+        # Pass max_memory_mb to the OptimizedSplatExtractor
+        if max_memory_mb is not None:
+            extractor_kwargs['max_memory_mb'] = max_memory_mb
         self.extractor = OptimizedSplatExtractor(**extractor_kwargs)
-        self.memory_processor = MemoryEfficientProcessor()
+        self.memory_processor = MemoryEfficientProcessor(max_memory_mb=max_memory_mb) if max_memory_mb else MemoryEfficientProcessor()
 
     @global_profiler.profile_function("batch_extraction")
     def extract_batch(self, images: List[np.ndarray], n_splats_per_image: List[int]) -> List[List[Gaussian]]:

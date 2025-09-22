@@ -25,6 +25,7 @@ class OptimizedSVGGenerator:
         parallax_strength: int = 40,
         interactive_top: int = 0,
         chunk_size: int = 500,  # Process splats in chunks
+        max_memory_mb: Optional[int] = None,
     ):
         self.width = width
         self.height = height
@@ -32,7 +33,7 @@ class OptimizedSVGGenerator:
         self.parallax_strength = parallax_strength
         self.interactive_top = interactive_top
         self.chunk_size = chunk_size
-        self.memory_processor = MemoryEfficientProcessor()
+        self.memory_processor = MemoryEfficientProcessor(max_memory_mb=max_memory_mb) if max_memory_mb else MemoryEfficientProcessor()
 
     @global_profiler.profile_function("svg_generation")
     def generate_svg(
@@ -75,7 +76,7 @@ class OptimizedSVGGenerator:
         self._write_header(output, title)
 
         # Write definitions
-        self._write_defs(output, gaussian_mode)
+        self._write_defs(output, gaussian_mode, layers)
 
         # Process layers in chunks
         sorted_layers = sorted(layers.items(), key=lambda x: x[0])
@@ -142,13 +143,15 @@ class OptimizedSVGGenerator:
 
         output.write(header)
 
-    def _write_defs(self, output: TextIO, gaussian_mode: bool) -> None:
+    def _write_defs(self, output: TextIO, gaussian_mode: bool, layers: Optional[Dict[int, List[Gaussian]]] = None) -> None:
         """Write SVG definitions to output stream."""
         if not gaussian_mode:
             output.write("\n    <defs></defs>")
             return
 
-        gradient_def = '''
+        if not layers:
+            # Fallback to simple single gradient
+            gradient_def = '''
     <defs>
         <radialGradient id="gaussianGradient" cx="50%" cy="50%" r="50%" gradientUnits="objectBoundingBox">
             <stop offset="0%" stop-color="currentColor" stop-opacity="1"/>
@@ -156,8 +159,29 @@ class OptimizedSVGGenerator:
             <stop offset="100%" stop-color="currentColor" stop-opacity="0"/>
         </radialGradient>
     </defs>'''
+            output.write(gradient_def)
+            return
 
-        output.write(gradient_def)
+        # Collect unique colors from all splats
+        unique_colors = set()
+        for layer_splats in layers.values():
+            for splat in layer_splats:
+                rgb = f"rgb({splat.r}, {splat.g}, {splat.b})"
+                unique_colors.add(rgb)
+
+        # Generate individual gradient for each color
+        output.write("\n    <defs>")
+        for color in unique_colors:
+            # Create safe ID from color
+            color_id = color.replace("rgb(", "").replace(")", "").replace(", ", "_").replace(" ", "")
+            gradient = f'''
+        <radialGradient id="grad_{color_id}" cx="50%" cy="50%" r="50%" gradientUnits="objectBoundingBox">
+            <stop offset="0%" stop-color="{color}" stop-opacity="1"/>
+            <stop offset="70%" stop-color="{color}" stop-opacity="0.7"/>
+            <stop offset="100%" stop-color="{color}" stop-opacity="0"/>
+        </radialGradient>'''
+            output.write(gradient)
+        output.write("\n    </defs>")
 
     @global_profiler.profile_function("chunked_layer_writing")
     def _write_layer_chunked(

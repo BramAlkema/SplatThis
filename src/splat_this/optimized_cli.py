@@ -189,19 +189,23 @@ def main(
             click.echo(f"   Dimensions: {dimensions[1]}×{dimensions[0]}")  # (width x height) from (height, width)
             click.echo(f"   Frame: {frame}")
 
-        memory_processor.ensure_memory_limit("post_image_load")
-
-        # Check if image should be downsampled
+        # Check if image should be downsampled BEFORE enforcing memory limit
         should_downsample, new_size = memory_processor.should_downsample_image(
             (dimensions[1], dimensions[0]), splats  # Pass (width, height) from (height, width)
         )
 
-        if should_downsample and verbose:
-            click.echo(f"🔧 Image will be downsampled to {new_size[0]}×{new_size[1]} for memory efficiency")
+        if should_downsample:
+            if verbose:
+                click.echo(f"🔧 Image will be downsampled to {new_size[0]}×{new_size[1]} for memory efficiency")
+            # TODO: Actually perform the downsampling here
+            # For now we just check, but the downsampling logic should be implemented
+
+        # Enforce memory limit AFTER potential downsampling
+        memory_processor.ensure_memory_limit("post_image_load")
 
         # Step 2: Extract splats using optimized extractor
         progress.update("Extracting splats")
-        extractor = OptimizedSplatExtractor(k=k, base_alpha=alpha)
+        extractor = OptimizedSplatExtractor(k=k, base_alpha=alpha, max_memory_mb=max_memory)
         extracted_splats = extractor.extract_splats(image, splats)
 
         if verbose:
@@ -260,6 +264,7 @@ def main(
             height=dimensions[0],  # height from (height, width) tuple
             parallax_strength=parallax_strength,
             interactive_top=interactive_top,
+            max_memory_mb=max_memory,
         )
 
         svg_content = generator.generate_svg(

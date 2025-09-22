@@ -32,12 +32,23 @@ class PerformanceProfiler:
                 end_time = time.time()
                 end_memory = self.process.memory_info().rss
 
+                # Get existing metrics or create new entry
+                existing = self.metrics.get(name, {
+                    'total_duration': 0.0,
+                    'total_memory_delta': 0,
+                    'peak_memory': start_memory,
+                    'calls': 0
+                })
+
+                # Accumulate timing and memory data
                 self.metrics[name] = {
-                    'duration': end_time - start_time,
-                    'memory_delta': end_memory - start_memory,
-                    'peak_memory': end_memory,
-                    'start_memory': start_memory,
-                    'calls': self.metrics.get(name, {}).get('calls', 0) + 1
+                    'duration': end_time - start_time,  # Last call duration
+                    'total_duration': existing['total_duration'] + (end_time - start_time),
+                    'memory_delta': end_memory - start_memory,  # Last call memory delta
+                    'total_memory_delta': existing['total_memory_delta'] + (end_memory - start_memory),
+                    'peak_memory': max(existing['peak_memory'], end_memory),
+                    'start_memory': start_memory,  # Last call start memory
+                    'calls': existing['calls'] + 1
                 }
                 return result
             return wrapper
@@ -149,9 +160,9 @@ class MemoryEfficientProcessor:
             new_width = int(width * scale_factor)
             new_height = int(height * scale_factor)
 
-            # Ensure minimum reasonable size
-            new_width = max(new_width, 400)
-            new_height = max(new_height, 300)
+            # Ensure minimum reasonable size, but never upscale any dimension
+            new_width = max(min(new_width, width), 400) if width >= 400 else new_width
+            new_height = max(min(new_height, height), 300) if height >= 300 else new_height
 
             return True, (new_width, new_height)
 
