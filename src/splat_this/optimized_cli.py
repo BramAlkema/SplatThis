@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 import click
+import numpy as np
 
 from .utils.image import load_image, validate_image_dimensions
 from .utils.profiler import global_profiler, MemoryEfficientProcessor, estimate_memory_usage
@@ -196,9 +197,17 @@ def main(
 
         if should_downsample:
             if verbose:
-                click.echo(f"🔧 Image will be downsampled to {new_size[0]}×{new_size[1]} for memory efficiency")
-            # TODO: Actually perform the downsampling here
-            # For now we just check, but the downsampling logic should be implemented
+                click.echo(f"🔧 Downsampling image from {dimensions[1]}×{dimensions[0]} to {new_size[0]}×{new_size[1]} for memory efficiency")
+
+            # Actually perform the downsampling
+            from skimage.transform import resize
+            # Resize expects (height, width) order
+            image = (resize(image, (new_size[1], new_size[0]), anti_aliasing=True) * 255).astype(np.uint8)
+            # Update dimensions to reflect the new size
+            dimensions = (new_size[1], new_size[0])  # (height, width)
+
+            if verbose:
+                click.echo(f"   ✅ Image downsampled successfully")
 
         # Enforce memory limit AFTER potential downsampling
         memory_processor.ensure_memory_limit("post_image_load")

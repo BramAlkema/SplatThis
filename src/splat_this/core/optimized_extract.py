@@ -39,10 +39,7 @@ class OptimizedSplatExtractor:
             f"Extracting {n_splats} splats from {width}×{height} image using optimized SLIC"
         )
 
-        # Check memory and potentially downsample
-        self.memory_processor.ensure_memory_limit("extract_splats_start")
-
-        # Check if we should downsample the image
+        # Check if we should downsample the image BEFORE enforcing memory limit
         should_downsample, new_size = self.memory_processor.should_downsample_image(
             (width, height), n_splats
         )
@@ -52,11 +49,21 @@ class OptimizedSplatExtractor:
             scale_y = new_size[1] / height
             logger.info(f"Downsampling image from {width}×{height} to {new_size[0]}×{new_size[1]} for memory efficiency")
 
-            # Use optimized downsampling
+            # Use optimized downsampling - this replaces the large image with a smaller one
             image = self._downsample_image(image, new_size)
-            width, height = new_size[0], new_size[1]
+            # Force garbage collection to free the original large image from memory
+            import gc
+            gc.collect()
+
+            # Update dimensions after downsampling
+            height, width = image.shape[:2]
+            logger.debug(f"Image downsampled to actual shape: {width}×{height}")
         else:
             scale_x = scale_y = 1.0
+
+        # Check memory AFTER potential downsampling
+        # At this point, the image has been downsampled if needed
+        self.memory_processor.ensure_memory_limit("extract_splats_after_downsample")
 
         # Perform optimized SLIC segmentation
         segments = self._optimized_slic(image, n_splats)
@@ -246,6 +253,9 @@ class OptimizedSplatExtractor:
 
             # Safe eigendecomposition
             eigenvalues, eigenvectors = safe_eigendecomposition(cov_matrix)
+
+            # Clamp eigenvalues to prevent negative values (numerical noise) causing NaN
+            eigenvalues = np.maximum(eigenvalues, 1e-6)  # Small positive minimum
 
             # Scale eigenvalues by k factor and ensure minimum size
             rx = max(1.0, np.sqrt(eigenvalues[0]) * self.k)
