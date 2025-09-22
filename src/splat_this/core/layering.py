@@ -258,7 +258,18 @@ class LayerAssigner:
     """Assign splats to depth layers based on importance scores."""
 
     def __init__(self, n_layers: int = 4):
+        if n_layers < 1:
+            raise ValueError(f"n_layers must be at least 1, got {n_layers}")
         self.n_layers = n_layers
+
+    def _calculate_depth_value(self, layer_idx: int) -> float:
+        """Calculate depth value for a layer index, handling n_layers=1 case."""
+        if self.n_layers == 1:
+            # When there's only one layer, use middle depth value
+            return 0.6  # midpoint between 0.2 and 1.0
+
+        # Normal case: interpolate between 0.2 (back) and 1.0 (front)
+        return 0.2 + (layer_idx / (self.n_layers - 1)) * 0.8
 
     def assign_layers(self, splats: List["Gaussian"]) -> Dict[int, List["Gaussian"]]:
         """Assign splats to depth layers based on scores."""
@@ -287,7 +298,7 @@ class LayerAssigner:
 
             # Assign depth values (0.2 for back layer, 1.0 for front layer)
             # Higher layer_idx = higher scores = front layers = higher depth values
-            depth_value = 0.2 + (layer_idx / (self.n_layers - 1)) * 0.8
+            depth_value = self._calculate_depth_value(layer_idx)
 
             for splat in layer_splats:
                 splat.depth = depth_value
@@ -323,7 +334,7 @@ class LayerAssigner:
             else:
                 stats[layer_idx] = {
                     'count': 0,
-                    'depth': 0.2 + (layer_idx / (self.n_layers - 1)) * 0.8,
+                    'depth': self._calculate_depth_value(layer_idx),
                     'score_range': (0, 0),
                     'avg_score': 0,
                     'area_range': (0, 0),
@@ -379,7 +390,7 @@ class LayerAssigner:
             layer_splats = all_splats[start_idx:end_idx]
 
             # Assign depth values
-            depth_value = 0.2 + (layer_idx / (self.n_layers - 1)) * 0.8
+            depth_value = self._calculate_depth_value(layer_idx)
 
             for splat in layer_splats:
                 splat.depth = depth_value
@@ -404,7 +415,7 @@ class LayerAssigner:
 
             # Check depth values are correctly assigned
             for layer_idx, layer_splats in layers.items():
-                expected_depth = 0.2 + (layer_idx / (self.n_layers - 1)) * 0.8
+                expected_depth = self._calculate_depth_value(layer_idx)
 
                 for splat in layer_splats:
                     if abs(splat.depth - expected_depth) > 1e-6:

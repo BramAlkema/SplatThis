@@ -4,7 +4,7 @@ import time
 import psutil
 import functools
 import gc
-from typing import Dict, Any, Callable, Optional
+from typing import Dict, Any, Callable, Optional, Tuple
 from pathlib import Path
 
 
@@ -133,7 +133,7 @@ class MemoryEfficientProcessor:
         total = base_memory + (image_memory * image_copies) + splat_memory + layer_memory + svg_memory
         return total
 
-    def should_downsample_image(self, image_size: tuple, target_splats: int) -> tuple[bool, tuple]:
+    def should_downsample_image(self, image_size: tuple, target_splats: int) -> Tuple[bool, tuple]:
         """Determine if image should be downsampled for memory efficiency."""
         width, height = image_size
         total_pixels = width * height
