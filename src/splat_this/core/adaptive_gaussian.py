@@ -217,7 +217,9 @@ class AdaptiveGaussian2D:
         """
         H, W = image_size
         max_eigenval = max(self.eigenvalues)
-        return 3.0 * np.sqrt(max_eigenval) * min(H, W)
+        # Use geometric mean instead of min to avoid bias toward smaller dimension
+        geometric_mean_dim = np.sqrt(H * W)
+        return 3.0 * np.sqrt(max_eigenval) * geometric_mean_dim
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -276,14 +278,26 @@ class AdaptiveGaussian2D:
             # Normalize position coordinates
             mu = np.array([gaussian.x / W, gaussian.y / H], dtype=np.float32)
 
-            # Convert radii to inverse scales (normalized)
-            inv_sx = W / (gaussian.rx * W) if gaussian.rx > 0 else 0.2
-            inv_sy = H / (gaussian.ry * H) if gaussian.ry > 0 else 0.2
+            # Convert pixel-space radii to normalized σ properly
+            # A Gaussian "radius" rx in pixels corresponds to a certain σ value
+            # We assume rx represents approximately 2σ in pixel space for visual consistency
+            sigma_scale_factor = 2.0  # rx ≈ 2σ in pixels
+
+            # Convert to normalized σ: σ_norm = (rx_pixels / sigma_scale_factor) / image_dimension
+            sigma_x_norm = max((gaussian.rx / sigma_scale_factor) / W, 1e-6) if gaussian.rx > 0 else 1e-3
+            sigma_y_norm = max((gaussian.ry / sigma_scale_factor) / H, 1e-6) if gaussian.ry > 0 else 1e-3
+
+            # Inverse scales are 1/σ
+            inv_sx = 1.0 / sigma_x_norm
+            inv_sy = 1.0 / sigma_y_norm
             inv_s = np.array([inv_sx, inv_sy], dtype=np.float32)
         else:
             # Use raw coordinates (assume already normalized)
             mu = np.array([gaussian.x, gaussian.y], dtype=np.float32)
-            inv_s = np.array([1.0/gaussian.rx, 1.0/gaussian.ry], dtype=np.float32)
+            # Guard against zeros
+            rx_safe = max(gaussian.rx, 1e-6) if gaussian.rx > 0 else 1e-3
+            ry_safe = max(gaussian.ry, 1e-6) if gaussian.ry > 0 else 1e-3
+            inv_s = np.array([1.0/rx_safe, 1.0/ry_safe], dtype=np.float32)
 
         return cls(
             mu=mu,
@@ -310,9 +324,16 @@ class AdaptiveGaussian2D:
         x = self.mu[0] * W
         y = self.mu[1] * H
 
-        # Convert inverse scales to radii
-        rx = 1.0 / (self.inv_s[0] * W) if self.inv_s[0] > 0 else 1.0
-        ry = 1.0 / (self.inv_s[1] * H) if self.inv_s[1] > 0 else 1.0
+        # Convert inverse scales back to pixel radii
+        # Reverse the conversion: σ_norm = 1/inv_s, rx_pixels = σ_norm * image_dimension * sigma_scale_factor
+        sigma_scale_factor = 2.0  # Must match the factor used in from_gaussian
+
+        # σ_norm = 1/inv_s, then rx = σ_norm * W * sigma_scale_factor
+        sigma_x_norm = 1.0 / self.inv_s[0] if self.inv_s[0] > 0 else 1e-3
+        sigma_y_norm = 1.0 / self.inv_s[1] if self.inv_s[1] > 0 else 1e-3
+
+        rx = sigma_x_norm * W * sigma_scale_factor
+        ry = sigma_y_norm * H * sigma_scale_factor
 
         # Convert color to 0-255 range
         r = int(np.clip(self.color[0] * 255, 0, 255))

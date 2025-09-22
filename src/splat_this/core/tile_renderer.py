@@ -143,32 +143,75 @@ class TileRenderer:
 
     def compute_3sigma_radius_px(self, gaussian: AdaptiveGaussian2D) -> float:
         """
-        Compute 3σ radius in pixels for spatial binning.
-
-        Args:
-            gaussian: Adaptive Gaussian instance
-
-        Returns:
-            Radius in pixels for tile assignment
+        Compute (and cache) a conservative pixel-space 3σ radius for the given Gaussian.
+        We transform covariance from normalised coords to pixel coords by scaling the eigenvectors
+        with (width, height) before measuring extent. We then take the oriented-bounding radius
+        as max(major_extent, minor_extent) to remain conservative for tiles.
         """
-        # Use cache for efficiency
-        cache_key = id(gaussian)
-        if cache_key in self._sigma_radius_cache:
-            return self._sigma_radius_cache[cache_key]
+        # Cache key keeps behaviour stable and dedupes repeated queries.
+        key = getattr(gaussian, "cache_key", None)
+        if key is None:
+            key = (id(gaussian), self.image_height, self.image_width, float(self.config.sigma_threshold))
 
-        # Compute from covariance eigenvalues
-        eigenvals = gaussian.eigenvalues
-        max_eigenval = max(eigenvals)
+        cached = self._sigma_radius_cache.get(key)
+        if cached is not None:
+            return cached
 
-        # 3σ radius in normalized coordinates
-        radius_normalized = self.config.sigma_threshold * np.sqrt(max_eigenval)
+        # Guard rails
+        height = int(max(0, self.image_height))
+        width = int(max(0, self.image_width))
+        if height == 0 or width == 0:
+            self._sigma_radius_cache[key] = 0.0
+            return 0.0
 
-        # Convert to pixels (use minimum dimension for conservative estimate)
-        radius_px = radius_normalized * min(self.image_height, self.image_width)
+        # Expected: gaussian.covariance_matrix is 2x2 in normalised image coords [0,1].
+        Sigma = np.asarray(gaussian.covariance_matrix, dtype=float)
+        # Defensive clamp to PSD-ish if tiny negatives creep in
+        Sigma = 0.5 * (Sigma + Sigma.T)
 
-        # Cache result
-        self._sigma_radius_cache[cache_key] = radius_px
+        try:
+            evals, evecs = np.linalg.eigh(Sigma)
+        except np.linalg.LinAlgError:
+            # Worst-case fallback: use geometric mean of dimensions for better aspect ratio handling
+            # This avoids the bias toward the smaller dimension that min(height, width) would cause
+            geometric_mean_dim = float(np.sqrt(height * width))
+            r = max(0.0, 3.0 * self.config.sigma_threshold * geometric_mean_dim)
+            self._sigma_radius_cache[key] = r
+            return r
 
+        # Ensure non-negative eigenvalues (numerical noise)
+        evals = np.maximum(evals, 0.0)
+
+        # Sort ascending -> last is principal
+        order = np.argsort(evals)
+        evals = evals[order]
+        evecs = evecs[:, order]
+
+        # Scale eigenvectors to pixel coordinates
+        S = np.array([width, height], dtype=float)
+
+        # For each axis i, pixel-space direction length
+        # std along axis i in normalised coords = sqrt(evals[i])
+        # pixel extent for 1σ along that axis = sqrt(evals[i]) * || S * v_i ||
+        extents_1sigma = []
+        for i in (0, 1):
+            v = evecs[:, i]
+            v_px = v * S  # element-wise scale: (vx*W, vy*H)
+            dir_len_px = float(np.sqrt(v_px[0] * v_px[0] + v_px[1] * v_px[1]))
+            sigma_i = float(np.sqrt(evals[i]))
+            extents_1sigma.append(sigma_i * dir_len_px)
+
+        # Conservative oriented-bounding radius = 3σ * max of axis extents
+        radius_px = 3.0 * max(extents_1sigma)
+
+        # Preserve sigma_threshold semantics: if a threshold scales 3σ, apply it multiplicatively
+        # (keeps previous call sites working the same way if they expected thresholds < 1 to cull)
+        radius_px *= float(self.config.sigma_threshold)
+
+        # Clamp to non-negative
+        radius_px = max(0.0, float(radius_px))
+
+        self._sigma_radius_cache[key] = radius_px
         return radius_px
 
     def assign_gaussians_to_tiles(self, gaussians: List[AdaptiveGaussian2D]) -> None:

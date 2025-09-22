@@ -5,6 +5,8 @@ import numpy as np
 from typing import List, Optional, Tuple
 from skimage.segmentation import slic
 from skimage.color import rgb2lab
+from skimage.filters import sobel_h, sobel_v
+from skimage.color import rgb2gray
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import psutil
 

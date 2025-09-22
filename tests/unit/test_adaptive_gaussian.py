@@ -315,6 +315,102 @@ class TestAdaptiveGaussian2D:
         assert gaussian.theta == pytest.approx(np.pi/6)
         assert gaussian.score == pytest.approx(0.7)
 
+    def test_pixel_space_conversion_roundtrip(self):
+        """Test round-trip conversion from Gaussian to AdaptiveGaussian2D and back."""
+        # Create original Gaussian with specific pixel values
+        original_gaussian = Gaussian(
+            x=120.5, y=75.3, rx=15.7, ry=8.2, theta=np.pi/3,
+            r=180, g=90, b=45, a=0.75, score=0.85
+        )
+
+        image_size = (150, 300)  # H, W
+
+        # Convert to AdaptiveGaussian2D
+        adaptive = AdaptiveGaussian2D.from_gaussian(original_gaussian, image_size)
+
+        # Convert back to Gaussian
+        recovered_gaussian = adaptive.to_gaussian(image_size)
+
+        # Check round-trip accuracy for all parameters
+        assert recovered_gaussian.x == pytest.approx(original_gaussian.x, rel=1e-6)
+        assert recovered_gaussian.y == pytest.approx(original_gaussian.y, rel=1e-6)
+        assert recovered_gaussian.rx == pytest.approx(original_gaussian.rx, rel=1e-6)
+        assert recovered_gaussian.ry == pytest.approx(original_gaussian.ry, rel=1e-6)
+        assert recovered_gaussian.theta == pytest.approx(original_gaussian.theta, rel=1e-6)
+        assert recovered_gaussian.r == original_gaussian.r
+        assert recovered_gaussian.g == original_gaussian.g
+        assert recovered_gaussian.b == original_gaussian.b
+        assert recovered_gaussian.a == pytest.approx(original_gaussian.a, rel=1e-6)
+        assert recovered_gaussian.score == pytest.approx(original_gaussian.score, rel=1e-6)
+
+    def test_normalized_sigma_conversion_with_zeros_guard(self):
+        """Test pixel-space to normalized σ conversion with zero protection."""
+        # Test with very small radii (close to zero, simulating the zero case)
+        very_small_gaussian = Gaussian(
+            x=50, y=100, rx=1e-10, ry=1e-10, theta=0,
+            r=255, g=128, b=64, a=1.0, score=0.5
+        )
+
+        image_size = (200, 400)  # H, W
+        adaptive = AdaptiveGaussian2D.from_gaussian(very_small_gaussian, image_size)
+
+        # Should have valid non-zero inverse scales protected by minimum values
+        assert adaptive.inv_s[0] > 0
+        assert adaptive.inv_s[1] > 0
+        assert np.isfinite(adaptive.inv_s[0])
+        assert np.isfinite(adaptive.inv_s[1])
+
+        # The minimum protection should kick in
+        # sigma_x_norm = max(1e-10 / 400, 1e-6) = 1e-6
+        # sigma_y_norm = max(1e-10 / 200, 1e-6) = 1e-6
+        expected_inv_sx = 1.0 / 1e-6  # 1e6
+        expected_inv_sy = 1.0 / 1e-6  # 1e6
+
+        assert adaptive.inv_s[0] == pytest.approx(expected_inv_sx, rel=1e-3)
+        assert adaptive.inv_s[1] == pytest.approx(expected_inv_sy, rel=1e-3)
+
+        # Should convert back to valid radii
+        recovered = adaptive.to_gaussian(image_size)
+        assert recovered.rx > 0
+        assert recovered.ry > 0
+        assert np.isfinite(recovered.rx)
+        assert np.isfinite(recovered.ry)
+
+    def test_normalized_sigma_conversion_small_values(self):
+        """Test conversion with very small pixel radii."""
+        # Test with tiny radii
+        small_radius_gaussian = Gaussian(
+            x=50, y=100, rx=0.001, ry=0.002, theta=np.pi/4,
+            r=100, g=200, b=150, a=0.8, score=0.3
+        )
+
+        image_size = (1000, 2000)  # Large image
+        adaptive = AdaptiveGaussian2D.from_gaussian(small_radius_gaussian, image_size)
+
+        # Should handle small normalized σ values correctly
+        # sigma_x_norm = 0.001 / 2000 = 0.0000005
+        # sigma_y_norm = 0.002 / 1000 = 0.000002
+        # But should be clamped to minimum value (1e-6)
+
+        expected_sigma_x_norm = max(0.001 / 2000, 1e-6)
+        expected_sigma_y_norm = max(0.002 / 1000, 1e-6)
+        expected_inv_sx = 1.0 / expected_sigma_x_norm
+        expected_inv_sy = 1.0 / expected_sigma_y_norm
+
+        assert adaptive.inv_s[0] == pytest.approx(expected_inv_sx, rel=1e-3)
+        assert adaptive.inv_s[1] == pytest.approx(expected_inv_sy, rel=1e-3)
+
+        # Round-trip should recover at least the minimum protected values
+        # Due to clamping, we might not get exactly the original tiny values back
+        recovered = adaptive.to_gaussian(image_size)
+
+        # The recovered values should be at least as large as the minimum protected values
+        min_rx_expected = 2000 / 1e6  # W / (1/1e-6) = W * 1e-6 = 2000 * 1e-6 = 0.002
+        min_ry_expected = 1000 / 1e6  # H / (1/1e-6) = H * 1e-6 = 1000 * 1e-6 = 0.001
+
+        assert recovered.rx >= min_rx_expected * 0.9  # Allow small numerical tolerance
+        assert recovered.ry >= min_ry_expected * 0.9
+
     def test_copy_method(self):
         """Test deep copying."""
         original = AdaptiveGaussian2D(

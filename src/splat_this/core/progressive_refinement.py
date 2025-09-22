@@ -420,7 +420,11 @@ class ProgressiveRefiner:
                 splat_x = int(splat.mu[0] * W)
 
                 # Calculate splat radius in pixels (approximate)
-                splat_radius = int(np.mean(1.0 / splat.inv_s) * min(H, W))
+                # Use proper aspect ratio handling instead of min(H, W)
+                mean_inv_s = np.mean(1.0 / splat.inv_s)
+                # Scale by geometric mean to handle non-square images properly
+                geometric_mean_dim = np.sqrt(H * W)
+                splat_radius = int(mean_inv_s * geometric_mean_dim)
 
                 # Check if splat overlaps with error region
                 if (x1 - splat_radius <= splat_x <= x2 + splat_radius and
@@ -585,48 +589,120 @@ class ProgressiveRefiner:
         return alpha_change > 1e-6
 
     def _refine_anisotropy(self, splat: AdaptiveGaussian2D, region: ErrorRegion, error_map: np.ndarray) -> bool:
-        """Refine splat anisotropy based on local content analysis."""
+        """Refine splat anisotropy using structure tensor analysis for proper orientation."""
         if not self.config.content_analysis_enabled:
             return False
 
-        # Analyze local gradient direction in the error region
+        # Analyze local structure in the error region using structure tensor
         y1, x1, y2, x2 = region.bbox
-        if y2 - y1 < 3 or x2 - x1 < 3:
+        if y2 - y1 < 5 or x2 - x1 < 5:
             return False
 
-        # Calculate gradient in region (simplified)
-        region_error = error_map[y1:y2, x1:x2]
-        grad_y = np.gradient(region_error, axis=0)
-        grad_x = np.gradient(region_error, axis=1)
+        # Extract error patch for structure tensor analysis
+        region_error = error_map[y1:y2, x1:x2].astype(np.float32)
 
-        # Dominant gradient direction
-        avg_grad_y = np.mean(grad_y)
-        avg_grad_x = np.mean(grad_x)
-        grad_magnitude = np.sqrt(avg_grad_y**2 + avg_grad_x**2)
+        try:
+            # Compute structure tensor for the error region
+            J = self._compute_structure_tensor(region_error)
 
-        if grad_magnitude < 0.1:  # No significant gradient
+            # Eigendecomposition to get principal directions and magnitudes
+            evals, evecs = np.linalg.eigh(J)
+
+            # Sort eigenvalues in ascending order (weaker -> stronger structure)
+            order = np.argsort(evals)
+            evals_sorted = evals[order]
+            evecs_sorted = evecs[:, order]
+
+            # Check if there's significant anisotropic structure
+            if evals_sorted[1] < 1e-6:  # No significant structure
+                return False
+
+            # Ratio of eigenvalues indicates anisotropy strength
+            anisotropy_ratio = evals_sorted[1] / max(evals_sorted[0], 1e-6)
+
+            if anisotropy_ratio < 1.5:  # Not enough anisotropy to justify orientation
+                return False
+
+            old_inv_s = splat.inv_s.copy()
+            old_theta = splat.theta
+
+            # Get principal direction (strongest structure direction)
+            principal_vec = evecs_sorted[:, -1]  # Eigenvector of largest eigenvalue
+
+            # Compute orientation angle from principal eigenvector
+            theta_new = np.arctan2(principal_vec[1], principal_vec[0])
+            if theta_new < 0:
+                theta_new += np.pi
+
+            # Update splat orientation
+            splat.theta = theta_new
+
+            # Map eigenvalues to inverse scale parameters
+            # Stronger structure (higher eigenvalue) -> smaller radius in that direction
+            eps = 1e-6
+            scale_factor = 0.5  # Controls sensitivity to structure
+
+            # Inverse scaling: stronger structure -> higher inv_s (smaller radius)
+            inv_s_major = 1.0 + scale_factor * np.sqrt(max(evals_sorted[1], eps))
+            inv_s_minor = 1.0 + scale_factor * np.sqrt(max(evals_sorted[0], eps))
+
+            # Apply structure-based scaling while preserving relative magnitudes
+            current_mean_inv_s = np.mean(splat.inv_s)
+            structure_ratio = inv_s_major / max(inv_s_minor, eps)
+
+            # Limit anisotropy ratio to reasonable bounds
+            structure_ratio = np.clip(structure_ratio, 1.0, 3.0)
+
+            # Update inverse scales based on structure tensor
+            splat.inv_s[0] = current_mean_inv_s * structure_ratio  # Along major axis
+            splat.inv_s[1] = current_mean_inv_s  # Along minor axis
+
+            # Ensure constraints
+            splat.clip_parameters()
+
+            # Check if significant change was made
+            inv_s_change = np.linalg.norm(splat.inv_s - old_inv_s)
+            theta_change = abs(splat.theta - old_theta)
+
+            if inv_s_change > 1e-6 or theta_change > 1e-3:
+                logger.debug(f"Structure tensor refinement: θ={np.degrees(theta_new):.1f}°, "
+                           f"anisotropy_ratio={structure_ratio:.2f}, "
+                           f"eigenvalue_ratio={anisotropy_ratio:.2f}")
+                return True
+
+        except (np.linalg.LinAlgError, ValueError) as e:
+            logger.debug(f"Structure tensor computation failed: {e}")
             return False
 
-        # Adjust anisotropy based on gradient direction
-        grad_angle = np.arctan2(avg_grad_y, avg_grad_x)
+        return False
 
-        old_inv_s = splat.inv_s.copy()
-        old_theta = splat.theta
+    def _compute_structure_tensor(self, image_patch: np.ndarray) -> np.ndarray:
+        """Compute structure tensor for a local image patch."""
+        # Compute gradients using Sobel operators
+        if image_patch.shape[0] < 3 or image_patch.shape[1] < 3:
+            # Fallback for very small patches
+            return np.eye(2) * 1e-6
 
-        # Align splat with gradient direction
-        splat.theta = grad_angle % np.pi
+        # Simple finite differences for gradient computation
+        Gx = 0.5 * (image_patch[:, 2:] - image_patch[:, :-2])
+        Gy = 0.5 * (image_patch[2:, :] - image_patch[:-2, :])
 
-        # Adjust anisotropy ratio based on gradient strength
-        anisotropy_factor = min(1.0 + grad_magnitude, 2.0)
-        splat.inv_s[0] *= anisotropy_factor  # Make more elliptical
+        # Align shapes by cropping to common region
+        h = min(Gx.shape[0], Gy.shape[0])
+        w = min(Gx.shape[1], Gy.shape[1])
+        Gx = Gx[:h, :w]
+        Gy = Gy[:h, :w]
 
-        # Ensure constraints
-        splat.clip_parameters()
+        # Compute structure tensor elements
+        Jxx = np.mean(Gx * Gx)
+        Jxy = np.mean(Gx * Gy)
+        Jyy = np.mean(Gy * Gy)
 
-        # Check if significant change was made
-        inv_s_change = np.linalg.norm(splat.inv_s - old_inv_s)
-        theta_change = abs(splat.theta - old_theta)
-        return inv_s_change > 1e-6 or theta_change > 1e-6
+        # Construct structure tensor matrix
+        J = np.array([[Jxx, Jxy],
+                      [Jxy, Jyy]], dtype=np.float64)
+
+        return J
 
     def _apply_sgd_optimization(self,
                               splats: List[AdaptiveGaussian2D],

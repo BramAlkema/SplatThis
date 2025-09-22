@@ -18,6 +18,7 @@ from skimage.measure import regionprops
 from scipy.optimize import minimize
 from scipy.ndimage import binary_dilation, maximum_filter
 import math
+from math import atan2, pi
 
 
 def peak_local_maxima(image: np.ndarray, min_distance: int = 1,
@@ -36,6 +37,67 @@ def peak_local_maxima(image: np.ndarray, min_distance: int = 1,
 
     # Return coordinates as tuple of arrays (row, col)
     return np.where(peaks)
+
+
+def _structure_tensor(image_f32, cx, cy, radius_px):
+    """
+    Lightweight local structure tensor around (cx, cy).
+    image_f32: HxW or HxW (luma). radius_px: int window radius.
+    Returns J (2x2) averaged over the window.
+    """
+    H, W = image_f32.shape[:2]
+    r = int(max(1, radius_px))
+    x0, x1 = max(1, cx - r), min(W - 2, cx + r)
+    y0, y1 = max(1, cy - r), min(H - 2, cy + r)
+
+    patch = image_f32[y0:y1+1, x0:x1+1]
+
+    # Simple Sobel-ish finite diffs (no external deps)
+    Gx = 0.5 * (patch[:, 2:] - patch[:, :-2])
+    Gy = 0.5 * (patch[2:, :] - patch[:-2, :])
+
+    # Align shapes by cropping to common region
+    h = min(Gx.shape[0], Gy.shape[0])
+    w = min(Gx.shape[1], Gy.shape[1])
+    Gx = Gx[:h, :w]
+    Gy = Gy[:h, :w]
+
+    Jxx = np.mean(Gx * Gx)
+    Jxy = np.mean(Gx * Gy)
+    Jyy = np.mean(Gy * Gy)
+    J = np.array([[Jxx, Jxy],
+                  [Jxy, Jyy]], dtype=float)
+    return J
+
+
+def _map_eigs_to_radii(evals, cfg, epsilon=1e-12):
+    """
+    Map structure-tensor eigenvalues (larger -> stronger edge) to splat radii.
+    We invert a scaled sqrt to grow blobs in flat regions and shrink across strong edges.
+    Then clamp to [min_scale, max_scale].
+    """
+    # Heuristic scale: stronger gradients => smaller radii
+    s = 1.0 / (np.sqrt(np.maximum(evals, 0.0)) + epsilon)
+    # Normalise relative to median to avoid extremes
+    s /= (np.median(s) + epsilon)
+    # Map to radii with midpoint ~ geometric mean
+    r = s
+    r = np.clip(r, cfg.min_scale, cfg.max_scale)
+    # Return rx (major along weaker gradient), ry (minor along stronger)
+    # Note: eigenvalues sorted ascending -> last is strongest structure => smallest radius
+    order = np.argsort(evals)  # ascending
+    # weakest -> largest radius (rx), strongest -> smallest radius (ry)
+    rx = float(r[order[0]])
+    ry = float(r[order[-1]])
+    return rx, ry
+
+
+def _angle_from_vec(vx, vy):
+    # Orientation in [0, π)
+    theta = atan2(vy, vx)
+    if theta < 0.0:
+        theta += pi
+    return theta
 
 from .extract import Gaussian
 from ..utils.math import safe_eigendecomposition, clamp_value
@@ -782,6 +844,10 @@ class AdaptiveSplatExtractor:
     def _log_scale_statistics(self, splats: List[Gaussian]) -> None:
         """Log statistics about splat scale distribution."""
 
+        if not splats:
+            logger.info("No splats generated - cannot compute scale statistics")
+            return
+
         scales = [(s.rx + s.ry) / 2 for s in splats]
 
         logger.info(f"Splat scale statistics:")
@@ -805,7 +871,10 @@ class AdaptiveSplatExtractor:
         positions: List[Tuple[int, int]],
         verbose: bool = False
     ) -> List[Gaussian]:
-        """Create new splats at specified positions with adaptive sizing.
+        """Create new splats at specified positions with local covariance estimation.
+
+        This enhanced version estimates local covariance from image gradients to create
+        oriented elliptical splats that better fit the underlying image structure.
 
         Args:
             image: Input image (H, W, 3)
@@ -813,7 +882,7 @@ class AdaptiveSplatExtractor:
             verbose: Enable detailed logging
 
         Returns:
-            List of new Gaussian splats
+            List of new Gaussian splats with proper orientation and aspect ratios
         """
         splats = []
         height, width = image.shape[:2]
@@ -825,8 +894,8 @@ class AdaptiveSplatExtractor:
                     logger.warning(f"Position ({y}, {x}) is outside image bounds, skipping")
                 continue
 
-            # Extract local image patch for color and scale estimation
-            patch_size = 3
+            # Extract larger local patch for covariance estimation
+            patch_size = 7  # Increased patch size for better covariance estimation
             y_start = max(0, y - patch_size // 2)
             y_end = min(height, y + patch_size // 2 + 1)
             x_start = max(0, x - patch_size // 2)
@@ -836,25 +905,29 @@ class AdaptiveSplatExtractor:
                 local_patch = image[y_start:y_end, x_start:x_end, :]
                 # Use mean color of local patch
                 color = np.mean(local_patch.reshape(-1, 3), axis=0)
+                # Convert to grayscale for gradient computation
+                gray_patch = np.mean(local_patch, axis=2)
             else:
                 local_patch = image[y_start:y_end, x_start:x_end]
+                gray_patch = local_patch
                 # Convert grayscale to RGB
                 mean_intensity = np.mean(local_patch)
                 color = np.array([mean_intensity, mean_intensity, mean_intensity])
 
-            # Adaptive scale based on local variance
-            local_variance = np.var(local_patch)
-            # Scale between min_scale and max_scale based on variance
-            variance_factor = np.clip(local_variance / 0.1, 0.0, 1.0)  # Normalize variance
-            scale = self.config.min_scale + variance_factor * (self.config.max_scale - self.config.min_scale)
+            # Estimate local covariance from image gradients
+            rx, ry, theta = self._estimate_local_covariance(gray_patch, verbose)
 
-            # Create Gaussian splat
+            # Respect AdaptiveSplatConfig scale limits
+            rx = np.clip(rx, self.config.min_scale, self.config.max_scale)
+            ry = np.clip(ry, self.config.min_scale, self.config.max_scale)
+
+            # Create oriented Gaussian splat
             splat = Gaussian(
                 x=float(x),
                 y=float(y),
-                rx=scale,
-                ry=scale,
-                theta=0.0,
+                rx=rx,
+                ry=ry,
+                theta=theta,
                 r=int(np.clip(color[0] * 255, 0, 255)),
                 g=int(np.clip(color[1] * 255, 0, 255)),
                 b=int(np.clip(color[2] * 255, 0, 255)),
@@ -864,10 +937,191 @@ class AdaptiveSplatExtractor:
             splats.append(splat)
 
         if verbose and splats:
-            scales = [(s.rx + s.ry) / 2 for s in splats]
-            logger.info(f"Created {len(splats)} splats with scale range: {min(scales):.1f}-{max(scales):.1f}")
+            rx_values = [s.rx for s in splats]
+            ry_values = [s.ry for s in splats]
+            theta_values = [np.degrees(s.theta) for s in splats]
+            logger.info(f"Created {len(splats)} oriented splats:")
+            logger.info(f"  rx range: {min(rx_values):.1f}-{max(rx_values):.1f}")
+            logger.info(f"  ry range: {min(ry_values):.1f}-{max(ry_values):.1f}")
+            logger.info(f"  theta range: {min(theta_values):.1f}°-{max(theta_values):.1f}°")
 
         return splats
+
+    def _estimate_local_covariance(
+        self,
+        gray_patch: np.ndarray,
+        verbose: bool = False
+    ) -> Tuple[float, float, float]:
+        """Estimate local covariance structure using enhanced structure tensor analysis.
+
+        This enhanced method uses structure tensor analysis to determine optimal
+        orientation and aspect ratio for elliptical splats with better edge detection.
+
+        Args:
+            gray_patch: Local grayscale image patch (H, W)
+            verbose: Enable detailed logging
+
+        Returns:
+            Tuple of (rx, ry, theta) where:
+            - rx, ry are the semi-axes lengths respecting config limits
+            - theta is the rotation angle in radians
+        """
+        patch_height, patch_width = gray_patch.shape
+
+        # Handle edge case of very small patches
+        if patch_height < 5 or patch_width < 5:
+            # Fallback to circular splat with default scale
+            default_scale = (self.config.min_scale + self.config.max_scale) / 2
+            return default_scale, default_scale, 0.0
+
+        # Use enhanced structure tensor analysis for better orientation detection
+        try:
+            # Convert to float32 for structure tensor computation
+            image_f32 = gray_patch.astype(np.float32)
+
+            # Get patch center coordinates
+            center_y, center_x = patch_height // 2, patch_width // 2
+            radius_px = min(patch_height, patch_width) // 3  # Use smaller radius for more local analysis
+
+            # Compute structure tensor at patch center
+            J = _structure_tensor(image_f32, center_x, center_y, radius_px)
+
+            # Eigendecomposition of structure tensor
+            try:
+                evals, evecs = np.linalg.eigh(J)
+
+                # Sort eigenvalues in ascending order (weakest -> strongest structure)
+                order = np.argsort(evals)
+                evals_sorted = evals[order]
+                evecs_sorted = evecs[:, order]
+
+                # Map eigenvalues to radii using the helper function
+                rx, ry = _map_eigs_to_radii(evals_sorted, self.config)
+
+                # Get orientation from principal eigenvector (strongest structure)
+                # The principal axis aligns with the strongest gradient direction
+                principal_vec = evecs_sorted[:, -1]  # Last eigenvector (strongest)
+                theta = _angle_from_vec(principal_vec[0], principal_vec[1])
+
+                # Structure tensor analysis success
+                if verbose:
+                    logger.debug(f"Structure tensor analysis: rx={rx:.2f}, ry={ry:.2f}, θ={np.degrees(theta):.1f}°")
+
+                return float(rx), float(ry), float(theta)
+
+            except np.linalg.LinAlgError:
+                # Structure tensor eigendecomposition failed, fallback to gradient-based method
+                if verbose:
+                    logger.debug("Structure tensor eigendecomposition failed, using gradient fallback")
+                pass
+
+        except Exception as e:
+            if verbose:
+                logger.debug(f"Structure tensor analysis failed: {e}, using gradient fallback")
+
+        # Fallback to gradient-based covariance estimation
+        # Compute gradients using Sobel operators for robustness
+        try:
+            from scipy.ndimage import sobel
+            gx = sobel(gray_patch, axis=1)  # Gradient in x direction
+            gy = sobel(gray_patch, axis=0)  # Gradient in y direction
+        except ImportError:
+            # Fallback to numpy gradient if scipy not available
+            gy, gx = np.gradient(gray_patch.astype(np.float64))
+
+        # Create coordinate arrays relative to patch center
+        center_y, center_x = patch_height // 2, patch_width // 2
+        y_coords, x_coords = np.mgrid[:patch_height, :patch_width]
+        y_rel = y_coords - center_y
+        x_rel = x_coords - center_x
+
+        # Compute weighted covariance matrix using gradient magnitude as weights
+        gradient_magnitude = np.sqrt(gx**2 + gy**2)
+
+        # Add small epsilon to avoid division by zero
+        epsilon = 1e-6
+        weights = gradient_magnitude + epsilon
+
+        # Normalize weights
+        total_weight = np.sum(weights)
+        if total_weight > 0:
+            weights = weights / total_weight
+        else:
+            # Uniform weights fallback
+            weights = np.ones_like(weights) / weights.size
+
+        # Compute weighted covariance matrix elements
+        # Cov = E[(X - μ)(X - μ)^T] where X = [x_rel, y_rel]
+        weighted_x = np.sum(weights * x_rel)
+        weighted_y = np.sum(weights * y_rel)
+
+        # Center the coordinates
+        x_centered = x_rel - weighted_x
+        y_centered = y_rel - weighted_y
+
+        # Compute covariance matrix elements
+        cov_xx = np.sum(weights * x_centered * x_centered)
+        cov_yy = np.sum(weights * y_centered * y_centered)
+        cov_xy = np.sum(weights * x_centered * y_centered)
+
+        # Construct covariance matrix
+        cov_matrix = np.array([[cov_xx, cov_xy], [cov_xy, cov_yy]])
+
+        try:
+            # Perform eigendecomposition to get principal axes
+            from ..utils.math import safe_eigendecomposition
+            eigenvalues, eigenvectors = safe_eigendecomposition(cov_matrix)
+
+            if eigenvalues is None:
+                raise ValueError("Eigendecomposition failed")
+
+            # Clamp eigenvalues to prevent negative values (numerical noise)
+            eigenvalues = np.maximum(eigenvalues, 1e-6)
+
+            # Convert eigenvalues to radii with scaling factor
+            # Use square root and apply a scaling factor for visual appeal
+            scale_factor = 3.0  # Adjust this to control splat size relative to local structure
+            rx_raw = scale_factor * np.sqrt(eigenvalues[0])
+            ry_raw = scale_factor * np.sqrt(eigenvalues[1])
+
+            # Ensure rx >= ry by convention (major axis first)
+            if rx_raw < ry_raw:
+                rx_raw, ry_raw = ry_raw, rx_raw
+                # Swap eigenvectors accordingly
+                eigenvectors = eigenvectors[:, [1, 0]]
+
+            # Apply config limits with proper scaling
+            scale_range = self.config.max_scale - self.config.min_scale
+            if scale_range > 0:
+                # Map to config range while preserving aspect ratio
+                max_raw = max(rx_raw, ry_raw)
+                if max_raw > 0:
+                    scale_ratio = min(self.config.max_scale / max_raw, 1.0)
+                    rx = max(self.config.min_scale, rx_raw * scale_ratio)
+                    ry = max(self.config.min_scale, ry_raw * scale_ratio)
+                else:
+                    rx = ry = self.config.min_scale
+            else:
+                rx = ry = self.config.min_scale
+
+            # Compute rotation angle from principal eigenvector (largest eigenvalue)
+            principal_eigenvector = eigenvectors[:, 0]  # First column = largest eigenvalue
+            theta = float(np.arctan2(principal_eigenvector[1], principal_eigenvector[0]))
+
+        except (np.linalg.LinAlgError, ValueError):
+            # Fallback to circular splat on numerical issues
+            if verbose:
+                logger.debug("Gradient-based eigendecomposition failed, using circular splat")
+
+            # Use local variance as scale indicator
+            local_variance = np.var(gray_patch)
+            variance_factor = np.clip(local_variance / 0.1, 0.0, 1.0)
+            scale_range = self.config.max_scale - self.config.min_scale
+            scale = self.config.min_scale + variance_factor * scale_range
+            rx = ry = scale
+            theta = 0.0
+
+        return rx, ry, theta
 
     def _render_splats_to_image(
         self,
