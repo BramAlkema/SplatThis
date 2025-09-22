@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
-from splat_this.core.extract import Gaussian
+from splat_this.core.extract import Gaussian, SplatExtractor
 from splat_this.core.optimized_extract import OptimizedSplatExtractor, BatchSplatExtractor
 from splat_this.core.optimized_layering import OptimizedImportanceScorer, ParallelQualityController
 from splat_this.core.optimized_svgout import OptimizedSVGGenerator
@@ -154,6 +154,50 @@ class TestOptimizedSplatExtractor:
         # This should trigger parallel processing due to many segments
         splats = extractor.extract_splats(self.test_image, 50)
         assert isinstance(splats, list)
+
+    def test_segment_to_gaussian_rotated_segment_theta(self):
+        """Ensure rotated segments produce non-zero theta matching baseline extractor."""
+        extractor = OptimizedSplatExtractor()
+        baseline_extractor = SplatExtractor()
+
+        size = 40
+        image = np.zeros((size, size, 3), dtype=np.uint8)
+
+        y_indices, x_indices = np.meshgrid(
+            np.arange(size), np.arange(size), indexing="ij"
+        )
+        center = (size - 1) / 2.0
+        angle = np.pi / 4
+        cos_a = np.cos(angle)
+        sin_a = np.sin(angle)
+
+        x_shift = x_indices - center
+        y_shift = y_indices - center
+
+        # Rotate coordinates to build an ellipse tilted at 45 degrees
+        x_rot = x_shift * cos_a + y_shift * sin_a
+        y_rot = -x_shift * sin_a + y_shift * cos_a
+        mask = (x_rot**2 / 36) + (y_rot**2 / 9) <= 1
+
+        optimized_gaussian = extractor._segment_to_gaussian_optimized(image, mask, 1)
+        baseline_gaussian = baseline_extractor._segment_to_gaussian(image, mask, 1)
+
+        assert optimized_gaussian is not None
+        assert baseline_gaussian is not None
+
+        # The optimized path should capture the same principal orientation as the baseline
+        optimized_axis = np.array(
+            [np.cos(optimized_gaussian.theta), np.sin(optimized_gaussian.theta)]
+        )
+        baseline_axis = np.array(
+            [np.cos(baseline_gaussian.theta), np.sin(baseline_gaussian.theta)]
+        )
+
+        if np.dot(optimized_axis, baseline_axis) < 0:
+            baseline_axis = -baseline_axis
+
+        assert np.allclose(optimized_axis, baseline_axis, atol=1e-5)
+        assert not np.isclose(abs(optimized_gaussian.theta), 0.0)
 
 
 class TestOptimizedImportanceScorer:
