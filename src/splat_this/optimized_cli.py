@@ -181,19 +181,19 @@ def main(
         # Step 1: Load and validate image
         progress.update("Loading image")
         image, dimensions = load_image(input_file, frame=frame)
-        validate_image_dimensions(dimensions)
+        validate_image_dimensions(image)  # Pass the image array, not the dimensions tuple
 
         if verbose:
             click.echo(f"📷 Loading image:")
             click.echo(f"   File: {input_file}")
-            click.echo(f"   Dimensions: {dimensions[0]}×{dimensions[1]}")
+            click.echo(f"   Dimensions: {dimensions[1]}×{dimensions[0]}")  # (width x height) from (height, width)
             click.echo(f"   Frame: {frame}")
 
         memory_processor.ensure_memory_limit("post_image_load")
 
         # Check if image should be downsampled
         should_downsample, new_size = memory_processor.should_downsample_image(
-            (dimensions[0], dimensions[1]), splats
+            (dimensions[1], dimensions[0]), splats  # Pass (width, height) from (height, width)
         )
 
         if should_downsample and verbose:
@@ -256,8 +256,8 @@ def main(
         # Step 6: Generate optimized SVG
         progress.update("Generating SVG")
         generator = OptimizedSVGGenerator(
-            width=dimensions[0],
-            height=dimensions[1],
+            width=dimensions[1],   # width from (height, width) tuple
+            height=dimensions[0],  # height from (height, width) tuple
             parallax_strength=parallax_strength,
             interactive_top=interactive_top,
         )
