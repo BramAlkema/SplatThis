@@ -1,10 +1,13 @@
 """Tests for Gaussian splat extraction functionality."""
 
-import pytest
-import numpy as np
+import math
 from unittest.mock import patch
 
+import numpy as np
+import pytest
+
 from splat_this.core.extract import Gaussian, SplatExtractor
+from splat_this.core.svgout import SVGGenerator
 
 
 class TestGaussian:
@@ -227,6 +230,49 @@ class TestSplatExtractor:
         assert 0 <= splat.g <= 255
         assert 0 <= splat.b <= 255
         assert 0.0 <= splat.a <= 1.0
+
+    def test_segment_to_gaussian_rotated_segment_generates_rotation(self):
+        """Ensure rotated segments produce matching Gaussian rotation and SVG output."""
+        width = height = 120
+        image = np.full((height, width, 3), fill_value=180, dtype=np.uint8)
+
+        angle_deg = 30.0
+        angle_rad = math.radians(angle_deg)
+        cos_a = math.cos(angle_rad)
+        sin_a = math.sin(angle_rad)
+        cx = cy = 60
+        major_axis = 25
+        minor_axis = 8
+
+        y_indices, x_indices = np.mgrid[0:height, 0:width]
+        x_shifted = x_indices - cx
+        y_shifted = y_indices - cy
+
+        # Rotate coordinates to describe an ellipse with the desired orientation
+        x_prime = x_shifted * cos_a + y_shifted * sin_a
+        y_prime = -x_shifted * sin_a + y_shifted * cos_a
+        mask = (x_prime / major_axis) ** 2 + (y_prime / minor_axis) ** 2 <= 1
+
+        extractor = SplatExtractor()
+        splat = extractor._segment_to_gaussian(image, mask, segment_id=5)
+
+        assert splat is not None
+
+        normalized_theta = splat.theta % np.pi
+        normalized_expected = angle_rad % np.pi
+        assert normalized_theta == pytest.approx(normalized_expected, abs=0.05)
+
+        generator = SVGGenerator(width=width, height=height, precision=3)
+        element = generator._generate_splat_element(splat, gaussian_mode=False)
+
+        rotation_deg = generator._format_number(math.degrees(splat.theta))
+        cx_formatted = generator._format_number(splat.x)
+        cy_formatted = generator._format_number(splat.y)
+
+        assert 'transform="rotate(' in element
+        assert (
+            f'rotate({rotation_deg} {cx_formatted} {cy_formatted})' in element
+        )
 
     def test_segment_to_gaussian_empty_mask(self):
         """Test segment_to_gaussian with empty mask."""
