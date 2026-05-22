@@ -1,108 +1,155 @@
-"""Optimization utilities for Gaussian splats."""
+"""Splat parameter container + Adam optimizer with real per-group learning rates.
+
+This module replaces the older SplatOptimizer-on-a-monolithic-tensor design,
+whose "per-group learning rates" were a post-Adam delta rescaling. With Adam's
+m_hat/sqrt(v_hat) normalization, a constant per-slice gradient or delta scale
+ends up indistinguishable from the base LR -- so the old knobs were no-ops.
+
+Here each parameter group is a separate `nn.Parameter` and Adam is built with
+proper `param_groups`, so per-group learning rates have their textbook meaning.
+
+Parameter layout of the [N, 11] tensor consumed by the renderer:
+    [0:2]=position, [2:4]=scale, [4]=theta, [5]=reserved(0),
+    [6:9]=color, [9]=alpha, [10]=importance.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from typing import Dict, Optional
 
 import torch
-from typing import List, Dict, Any
-import logging
+import torch.nn as nn
 
 logger = logging.getLogger(__name__)
 
 
-class SplatOptimizer:
+DEFAULT_LEARNING_RATES: Dict[str, float] = {
+    "position": 0.0075,
+    "scale": 0.0055,
+    "theta": 0.0055,
+    "color": 0.016,
+    "alpha": 0.01,
+}
+
+
+class SplatParams(nn.Module):
+    """Holds the trainable splat parameters as five independent nn.Parameters
+    so `torch.optim.Adam` can drive each group with a real learning rate.
+
+    `importance` is kept as a frozen buffer; it isn't optimized in this phase.
     """
-    Advanced optimizer for Gaussian splats.
 
-    Wraps Adam optimizer while applying parameter-group learning rates by
-    scaling gradients per parameter slice on each step.
-    """
+    def __init__(self, initial: torch.Tensor):
+        super().__init__()
+        if initial.dim() != 2 or initial.shape[1] != 11:
+            raise ValueError(f"initial must be [N, 11], got {tuple(initial.shape)}")
+        data = initial.detach().clone()
+        # Each group is a distinct leaf Parameter -> Adam tracks its own state.
+        self.position = nn.Parameter(data[:, 0:2].contiguous())
+        self.scale = nn.Parameter(data[:, 2:4].contiguous())
+        self.theta = nn.Parameter(data[:, 4].contiguous())
+        self.color = nn.Parameter(data[:, 6:9].contiguous())
+        self.alpha = nn.Parameter(data[:, 9].contiguous())
+        # Frozen rows (no grad).
+        self.register_buffer("importance", data[:, 10].contiguous())
 
-    def __init__(self, learning_rates: Dict[str, float] = None):
+    @property
+    def num_splats(self) -> int:
+        return int(self.position.shape[0])
+
+    def as_tensor(self) -> torch.Tensor:
+        """Reassemble the [N, 11] tensor the renderer expects.
+
+        Differentiable -- gradients on the output flow back into each parameter.
         """
-        Initialize splat optimizer.
+        n = self.num_splats
+        reserved = torch.zeros(n, 1, dtype=self.position.dtype, device=self.position.device)
+        return torch.cat(
+            [
+                self.position,                    # [N, 2]
+                self.scale,                       # [N, 2]
+                self.theta.unsqueeze(-1),         # [N, 1]
+                reserved,                         # [N, 1]
+                self.color,                       # [N, 3]
+                self.alpha.unsqueeze(-1),         # [N, 1]
+                self.importance.unsqueeze(-1),    # [N, 1]
+            ],
+            dim=1,
+        )
 
-        Args:
-            learning_rates: Learning rates for different parameter types
-        """
-        self.learning_rates = learning_rates or {
-            'position': 0.01,
-            'covariance': 0.005,
-            'color': 0.02,
-            'alpha': 0.01
-        }
-        self.base_lr = float(self.learning_rates["position"])
+    @torch.no_grad()
+    def apply_constraints(self, image_width: int, image_height: int) -> None:
+        """In-place clamps to keep parameters in valid ranges after each step."""
+        self.position[:, 0].clamp_(0.0, float(max(image_width - 1, 0)))
+        self.position[:, 1].clamp_(0.0, float(max(image_height - 1, 0)))
+        self.scale.clamp_(min=1e-4)
+        self.theta.remainder_(2.0 * torch.pi)
+        self.color.clamp_(0.0, 1.0)
+        self.alpha.clamp_(0.0, 1.0)
 
-    def create_optimizer(self, splat_tensor: torch.Tensor) -> torch.optim.Optimizer:
-        """
-        Create optimizer with parameter-specific learning rates.
-
-        Args:
-            splat_tensor: Tensor of splat parameters
-
-        Returns:
-            Configured optimizer
-        """
-        return torch.optim.Adam([splat_tensor], lr=self.base_lr)
-
-    def step_with_constraints(self, optimizer: torch.optim.Optimizer,
-                            splat_tensor: torch.Tensor) -> None:
-        """
-        Optimization step with parameter constraints.
-
-        Args:
-            optimizer: PyTorch optimizer
-            splat_tensor: Tensor to optimize
-        """
-        # Snapshot before the step so we can apply per-group learning rates to
-        # the actual Adam update. Scaling the *gradient* before Adam (the old
-        # approach) is a no-op: Adam normalizes by m_hat/sqrt(v_hat), which
-        # cancels any constant per-slice gradient scaling. Scaling the resulting
-        # update delta instead gives a true effective lr of base_lr * ratio per
-        # group, with shared moment estimates.
-        with torch.no_grad():
-            previous = splat_tensor.detach().clone()
-        optimizer.step()
-        with torch.no_grad():
-            self._apply_group_learning_rates(splat_tensor, previous)
-            self._apply_constraints(splat_tensor)
-
-    def _apply_constraints(self, splat_tensor: torch.Tensor) -> None:
-        """Apply parameter constraints."""
-        # Position in valid frame.
-        splat_tensor[:, 0:2].clamp_(0)
-
-        # Scale+rotation parameterization.
-        splat_tensor[:, 2].clamp_(min=1e-4)
-        splat_tensor[:, 3].clamp_(min=1e-4)
-        splat_tensor[:, 4].remainder_(2.0 * torch.pi)
-
-        # Colors and alpha in [0, 1]
-        splat_tensor[:, 6:10].clamp_(0, 1)
-
-    def _apply_group_learning_rates(
-        self, splat_tensor: torch.Tensor, previous: torch.Tensor
-    ) -> None:
-        """
-        Rescale the just-applied Adam update per parameter group so each group's
-        effective learning rate is base_lr * ratio.
-
-        Parameter layout:
-        [0:2]=position, [2:5]=scale+rotation, [6:9]=color, [9]=alpha, [10]=importance.
-        """
-        if self.base_lr <= 0:
-            return
-
-        ratios = {
-            "position": self.learning_rates.get("position", self.base_lr) / self.base_lr,
-            "covariance": self.learning_rates.get("covariance", self.base_lr) / self.base_lr,
-            "color": self.learning_rates.get("color", self.base_lr) / self.base_lr,
-            "alpha": self.learning_rates.get("alpha", self.base_lr) / self.base_lr,
+    @torch.no_grad()
+    def snapshot(self) -> Dict[str, torch.Tensor]:
+        """Return a deep copy of all parameter tensors (for early-stop revert)."""
+        return {
+            "position": self.position.detach().clone(),
+            "scale": self.scale.detach().clone(),
+            "theta": self.theta.detach().clone(),
+            "color": self.color.detach().clone(),
+            "alpha": self.alpha.detach().clone(),
+            "importance": self.importance.detach().clone(),
         }
 
-        def rescale(cols, ratio):
-            splat_tensor[:, cols] = previous[:, cols] + (splat_tensor[:, cols] - previous[:, cols]) * ratio
+    @torch.no_grad()
+    def restore(self, snapshot: Dict[str, torch.Tensor]) -> None:
+        """Restore parameter tensors from a snapshot."""
+        self.position.data.copy_(snapshot["position"])
+        self.scale.data.copy_(snapshot["scale"])
+        self.theta.data.copy_(snapshot["theta"])
+        self.color.data.copy_(snapshot["color"])
+        self.alpha.data.copy_(snapshot["alpha"])
+        self.importance.copy_(snapshot["importance"])
 
-        rescale(slice(0, 2), ratios["position"])
-        rescale(slice(2, 5), ratios["covariance"])
-        rescale(slice(6, 9), ratios["color"])
-        rescale(slice(9, 10), ratios["alpha"])
-        # Keep importance frozen by default in this phase (ratio 0 -> no update).
-        splat_tensor[:, 10] = previous[:, 10]
+
+def build_optimizer(
+    params: SplatParams, learning_rates: Optional[Dict[str, float]] = None
+) -> torch.optim.Adam:
+    """Build a torch.optim.Adam with one param_group per splat parameter, so the
+    per-group learning rates are real (not the old post-step delta rescaling).
+    """
+    lr = {**DEFAULT_LEARNING_RATES, **(learning_rates or {})}
+    return torch.optim.Adam(
+        [
+            {"params": [params.position], "lr": float(lr["position"])},
+            {"params": [params.scale], "lr": float(lr["scale"])},
+            {"params": [params.theta], "lr": float(lr["theta"])},
+            {"params": [params.color], "lr": float(lr["color"])},
+            {"params": [params.alpha], "lr": float(lr["alpha"])},
+        ]
+    )
+
+
+@dataclass
+class TrainStepResult:
+    loss: float
+    rendered: torch.Tensor
+
+
+def train_step(
+    params: SplatParams,
+    optimizer: torch.optim.Adam,
+    renderer: nn.Module,
+    loss_fn: nn.Module,
+    target: torch.Tensor,
+    image_width: int,
+    image_height: int,
+) -> TrainStepResult:
+    """One training iteration: forward, loss, backward, step, constrain."""
+    optimizer.zero_grad(set_to_none=True)
+    rendered = renderer(params.as_tensor())
+    loss = loss_fn(rendered, target)
+    loss.backward()
+    optimizer.step()
+    params.apply_constraints(image_width, image_height)
+    return TrainStepResult(loss=float(loss.detach().item()), rendered=rendered.detach())

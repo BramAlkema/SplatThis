@@ -38,7 +38,7 @@ from .io import (
     save_svg,
     validate_export_roundtrip,
 )
-from .optimizer import SplatOptimizer
+from .optimizer import SplatParams, build_optimizer
 from .renderer import (
     L1SSIMLoss,
     create_renderer,
@@ -675,7 +675,6 @@ class PNG2SVGConverter:
             compositing_space=self.compositing_space,
         )
         loss_fn = L1SSIMLoss(**self.loss_weights, color_space=self.loss_color_space).to(self.device)
-        optimizer_helper = SplatOptimizer(learning_rates=self.learning_rates)
 
         current_splats = splats.copy()
         stage_metrics: List[Dict[str, Any]] = []
@@ -695,7 +694,6 @@ class PNG2SVGConverter:
                 target=target,
                 renderer=renderer,
                 loss_fn=loss_fn,
-                optimizer_helper=optimizer_helper,
                 num_iters=num_iters,
                 verbose=verbose,
             )
@@ -750,7 +748,6 @@ class PNG2SVGConverter:
             target=target,
             renderer=renderer,
             loss_fn=loss_fn,
-            optimizer_helper=optimizer_helper,
             rng=rng,
             edge_map=edge_map,
             verbose=verbose,
@@ -773,11 +770,15 @@ class PNG2SVGConverter:
         target: torch.Tensor,
         renderer: torch.nn.Module,
         loss_fn: L1SSIMLoss,
-        optimizer_helper: SplatOptimizer,
         num_iters: int,
         verbose: bool,
     ) -> Tuple[List[GaussianSplat], Dict[str, Any], torch.Tensor]:
-        """Optimize splats for one stage."""
+        """Optimize splats for one stage using SplatParams + Adam param_groups.
+
+        Each splat parameter group is a separate nn.Parameter so per-group
+        learning rates (position / scale / theta / color / alpha) have their
+        textbook meaning instead of the old post-step delta-rescale hack.
+        """
         if not splats:
             empty = torch.zeros(
                 (int(target.shape[0]), int(target.shape[1]), 3),
@@ -790,16 +791,16 @@ class PNG2SVGConverter:
                 empty,
             )
 
-        splats_tensor = splats_to_tensor(splats, device=self.device)
-        splats_tensor.requires_grad_(True)
-        optimizer = optimizer_helper.create_optimizer(splats_tensor)
+        initial_tensor = splats_to_tensor(splats, device=self.device)
+        params = SplatParams(initial_tensor).to(self.device)
+        optimizer = build_optimizer(params, self.learning_rates)
 
         with torch.no_grad():
-            start_loss = float(loss_fn(renderer(splats_tensor), target).item())
+            start_loss = float(loss_fn(renderer(params.as_tensor()), target).item())
 
         best_loss = start_loss
         end_loss = start_loss
-        best_tensor = splats_tensor.detach().clone()
+        best_snapshot = params.snapshot()
         iterations_run = 0
 
         schedule_enabled = bool(self.schedule_config.get("enabled", True))
@@ -813,23 +814,28 @@ class PNG2SVGConverter:
         decay_count = 0
         best_at_last_check = best_loss
 
+        image_height = int(target.shape[0])
+        image_width = int(target.shape[1])
+
         for iteration in range(max(0, num_iters)):
             iterations_run = iteration + 1
-            optimizer.zero_grad()
-            rendered = renderer(splats_tensor)
+            optimizer.zero_grad(set_to_none=True)
+            rendered = renderer(params.as_tensor())
             loss = loss_fn(rendered, target)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_([splats_tensor], max_norm=1.0)
-
-            optimizer_helper.step_with_constraints(optimizer, splats_tensor)
-            with torch.no_grad():
-                self._clamp_splat_parameters(splats_tensor)
+            # Clip gradient norm across all trainable splat params.
+            torch.nn.utils.clip_grad_norm_(
+                [params.position, params.scale, params.theta, params.color, params.alpha],
+                max_norm=1.0,
+            )
+            optimizer.step()
+            params.apply_constraints(image_width, image_height)
 
             loss_value = float(loss.item())
             end_loss = loss_value
             if loss_value < best_loss:
                 best_loss = loss_value
-                best_tensor = splats_tensor.detach().clone()
+                best_snapshot = params.snapshot()
 
             if verbose and (iteration + 1) % 50 == 0:
                 logger.info("  Iteration %s/%s: loss = %.6f", iteration + 1, num_iters, loss_value)
@@ -864,10 +870,12 @@ class PNG2SVGConverter:
                                 decay_ratio,
                             )
 
+        # Restore the best-loss snapshot.
+        params.restore(best_snapshot)
         with torch.no_grad():
-            best_rendered = renderer(best_tensor).detach()
+            best_rendered = renderer(params.as_tensor()).detach()
 
-        return tensor_to_splats(best_tensor), {
+        return tensor_to_splats(params.as_tensor().detach()), {
             "start_loss": start_loss,
             "end_loss": end_loss,
             "best_loss": best_loss,
@@ -942,17 +950,6 @@ class PNG2SVGConverter:
             rendered,
             coverage_map,
         )
-
-    def _clamp_splat_parameters(self, splats_tensor: torch.Tensor) -> None:
-        """Clamp splat parameters to valid ranges."""
-        with torch.no_grad():
-            splats_tensor[:, 0].clamp_(0, float(max(self._image_width - 1, 0)))
-            splats_tensor[:, 1].clamp_(0, float(max(self._image_height - 1, 0)))
-            splats_tensor[:, 2].clamp_(min=1e-4)
-            splats_tensor[:, 3].clamp_(min=1e-4)
-            splats_tensor[:, 4].remainder_(2.0 * torch.pi)
-            splats_tensor[:, 6:9].clamp_(0, 1)
-            splats_tensor[:, 9].clamp_(0, 1)
 
     def _add_error_driven_splats(
         self,
@@ -1170,7 +1167,6 @@ class PNG2SVGConverter:
         target: torch.Tensor,
         renderer: torch.nn.Module,
         loss_fn: L1SSIMLoss,
-        optimizer_helper: SplatOptimizer,
         rng: np.random.Generator,
         edge_map: np.ndarray,
         verbose: bool,
@@ -1265,7 +1261,6 @@ class PNG2SVGConverter:
                 target=target,
                 renderer=renderer,
                 loss_fn=loss_fn,
-                optimizer_helper=optimizer_helper,
                 num_iters=residual_iters,
                 verbose=verbose,
             )
