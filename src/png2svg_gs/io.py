@@ -406,7 +406,24 @@ def _splat_to_drawingml_shape_lines(
     g = int(np.clip(np.round(rgb_srgb[1] * 255), 0, 255))
     b = int(np.clip(np.round(rgb_srgb[2] * 255), 0, 255))
     color_hex = f"{r:02X}{g:02X}{b:02X}"
-    alpha_val = int(np.clip(round(float(splat.alpha) * 100000.0), 0, 100000))
+
+    # Radial gradient stops mirroring the SVG path: the renderer's per-splat
+    # alpha-over opacity 1-exp(-a*exp(-0.5*(t*footprint)^2)). DrawingML pos/alpha
+    # are in thousandths of a percent (0..100000). This replaces the old flat
+    # solidFill, which gave each splat a uniform-opacity disc with no falloff.
+    alpha_clamped = float(np.clip(splat.alpha, 0.0, 1.0))
+    footprint = ELLIPSE_OVERLAP_BOOST * k_sigma
+    gradient_stop_lines: List[str] = []
+    for j in range(SVG_GRADIENT_STOPS):
+        t = j / (SVG_GRADIENT_STOPS - 1)
+        opacity = 1.0 - math.exp(-alpha_clamped * math.exp(-0.5 * (t * footprint) ** 2))
+        pos = int(round(t * 100000.0))
+        a_units = int(np.clip(round(opacity * 100000.0), 0, 100000))
+        gradient_stop_lines.extend([
+            f'              <a:gs pos="{pos}">',
+            f'                <a:srgbClr val="{color_hex}"><a:alpha val="{a_units}"/></a:srgbClr>',
+            "              </a:gs>",
+        ])
 
     return [
         "      <p:sp>",
@@ -425,11 +442,14 @@ def _splat_to_drawingml_shape_lines(
         '          <a:prstGeom prst="ellipse">',
         "            <a:avLst/>",
         "          </a:prstGeom>",
-        "          <a:solidFill>",
-        f'            <a:srgbClr val="{color_hex}">',
-        f'              <a:alpha val="{alpha_val}"/>',
-        "            </a:srgbClr>",
-        "          </a:solidFill>",
+        "          <a:gradFill>",
+        "            <a:gsLst>",
+        *gradient_stop_lines,
+        "            </a:gsLst>",
+        '            <a:path path="circle">',
+        '              <a:fillToRect l="50000" t="50000" r="50000" b="50000"/>',
+        "            </a:path>",
+        "          </a:gradFill>",
         "          <a:ln>",
         "            <a:noFill/>",
         "          </a:ln>",

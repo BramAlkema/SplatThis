@@ -28,8 +28,13 @@ def test_generate_drawingml_slide_content_basic():
     assert "<p:spTree>" in content
     assert 'name="Splat 2"' in content
     assert '<a:prstGeom prst="ellipse">' in content
-    assert '<a:srgbClr val="FF0000">' in content
-    assert '<a:alpha val="50000"/>' in content
+    # Radial gradient fill (true-Gaussian falloff), not a flat solid fill.
+    assert "<a:gradFill>" in content
+    assert "<a:gsLst>" in content
+    assert '<a:path path="circle">' in content
+    assert 'val="FF0000"' in content  # splat color baked into gradient stops
+    assert "<a:alpha val=" in content  # per-stop opacity present
+    assert "<a:solidFill>" not in content
 
 
 def test_save_drawingml_writes_file(tmp_path: Path):

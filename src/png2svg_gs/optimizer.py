@@ -51,11 +51,17 @@ class SplatOptimizer:
             optimizer: PyTorch optimizer
             splat_tensor: Tensor to optimize
         """
-        self._apply_group_learning_rates(splat_tensor)
-        optimizer.step()
-
-        # Apply constraints
+        # Snapshot before the step so we can apply per-group learning rates to
+        # the actual Adam update. Scaling the *gradient* before Adam (the old
+        # approach) is a no-op: Adam normalizes by m_hat/sqrt(v_hat), which
+        # cancels any constant per-slice gradient scaling. Scaling the resulting
+        # update delta instead gives a true effective lr of base_lr * ratio per
+        # group, with shared moment estimates.
         with torch.no_grad():
+            previous = splat_tensor.detach().clone()
+        optimizer.step()
+        with torch.no_grad():
+            self._apply_group_learning_rates(splat_tensor, previous)
             self._apply_constraints(splat_tensor)
 
     def _apply_constraints(self, splat_tensor: torch.Tensor) -> None:
@@ -71,17 +77,16 @@ class SplatOptimizer:
         # Colors and alpha in [0, 1]
         splat_tensor[:, 6:10].clamp_(0, 1)
 
-    def _apply_group_learning_rates(self, splat_tensor: torch.Tensor) -> None:
+    def _apply_group_learning_rates(
+        self, splat_tensor: torch.Tensor, previous: torch.Tensor
+    ) -> None:
         """
-        Scale gradients by group learning-rate ratios.
+        Rescale the just-applied Adam update per parameter group so each group's
+        effective learning rate is base_lr * ratio.
 
         Parameter layout:
         [0:2]=position, [2:5]=scale+rotation, [6:9]=color, [9]=alpha, [10]=importance.
         """
-        grad = splat_tensor.grad
-        if grad is None:
-            return
-
         if self.base_lr <= 0:
             return
 
@@ -92,9 +97,12 @@ class SplatOptimizer:
             "alpha": self.learning_rates.get("alpha", self.base_lr) / self.base_lr,
         }
 
-        grad[:, 0:2] *= ratios["position"]
-        grad[:, 2:5] *= ratios["covariance"]
-        grad[:, 6:9] *= ratios["color"]
-        grad[:, 9] *= ratios["alpha"]
-        # Keep importance frozen by default in this phase.
-        grad[:, 10] *= 0.0
+        def rescale(cols, ratio):
+            splat_tensor[:, cols] = previous[:, cols] + (splat_tensor[:, cols] - previous[:, cols]) * ratio
+
+        rescale(slice(0, 2), ratios["position"])
+        rescale(slice(2, 5), ratios["covariance"])
+        rescale(slice(6, 9), ratios["color"])
+        rescale(slice(9, 10), ratios["alpha"])
+        # Keep importance frozen by default in this phase (ratio 0 -> no update).
+        splat_tensor[:, 10] = previous[:, 10]

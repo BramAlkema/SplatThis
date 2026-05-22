@@ -692,10 +692,16 @@ class L1SSIMLoss(nn.Module):
 
     def forward(self, rendered: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if self.color_space == "oklab":
-            rendered = torch_linear_rgb_to_oklab(rendered)
-            target = torch_linear_rgb_to_oklab(target)
-        l1_loss = torch.mean(torch.abs(rendered - target))
-        ssim = self._global_ssim(rendered, target)
+            r_lab = torch_linear_rgb_to_oklab(rendered)
+            t_lab = torch_linear_rgb_to_oklab(target)
+            l1_loss = torch.mean(torch.abs(r_lab - t_lab))
+            # SSIM only on the L (lightness) channel: OKLab a/b are small and
+            # signed, so the c1/c2 constants (tuned for [0,1] ranges) make the
+            # SSIM term on a/b near-meaningless. L is ~[0,1] and structural.
+            ssim = self._global_ssim(r_lab[..., 0:1], t_lab[..., 0:1])
+        else:
+            l1_loss = torch.mean(torch.abs(rendered - target))
+            ssim = self._global_ssim(rendered, target)
         dssim = 1.0 - ssim
         return self.l1_weight * l1_loss + self.ssim_weight * dssim
 

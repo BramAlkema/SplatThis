@@ -906,7 +906,10 @@ class PNG2SVGConverter:
             empty_render = torch.zeros((height, width, 3), dtype=target.dtype, device=target.device)
             empty_coverage = np.zeros((height, width), dtype=np.float32)
             return (
-                {"l1": 0.0, "mse": 0.0, "psnr": 0.0, "ssim": 0.0, "coverage": 0.0},
+                {
+                    "l1": 0.0, "mse": 0.0, "psnr": 0.0, "ssim": 0.0,
+                    "psnr_srgb": 0.0, "ssim_srgb": 0.0, "coverage": 0.0,
+                },
                 empty_render,
                 empty_coverage,
             )
@@ -917,19 +920,25 @@ class PNG2SVGConverter:
         else:
             rendered = precomputed_rendered.detach()
 
+        # Use the honest shared metric: standard windowed SSIM plus perceptual
+        # (sRGB-display) variants. The old path used L1SSIMLoss._global_ssim, a
+        # global single-window SSIM that over-reports, and omitted the
+        # psnr_srgb/ssim_srgb keys the acceptance gate checks -- so on machines
+        # without an SVG rasterizer the perceptual gates read 0.0 and always
+        # failed even good runs.
         with torch.no_grad():
-            l1 = float(torch.mean(torch.abs(rendered - target)).item())
-            mse = float(torch.mean((rendered - target) ** 2).item())
-            ssim = float(loss_fn._global_ssim(rendered, target).item())
-            psnr = float(-10.0 * np.log10(max(mse, 1e-12)))
+            target_np = target.detach().cpu().numpy()
+            rendered_np = rendered.detach().cpu().numpy()
+        metrics = compute_quality_metrics(target_np[..., :3], rendered_np[..., :3])
 
         if precomputed_coverage_map is not None and precomputed_coverage_map.shape == (height, width):
             coverage_map = precomputed_coverage_map
         else:
             coverage_map = self._build_alpha_coverage_map(splats=splats, width=width, height=height)
         coverage = self._compute_coverage_ratio(coverage_map)
+        metrics["coverage"] = coverage
         return (
-            {"l1": l1, "mse": mse, "psnr": psnr, "ssim": ssim, "coverage": coverage},
+            metrics,
             rendered,
             coverage_map,
         )
