@@ -1,0 +1,140 @@
+"""Tests for SVG/PPTX export pipeline helpers."""
+
+import json
+import zipfile
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+from png2svg_gs.converter import PNG2SVGConverter
+from png2svg_gs.io import (
+    generate_svg_content,
+    save_pptx_with_splat_png,
+)
+from png2svg_gs.renderer import render_splats_numpy
+from png2svg_gs.splat import create_isotropic_splat
+
+
+def test_generate_svg_content_emits_per_splat_gradients():
+    """SVG export should include one radial gradient per splat."""
+    splats = [
+        create_isotropic_splat(center=np.array([10.0, 10.0]), sigma=2.0, color=np.array([1.0, 0.2, 0.2]), alpha=0.8),
+        create_isotropic_splat(center=np.array([20.0, 12.0]), sigma=3.0, color=np.array([0.1, 0.7, 0.4]), alpha=0.6),
+    ]
+    svg = generate_svg_content(splats, width=32, height=24, k_sigma=2.5)
+    assert svg.count("<radialGradient") == 2
+    assert svg.count("fill=\"url(#splat_grad_") == 2
+
+
+def test_generate_svg_content_can_embed_background_rect():
+    """SVG export should include an explicit background when requested."""
+    splats = [create_isotropic_splat(center=np.array([12.0, 10.0]), sigma=2.0, color=np.array([0.5, 0.3, 0.2]), alpha=0.7)]
+    svg = generate_svg_content(
+        splats,
+        width=32,
+        height=24,
+        k_sigma=2.5,
+        background_linear_rgb=np.array([0.0, 0.0, 0.0], dtype=np.float32),
+    )
+    assert 'class="background"' in svg
+    assert '<rect x="0" y="0" width="32" height="24"' in svg
+
+
+def test_numpy_renderer_returns_background_when_no_splats():
+    """Numpy renderer should emit requested background for empty splat sets."""
+    rendered = render_splats_numpy(
+        splats=[],
+        width=5,
+        height=4,
+        background_linear_rgb=np.array([0.25, 0.5, 0.75], dtype=np.float32),
+    )
+    assert rendered.shape == (4, 5, 3)
+    assert np.allclose(rendered[0, 0], np.array([0.25, 0.5, 0.75], dtype=np.float32))
+
+
+def test_save_pptx_with_splat_png_creates_minimal_package(tmp_path: Path):
+    """PPTX helper should produce a package with expected core parts."""
+    splats = [create_isotropic_splat(center=np.array([8.0, 8.0]), sigma=2.5, color=np.array([0.9, 0.1, 0.2]), alpha=0.7)]
+    out = tmp_path / "slide.pptx"
+    save_pptx_with_splat_png(splats=splats, width=32, height=24, output_path=str(out))
+
+    assert out.exists()
+    with zipfile.ZipFile(out, "r") as zf:
+        names = set(zf.namelist())
+    required = {
+        "[Content_Types].xml",
+        "_rels/.rels",
+        "ppt/presentation.xml",
+        "ppt/_rels/presentation.xml.rels",
+        "ppt/slides/slide1.xml",
+        "ppt/slides/_rels/slide1.xml.rels",
+        "ppt/media/image1.png",
+    }
+    assert required.issubset(names)
+
+
+def test_converter_exports_pptx_and_comparison_artifacts(tmp_path: Path):
+    """Converter should emit PPTX, preview PNG, side-by-side HTML, and manifest metrics."""
+    image = np.zeros((24, 24, 3), dtype=np.uint8)
+    image[:, :12, 0] = 255
+    image[:, 12:, 1] = 255
+    input_path = tmp_path / "input.png"
+    Image.fromarray(image).save(input_path)
+
+    output_path = tmp_path / "output.pptx"
+    preview_path = tmp_path / "output_preview.png"
+    side_by_side_path = tmp_path / "comparison.html"
+    artifacts_path = tmp_path / "artifacts"
+
+    converter = PNG2SVGConverter(
+        max_splats=36,
+        stages=[1],
+        target_size=(24, 24),
+        seed=19,
+        device="cpu",
+        blend_mode="alpha-over",
+    )
+    converter.convert(
+        input_path=str(input_path),
+        output_path=str(output_path),
+        output_format="pptx",
+        save_json=True,
+        verbose=False,
+        artifacts_dir=str(artifacts_path),
+        preview_png_path=str(preview_path),
+        side_by_side_html=str(side_by_side_path),
+    )
+
+    assert output_path.exists()
+    assert preview_path.exists()
+    assert side_by_side_path.exists()
+    manifest = json.loads((artifacts_path / "run_manifest.json").read_text(encoding="utf-8"))
+    assert "internal_metrics" in manifest
+    assert "export_quality" in manifest
+
+
+def test_oklab_transform_reference_values():
+    """torch_linear_rgb_to_oklab matches Ottosson reference points."""
+    import torch
+    from png2svg_gs.renderer import torch_linear_rgb_to_oklab
+
+    rgb = torch.tensor([[1.0, 1.0, 1.0], [0.0, 0.0, 0.0]])  # linear white, black
+    lab = torch_linear_rgb_to_oklab(rgb)
+    # White -> L=1, a=b=0 ; black -> L=a=b=0
+    assert torch.allclose(lab[0], torch.tensor([1.0, 0.0, 0.0]), atol=1e-3)
+    # Black maps near the origin (small clamp floor on the cube root).
+    assert torch.allclose(lab[1], torch.tensor([0.0, 0.0, 0.0]), atol=5e-3)
+
+
+def test_oklab_loss_runs_and_is_differentiable():
+    """L1SSIMLoss in oklab space produces a finite, backprop-able scalar."""
+    import torch
+    from png2svg_gs.renderer import L1SSIMLoss
+
+    rendered = torch.rand(16, 16, 3, requires_grad=True)
+    target = torch.rand(16, 16, 3)
+    loss = L1SSIMLoss(color_space="oklab")(rendered, target)
+    assert torch.isfinite(loss)
+    loss.backward()
+    assert rendered.grad is not None and torch.isfinite(rendered.grad).all()
