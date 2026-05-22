@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "splat-this"
 version = "0.1.0"
-description = "Convert images to parallax-animated SVG splats"
+description = "Convert images to SVG using 2D Gaussian splatting"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
@@ -30,11 +30,11 @@ classifiers = [
 ]
 requires-python = ">=3.8"
 dependencies = [
-    "Pillow>=9.0.0,<11.0.0",
-    "numpy>=1.21.0,<2.0.0",
-    "scikit-image>=0.19.0,<1.0.0",
-    "click>=8.0.0,<9.0.0",
-    "psutil>=5.9.0,<6.0.0"
+    "Pillow>=9.0.0",
+    "numpy>=1.21.0",
+    "scikit-image>=0.19.0",
+    "psutil>=5.9.0",
+    "torch>=2.0.0"
 ]
 
 [project.optional-dependencies]
@@ -50,9 +50,18 @@ test = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0"
 ]
+# In-process SVG rasterization for honest export-quality metrics. Without it
+# the pipeline falls back to the rsvg-convert CLI if present, then to a proxy.
+rasterize = [
+    "cairosvg>=2.5.0"
+]
+# VGG perceptual loss (png2svg_gs.losses.PerceptualLoss); not used by default.
+perceptual = [
+    "torchvision>=0.15.0"
+]
 
 [project.scripts]
-splatlify = "splat_this.cli:main"
+splatlify = "png2svg_gs.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/BramAlkema/SplatThis"

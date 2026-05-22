@@ -43,111 +43,71 @@ pip install splat-this
 
 ### Basic Usage
 ```bash
-# Convert an image to animated SVG
-splatlify photo.jpg -o parallax.svg
+# Convert an image to SVG (2D Gaussian splatting)
+splatlify photo.jpg -o output.svg
 
-# High-quality output with more splats
-splatlify landscape.png --splats 3000 --layers 6 -o detailed.svg
+# More splats + a longer training schedule for higher fidelity
+splatlify landscape.png --splats 3000 --stages 400,300,200,150 -o detailed.svg
 
-# Enable Gaussian gradient mode for smoother results
-splatlify portrait.jpg --gaussian --splats 2000 -o smooth.svg
-```
+# Downscale large inputs for faster runs
+splatlify portrait.jpg --max-edge 512 --splats 2000 -o portrait.svg
 
-### Advanced Examples
-```bash
-# Interactive parallax with top-layer elements
-splatlify cityscape.jpg --interactive-top 500 --parallax-strength 80 -o interactive.svg
-
-# Process specific GIF frame
-splatlify animation.gif --frame 10 --splats 1500 -o frame10.svg
-
-# Fine-tune splat size and transparency
-splatlify texture.png --k 3.0 --alpha 0.8 --layers 5 -o custom.svg
+# Export PowerPoint (DrawingML) instead of SVG
+splatlify logo.png --format pptx -o logo.pptx
 ```
 
 ## 📖 Documentation
 
 ### Command Line Options
 
-| Option | Description | Default | Range |
-|--------|-------------|---------|-------|
-| `INPUT_FILE` | Source image (JPG, PNG, GIF) | Required | - |
-| `--output, -o` | Output SVG file path | Required | - |
-| `--splats` | Number of Gaussian splats | 2500 | 100-15000 |
-| `--layers` | Depth layers for parallax | 4 | 2-8 |
-| `--k` | Splat size multiplier | 1.2 | 0.5-5.0 |
-| `--alpha` | Base transparency | 0.65 | 0.1-1.0 |
-| `--parallax-strength` | Motion sensitivity | 40 | 0-200 |
-| `--interactive-top` | Interactive top splats | 0 | 0-5000 |
-| `--gaussian` | Enable gradient mode | False | - |
-| `--frame` | GIF frame to process | 0 | - |
-| `--verbose, -v` | Detailed output | False | - |
+| Option | Description | Default |
+|--------|-------------|---------|
+| `INPUT` | Source image (PNG/JPG) | Required |
+| `--output, -o` | Output path | `<input>.svg` |
+| `--splats` | Max number of Gaussian splats | 2000 |
+| `--stages` | Per-stage iteration schedule (comma-separated) | 200,150,100,50 |
+| `--profile` | Quality profile | max-fidelity |
+| `--blend-mode` | Compositing mode (`alpha-over` / `weighted`) | alpha-over |
+| `--max-edge` | Downscale so the longest edge is at most N px | none |
+| `--format` | Output format (`svg` / `pptx`) | svg |
+| `--device` | Torch device (`cpu` / `cuda`) | cpu |
+| `--seed` | Deterministic seed | 0 |
+| `--artifacts-dir` | Directory for run manifest + iteration dumps | none |
+| `--verbose, -v` | Detailed logging | False |
 
 ### Python API
 
 ```python
-from splat_this import SplatExtractor, LayerAssigner, SVGGenerator
+from png2svg_gs.converter import PNG2SVGConverter
 
-# Load and process image
-extractor = SplatExtractor()
-splats = extractor.extract_splats("input.jpg", n_splats=2000)
-
-# Assign depth layers
-assigner = LayerAssigner(n_layers=5)
-layered_splats = assigner.assign_layers(splats)
-
-# Generate animated SVG
-generator = SVGGenerator()
-svg_content = generator.generate_svg(
-    layered_splats,
-    parallax_strength=60,
-    interactive_top=300
+converter = PNG2SVGConverter(
+    max_splats=2000,
+    stages=[200, 150, 100, 50],
+    quality_profile="max-fidelity",
 )
-
-# Save result
-with open("output.svg", "w") as f:
-    f.write(svg_content)
-```
-
-### Optimized Components
-
-For performance-critical applications, use the optimized components:
-
-```python
-from splat_this.core.optimized_extract import OptimizedSplatExtractor
-from splat_this.core.optimized_svgout import OptimizedSVGGenerator
-
-# Up to 1.85x faster processing
-extractor = OptimizedSplatExtractor()
-generator = OptimizedSVGGenerator()
+converter.convert(input_path="input.jpg", output_path="output.svg")
 ```
 
 ## 🎨 How It Works
 
-1. **Image Analysis**: SLIC superpixel segmentation identifies key regions
-2. **Splat Extraction**: Converts regions into Gaussian splats with position, size, and color
-3. **Quality Scoring**: Importance-based filtering keeps the most visually significant splats
-4. **Layer Assignment**: Distributes splats across depth layers for parallax effect
-5. **SVG Generation**: Creates animated SVG with CSS transforms and JavaScript interaction
+1. **Content-adaptive initialization**: places 2D Gaussians guided by image gradients (more where there's detail).
+2. **Differentiable optimization**: a torch renderer + L1/SSIM loss (in perceptual OKLab space) refines each splat's position, anisotropic covariance, color, and opacity via SGD.
+3. **Progressive densification/pruning**: stages add splats in high-error regions and prune low-impact ones, up to the splat budget.
+4. **SVG export**: each splat becomes an SVG ellipse with a true-Gaussian radial-gradient falloff (also exportable to PowerPoint DrawingML).
+5. **Honest quality gating**: the exported SVG is rasterized and scored (windowed SSIM, perceptual sRGB) against the source.
 
 ## 🏗️ Architecture
 
 ```
-src/splat_this/
-├── core/
-│   ├── extract.py           # Splat extraction engine
-│   ├── layering.py          # Depth layer assignment
-│   ├── svgout.py            # SVG generation
-│   ├── optimized_extract.py # Performance-optimized extractor
-│   ├── optimized_layering.py# Optimized layer assignment
-│   └── optimized_svgout.py  # Optimized SVG generation
-├── utils/
-│   ├── image.py             # Image loading and validation
-│   ├── math.py              # Mathematical utilities
-│   ├── profiler.py          # Performance profiling
-│   └── optimized_io.py      # Optimized I/O operations
-├── cli.py                   # Command-line interface
-└── optimized_cli.py         # Performance CLI variant
+src/png2svg_gs/
+├── converter.py   # PNG2SVGConverter: orchestration, stages, acceptance
+├── renderer.py    # differentiable torch renderer + L1SSIMLoss + color transforms
+├── optimizer.py   # Adam wrapper with per-group learning rates
+├── losses.py      # optional perceptual/edge losses
+├── splat.py       # Gaussian splat model + raw schema
+├── features.py    # gradient/feature maps for initialization
+├── io.py          # SVG + DrawingML/PPTX export, rasterization, quality metrics
+└── cli.py         # `splatlify` command-line entry point
 ```
 
 ## ⚡ Performance
@@ -246,24 +206,19 @@ pip install dist/splat_this-0.1.0-py3-none-any.whl
 
 ## 📝 Examples
 
-### Basic Parallax Effect
+### Quick conversion
 ```bash
-splatlify sunset.jpg -o sunset_parallax.svg
+splatlify sunset.jpg -o sunset.svg
 ```
 
-### High-Quality Portrait
+### High-quality portrait
 ```bash
-splatlify portrait.png --gaussian --splats 3000 --layers 6 --alpha 0.8 -o portrait_hq.svg
+splatlify portrait.png --splats 3000 --stages 400,300,200,150 -o portrait_hq.svg
 ```
 
-### Interactive Landscape
+### Fast preview of a large image
 ```bash
-splatlify landscape.jpg --interactive-top 800 --parallax-strength 100 --k 2.8 -o landscape_interactive.svg
-```
-
-### Animation Frame
-```bash
-splatlify animation.gif --frame 15 --splats 2500 --layers 5 -o frame15.svg
+splatlify landscape.jpg --max-edge 512 --splats 1500 --stages 100,80 -o landscape.svg
 ```
 
 ## 🐛 Troubleshooting
@@ -283,8 +238,8 @@ splatlify large_image.jpg --splats 1000 -o output.svg
 
 **Poor Quality Output**
 ```bash
-# Increase splat count and layers
-splatlify image.jpg --splats 3000 --layers 6 --gaussian -o high_quality.svg
+# Increase splat count and train longer
+splatlify image.jpg --splats 3000 --stages 400,300,200,150 -o high_quality.svg
 ```
 
 **Performance Issues**
