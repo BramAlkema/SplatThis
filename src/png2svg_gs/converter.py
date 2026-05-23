@@ -29,6 +29,7 @@ from .io import (
     compute_quality_metrics,
     evaluate_svg_export_quality,
     generate_drawingml_slide_content,
+    generate_svg_content,
     load_png,
     render_splats_preview_png,
     save_pptx_with_splat_png,
@@ -678,6 +679,19 @@ class PNG2SVGConverter:
 
         current_splats = splats.copy()
         stage_metrics: List[Dict[str, Any]] = []
+        # Export-quality tracking: training peaks somewhere in the schedule and
+        # then degrades past the SVG primitive's representational ceiling. Keep
+        # the splats that produced the best rasterized-SVG quality regardless
+        # of when they appeared, and return those instead of the last state.
+        # The closure is evaluated mid-stage (every K iters) inside _optimize_stage
+        # so peak SVG quality isn't missed when stages are long.
+        best_export_score: float = float("-inf")
+        best_export_splats: Optional[List[GaussianSplat]] = None
+        best_export_stage: Optional[str] = None
+        target_linear_rgb_np = image[:, :, :3]
+
+        def _export_score_fn(candidate_splats: List[GaussianSplat]) -> float:
+            return self._score_export_quality(candidate_splats, target_linear_rgb_np, width, height)
         residual_detail_enabled = bool(self.refinement_config.get("residual_detail_enabled", False))
         residual_reserve_fraction = float(
             np.clip(self.refinement_config.get("residual_detail_reserve_fraction", 0.0), 0.0, 0.40)
@@ -696,6 +710,8 @@ class PNG2SVGConverter:
                 loss_fn=loss_fn,
                 num_iters=num_iters,
                 verbose=verbose,
+                export_score_fn=_export_score_fn,
+                export_check_every=max(1, num_iters // 10),
             )
 
             quality, _, coverage_map = self._compute_quality_metrics_cached(
@@ -708,6 +724,15 @@ class PNG2SVGConverter:
             stage_metric.update(quality)
             stage_metric["stage"] = stage_idx + 1
             stage_metric["splat_count"] = len(current_splats)
+            # Track best by actual SVG-export quality, not internal/proxy.
+            export_score = self._score_export_quality(
+                current_splats, image[:, :, :3], width, height
+            )
+            stage_metric["export_ssim_srgb"] = float(export_score)
+            if export_score > best_export_score:
+                best_export_score = export_score
+                best_export_splats = list(current_splats)
+                best_export_stage = f"stage-{stage_idx + 1}"
             stage_metrics.append(stage_metric)
             self._write_stage_artifact(
                 artifacts_dir,
@@ -751,16 +776,39 @@ class PNG2SVGConverter:
             rng=rng,
             edge_map=edge_map,
             verbose=verbose,
+            export_score_fn=_export_score_fn,
         )
         for metric in residual_metrics:
-            stage_metrics.append(metric)
             pass_idx = int(metric.get("residual_pass", len(stage_metrics)))
+            # Score export after each residual pass too.
+            export_score = self._score_export_quality(
+                current_splats, image[:, :, :3], width, height
+            )
+            metric["export_ssim_srgb"] = float(export_score)
+            if export_score > best_export_score:
+                best_export_score = export_score
+                best_export_splats = list(current_splats)
+                best_export_stage = f"residual-{pass_idx}"
+            stage_metrics.append(metric)
             self._write_stage_artifact(
                 artifacts_dir,
                 f"residual-{pass_idx}",
                 current_splats,
                 metric,
             )
+
+        # Replace final splats with the best-export snapshot. Training peaks
+        # somewhere in the schedule and degrades past the SVG ceiling, so the
+        # last state is often NOT what should be shipped.
+        if best_export_splats is not None and best_export_score > float("-inf"):
+            if verbose:
+                logger.info(
+                    "Best export ssim_srgb=%.4f reached at %s (%d splats)",
+                    best_export_score,
+                    best_export_stage,
+                    len(best_export_splats),
+                )
+            current_splats = best_export_splats
 
         return current_splats, stage_metrics
 
@@ -772,6 +820,8 @@ class PNG2SVGConverter:
         loss_fn: L1SSIMLoss,
         num_iters: int,
         verbose: bool,
+        export_score_fn: Optional[Any] = None,
+        export_check_every: int = 0,
     ) -> Tuple[List[GaussianSplat], Dict[str, Any], torch.Tensor]:
         """Optimize splats for one stage using SplatParams + Adam param_groups.
 
@@ -817,6 +867,14 @@ class PNG2SVGConverter:
         image_height = int(target.shape[0])
         image_width = int(target.shape[1])
 
+        # Mid-stage export-quality tracking: training passes through peak SVG
+        # quality somewhere mid-stage and degrades past it (the SVG primitive
+        # ceiling). Sampling export score every K iters lets us keep the best
+        # snapshot regardless of where it appears in the trajectory.
+        best_export_score: float = float("-inf")
+        best_export_snapshot: Optional[Dict[str, torch.Tensor]] = None
+        check_every = max(1, int(export_check_every)) if export_score_fn is not None else 0
+
         for iteration in range(max(0, num_iters)):
             iterations_run = iteration + 1
             optimizer.zero_grad(set_to_none=True)
@@ -836,6 +894,14 @@ class PNG2SVGConverter:
             if loss_value < best_loss:
                 best_loss = loss_value
                 best_snapshot = params.snapshot()
+
+            if check_every and (iteration + 1) % check_every == 0:
+                with torch.no_grad():
+                    candidate_splats = tensor_to_splats(params.as_tensor().detach())
+                export_score = float(export_score_fn(candidate_splats))
+                if export_score > best_export_score:
+                    best_export_score = export_score
+                    best_export_snapshot = params.snapshot()
 
             if verbose and (iteration + 1) % 50 == 0:
                 logger.info("  Iteration %s/%s: loss = %.6f", iteration + 1, num_iters, loss_value)
@@ -870,8 +936,14 @@ class PNG2SVGConverter:
                                 decay_ratio,
                             )
 
-        # Restore the best-loss snapshot.
-        params.restore(best_snapshot)
+        # Prefer the best-export snapshot if one was tracked; falls back to
+        # best-loss otherwise. The export tracker, when active, beats best-loss
+        # for the user-facing SVG because the proxy loss can drift past the
+        # primitive's representational ceiling.
+        if best_export_snapshot is not None:
+            params.restore(best_export_snapshot)
+        else:
+            params.restore(best_snapshot)
         with torch.no_grad():
             best_rendered = renderer(params.as_tensor()).detach()
 
@@ -879,6 +951,7 @@ class PNG2SVGConverter:
             "start_loss": start_loss,
             "end_loss": end_loss,
             "best_loss": best_loss,
+            "best_export_ssim_srgb": float(best_export_score) if best_export_snapshot is not None else None,
             "iterations": int(iterations_run),
             "lr_decays": int(decay_count),
         }, best_rendered
@@ -950,6 +1023,55 @@ class PNG2SVGConverter:
             rendered,
             coverage_map,
         )
+
+    def _score_export_quality(
+        self,
+        splats: List[GaussianSplat],
+        target_linear_rgb: np.ndarray,
+        width: int,
+        height: int,
+    ) -> float:
+        """Rasterize the SVG these splats would emit, score it vs source.
+
+        Returns perceptual (sRGB-display) SSIM, or -inf if no rasterizer is
+        available so the caller treats this checkpoint as not tracked. This is
+        the honest "what does the user actually see" metric -- used by the
+        export-aware tracking in _optimize_splats to keep the best-export splats
+        regardless of where they appear during training.
+        """
+        import os
+        import tempfile
+
+        if not splats:
+            return float("-inf")
+        svg = generate_svg_content(
+            splats,
+            width,
+            height,
+            k_sigma=self.k_sigma,
+            background_linear_rgb=self._background_linear_rgb,
+        )
+        fd, path = tempfile.mkstemp(suffix=".svg")
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(svg)
+            result = evaluate_svg_export_quality(
+                target_linear_rgb=target_linear_rgb,
+                svg_path=path,
+                fallback_linear_rgb=None,
+            )
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+        if (
+            not result.get("available")
+            or result.get("used_fallback")
+            or not result.get("metrics")
+        ):
+            return float("-inf")
+        return float(result["metrics"].get("ssim_srgb", float("-inf")))
 
     def _add_error_driven_splats(
         self,
@@ -1170,6 +1292,7 @@ class PNG2SVGConverter:
         rng: np.random.Generator,
         edge_map: np.ndarray,
         verbose: bool,
+        export_score_fn: Optional[Any] = None,
     ) -> Tuple[List[GaussianSplat], List[Dict[str, Any]]]:
         """Run late residual-focused densification with small isotropic splats."""
         if not bool(self.refinement_config.get("residual_detail_enabled", False)):
@@ -1263,6 +1386,8 @@ class PNG2SVGConverter:
                 loss_fn=loss_fn,
                 num_iters=residual_iters,
                 verbose=verbose,
+                export_score_fn=export_score_fn,
+                export_check_every=max(1, residual_iters // 4) if export_score_fn is not None else 0,
             )
 
             quality, _, _ = self._compute_quality_metrics_cached(
