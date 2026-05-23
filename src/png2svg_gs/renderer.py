@@ -677,7 +677,13 @@ class L1SSIMLoss(nn.Module):
     loss = l1_weight * L1 + ssim_weight * (1 - SSIM)
     """
 
-    def __init__(self, l1_weight: float = 1.0, ssim_weight: float = 0.2, color_space: str = "linear"):
+    def __init__(
+        self,
+        l1_weight: float = 1.0,
+        ssim_weight: float = 0.2,
+        color_space: str = "linear",
+        spatial_weight_map: Optional[torch.Tensor] = None,
+    ):
         super().__init__()
         self.l1_weight = float(l1_weight)
         self.ssim_weight = float(ssim_weight)
@@ -687,23 +693,46 @@ class L1SSIMLoss(nn.Module):
         self.color_space = str(color_space).strip().lower()
         if self.color_space not in {"linear", "oklab"}:
             raise ValueError(f"Unsupported loss color space: {color_space}")
+        if spatial_weight_map is None:
+            self.register_buffer("spatial_weight_map", None)
+        else:
+            weights = torch.as_tensor(spatial_weight_map, dtype=torch.float32)
+            if weights.ndim != 2:
+                raise ValueError("spatial_weight_map must be a 2D HxW tensor")
+            self.register_buffer("spatial_weight_map", weights)
         self.c1 = 0.01 ** 2
         self.c2 = 0.03 ** 2
 
     def forward(self, rendered: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        weights = self.spatial_weight_map
+        if weights is not None:
+            if weights.shape != rendered.shape[:2]:
+                raise ValueError(
+                    "spatial_weight_map shape must match rendered/target spatial dimensions"
+                )
+            weights = torch.clamp(weights.to(device=rendered.device, dtype=rendered.dtype), min=0.0)
+
         if self.color_space == "oklab":
             r_lab = torch_linear_rgb_to_oklab(rendered)
             t_lab = torch_linear_rgb_to_oklab(target)
-            l1_loss = torch.mean(torch.abs(r_lab - t_lab))
+            l1_loss = self._l1_loss(torch.abs(r_lab - t_lab), weights)
             # SSIM only on the L (lightness) channel: OKLab a/b are small and
             # signed, so the c1/c2 constants (tuned for [0,1] ranges) make the
             # SSIM term on a/b near-meaningless. L is ~[0,1] and structural.
             ssim = self._global_ssim(r_lab[..., 0:1], t_lab[..., 0:1])
         else:
-            l1_loss = torch.mean(torch.abs(rendered - target))
+            l1_loss = self._l1_loss(torch.abs(rendered - target), weights)
             ssim = self._global_ssim(rendered, target)
         dssim = 1.0 - ssim
         return self.l1_weight * l1_loss + self.ssim_weight * dssim
+
+    def _l1_loss(self, abs_diff: torch.Tensor, weights: Optional[torch.Tensor]) -> torch.Tensor:
+        """Compute optional spatially weighted L1 over HxWxC tensors."""
+        if weights is None:
+            return torch.mean(abs_diff)
+        weighted = abs_diff * weights.unsqueeze(-1)
+        denom = torch.clamp(weights.sum() * abs_diff.shape[-1], min=1e-8)
+        return weighted.sum() / denom
 
     def _global_ssim(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """

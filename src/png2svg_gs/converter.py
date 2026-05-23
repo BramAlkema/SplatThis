@@ -47,6 +47,7 @@ from .renderer import (
     resolve_renderer_backend,
     splats_to_tensor,
     tensor_to_splats,
+    torch_linear_rgb_to_oklab,
 )
 from .splat import GaussianSplat, create_anisotropic_splat, create_isotropic_splat
 
@@ -69,8 +70,8 @@ class PNG2SVGConverter:
         resolution_scale: float = 1.0,
         loss_weights: Optional[Dict[str, float]] = None,
         learning_rates: Optional[Dict[str, float]] = None,
-        refinement_config: Optional[Dict[str, float]] = None,
-        schedule_config: Optional[Dict[str, float]] = None,
+        refinement_config: Optional[Dict[str, Any]] = None,
+        schedule_config: Optional[Dict[str, Any]] = None,
         acceptance_criteria: Optional[Dict[str, float]] = None,
         init_random_ratio: float = 0.2,
         init_gradient_weight: float = 0.7,
@@ -119,6 +120,8 @@ class PNG2SVGConverter:
         self.refinement_config = profile_defaults["refinement"].copy()
         if refinement_config:
             self.refinement_config.update(refinement_config)
+        self.region_weighting_enabled = bool(self.refinement_config.get("region_weighting_enabled", False))
+        self.svg_export_recipe = str(self.refinement_config.get("svg_export_recipe", "standard")).strip().lower()
         self.schedule_config = profile_defaults["schedule"].copy()
         if schedule_config:
             self.schedule_config.update(schedule_config)
@@ -137,6 +140,10 @@ class PNG2SVGConverter:
         self._image_width = 1000
         self._image_height = 1000
         self._background_linear_rgb = np.zeros(3, dtype=np.float32)
+        self._region_weight_map: Optional[np.ndarray] = None
+        self._region_foreground_mask: Optional[np.ndarray] = None
+        self._region_background_safe_mask: Optional[np.ndarray] = None
+        self._region_edge_band_mask: Optional[np.ndarray] = None
 
         if "arm" in platform.processor().lower():
             self.max_splats = min(self.max_splats, 2000)
@@ -228,6 +235,8 @@ class PNG2SVGConverter:
                 "learning_rates": self.learning_rates,
                 "refinement_config": self.refinement_config,
                 "schedule_config": self.schedule_config,
+                "region_weighting_enabled": self.region_weighting_enabled,
+                "svg_export_recipe": self.svg_export_recipe,
             },
             "stages": [],
         }
@@ -244,6 +253,22 @@ class PNG2SVGConverter:
         self._image_width = width
         self._image_height = height
         self._background_linear_rgb = self._estimate_background_color(image)
+        self._region_weight_map = None
+        self._region_foreground_mask = None
+        self._region_background_safe_mask = None
+        self._region_edge_band_mask = None
+        if self.region_weighting_enabled or self.svg_export_recipe in {
+            "browser",
+            "browser_compatible",
+            "browser-compatible",
+        }:
+            guidance = self._compute_region_guidance(image)
+            self._region_weight_map = guidance["weight_map"]
+            self._region_foreground_mask = guidance["foreground_mask"]
+            self._region_background_safe_mask = guidance["background_safe_mask"]
+            self._region_edge_band_mask = guidance["edge_band_mask"]
+            self._background_linear_rgb = guidance["background_linear_rgb"]
+            manifest["config"]["region_guidance"] = guidance["summary"]
         structure_enabled = bool(self.refinement_config.get("structure_precompute_enabled", False))
         structure_smoothing_sigma = float(max(0.0, self.refinement_config.get("structure_smoothing_sigma", 0.0)))
         structure_anisotropy_clip = float(max(1.0, self.refinement_config.get("structure_anisotropy_clip", 10.0)))
@@ -350,6 +375,10 @@ class PNG2SVGConverter:
                     output_path,
                     k_sigma=self.k_sigma,
                     background_linear_rgb=self._background_linear_rgb,
+                    export_recipe=self.svg_export_recipe,
+                    foreground_mask=self._region_foreground_mask,
+                    background_safe_mask=self._region_background_safe_mask,
+                    edge_band_mask=self._region_edge_band_mask,
                 )
                 if verbose:
                     logger.info("Saved SVG: %s", output_path)
@@ -370,7 +399,11 @@ class PNG2SVGConverter:
             blend_mode=self.blend_mode,
             compositing_space=self.compositing_space,
         )
-        final_loss_fn = L1SSIMLoss(**self.loss_weights, color_space=self.loss_color_space).to(self.device)
+        final_loss_fn = L1SSIMLoss(
+            **self.loss_weights,
+            color_space=self.loss_color_space,
+            spatial_weight_map=self._loss_weight_tensor(width=width, height=height),
+        ).to(self.device)
         internal_metrics = self._compute_quality_metrics(splats, target, final_renderer, final_loss_fn)
         internal_metrics["runtime_sec"] = float(total_time)
         internal_metrics["splat_count"] = float(len(splats))
@@ -689,7 +722,11 @@ class PNG2SVGConverter:
             blend_mode=self.blend_mode,
             compositing_space=self.compositing_space,
         )
-        loss_fn = L1SSIMLoss(**self.loss_weights, color_space=self.loss_color_space).to(self.device)
+        loss_fn = L1SSIMLoss(
+            **self.loss_weights,
+            color_space=self.loss_color_space,
+            spatial_weight_map=self._loss_weight_tensor(width=width, height=height),
+        ).to(self.device)
 
         current_splats = splats.copy()
         stage_metrics: List[Dict[str, Any]] = []
@@ -1468,6 +1505,10 @@ class PNG2SVGConverter:
             height,
             self.k_sigma,
             background_linear_rgb=self._background_linear_rgb,
+            export_recipe=self.svg_export_recipe,
+            foreground_mask=self._region_foreground_mask,
+            background_safe_mask=self._region_background_safe_mask,
+            edge_band_mask=self._region_edge_band_mask,
         )
 
     def _generate_drawingml(self, splats: List[GaussianSplat], width: int, height: int) -> str:
@@ -1584,6 +1625,140 @@ class PNG2SVGConverter:
             return np.zeros(3, dtype=np.float32)
         return np.clip(background, 0.0, 1.0)
 
+    def _estimate_border_median_color(self, image: np.ndarray) -> np.ndarray:
+        """Estimate border median without rejecting non-uniform photo borders."""
+        if image.ndim != 3 or image.shape[2] < 3:
+            return np.zeros(3, dtype=np.float32)
+        rgb = np.asarray(image[:, :, :3], dtype=np.float32)
+        height, width = rgb.shape[:2]
+        border = max(1, int(round(0.04 * float(min(height, width)))))
+        border_pixels = np.concatenate([
+            rgb[:border, :, :].reshape(-1, 3),
+            rgb[max(height - border, 0):, :, :].reshape(-1, 3),
+            rgb[:, :border, :].reshape(-1, 3),
+            rgb[:, max(width - border, 0):, :].reshape(-1, 3),
+        ], axis=0)
+        if image.shape[2] >= 4:
+            alpha = np.asarray(image[:, :, 3], dtype=np.float32)
+            border_alpha = np.concatenate([
+                alpha[:border, :].reshape(-1),
+                alpha[max(height - border, 0):, :].reshape(-1),
+                alpha[:, :border].reshape(-1),
+                alpha[:, max(width - border, 0):].reshape(-1),
+            ], axis=0)
+            valid = border_alpha > 0.02
+            if np.any(valid):
+                border_pixels = border_pixels[valid]
+        if border_pixels.size == 0:
+            border_pixels = rgb.reshape(-1, 3)
+        background = np.median(border_pixels, axis=0).astype(np.float32)
+        if not np.isfinite(background).all():
+            return np.zeros(3, dtype=np.float32)
+        return np.clip(background, 0.0, 1.0)
+
+    def _compute_region_guidance(self, image: np.ndarray) -> Dict[str, Any]:
+        """
+        Build foreground/background/edge masks plus a spatial loss weight map.
+
+        Edges and salient foreground stay at full weight; safe background gets
+        a lower weight so flat regions do not dominate optimization or sampling.
+        """
+        from skimage.feature import canny
+        from skimage.filters import gaussian, threshold_otsu
+        from skimage.morphology import (
+            binary_closing,
+            binary_erosion,
+            binary_opening,
+            disk,
+            remove_small_objects,
+        )
+
+        if image.ndim != 3 or image.shape[2] < 3:
+            height, width = image.shape[:2]
+            ones = np.ones((height, width), dtype=np.float32)
+            zeros = np.zeros((height, width), dtype=bool)
+            return {
+                "weight_map": ones,
+                "foreground_mask": zeros,
+                "background_safe_mask": zeros,
+                "edge_band_mask": zeros,
+                "background_linear_rgb": np.zeros(3, dtype=np.float32),
+                "summary": {
+                    "foreground_pixels": 0,
+                    "background_safe_pixels": 0,
+                    "edge_band_pixels": 0,
+                    "weight_min": 1.0,
+                    "weight_max": 1.0,
+                },
+            }
+
+        rgb = np.asarray(image[:, :, :3], dtype=np.float32)
+        height, width = rgb.shape[:2]
+        background = self._estimate_border_median_color(image)
+
+        with torch.no_grad():
+            lightness = torch_linear_rgb_to_oklab(torch.from_numpy(rgb)).numpy()[:, :, 0]
+
+        edge_binary = canny(lightness, sigma=1.4)
+        edge_strength = self._normalize_map(gaussian(edge_binary.astype(np.float32), sigma=2.0))
+
+        color_distance = self._normalize_map(np.linalg.norm(rgb - background.reshape(1, 1, 3), axis=-1))
+        dog = self._normalize_map(np.abs(gaussian(lightness, sigma=1.0) - gaussian(lightness, sigma=8.0)))
+        edge_density = self._normalize_map(gaussian(edge_binary.astype(np.float32), sigma=6.0))
+        saliency = 0.45 * color_distance + 0.35 * dog + 0.20 * edge_density
+
+        if float(np.max(saliency) - np.min(saliency)) <= 1e-8:
+            foreground = np.zeros((height, width), dtype=bool)
+        else:
+            foreground = saliency > float(threshold_otsu(saliency))
+            foreground = binary_closing(foreground, disk(3))
+            foreground = binary_opening(foreground, disk(2))
+            foreground = remove_small_objects(
+                foreground,
+                min_size=max(1, int(width * height * 0.005)),
+            )
+            foreground = np.asarray(foreground, dtype=bool)
+
+        background_safe = np.asarray(binary_erosion(~foreground, disk(4)), dtype=bool)
+        edge_band = np.asarray(edge_strength > 0.05, dtype=bool)
+
+        base_weight = float(self.refinement_config.get("region_weight_base", 0.70))
+        background_weight = float(self.refinement_config.get("region_weight_background", 0.25))
+        foreground_weight = float(self.refinement_config.get("region_weight_foreground", 1.00))
+        edge_weight = float(self.refinement_config.get("region_weight_edge", 1.00))
+        weights = np.full((height, width), np.clip(base_weight, 0.0, 10.0), dtype=np.float32)
+        weights[background_safe & ~edge_band] = np.clip(background_weight, 0.0, 10.0)
+        weights[foreground] = np.clip(foreground_weight, 0.0, 10.0)
+        weights[edge_band] = np.clip(edge_weight, 0.0, 10.0)
+
+        return {
+            "weight_map": weights,
+            "foreground_mask": foreground,
+            "background_safe_mask": background_safe,
+            "edge_band_mask": edge_band,
+            "background_linear_rgb": background,
+            "summary": {
+                "foreground_pixels": int(np.count_nonzero(foreground)),
+                "background_safe_pixels": int(np.count_nonzero(background_safe)),
+                "edge_band_pixels": int(np.count_nonzero(edge_band)),
+                "weight_min": float(np.min(weights)),
+                "weight_max": float(np.max(weights)),
+                "background_linear_rgb": [
+                    float(background[0]),
+                    float(background[1]),
+                    float(background[2]),
+                ],
+            },
+        }
+
+    def _loss_weight_tensor(self, width: int, height: int) -> Optional[torch.Tensor]:
+        """Return region weighting as a tensor when enabled and shape-compatible."""
+        if not self.region_weighting_enabled or self._region_weight_map is None:
+            return None
+        if self._region_weight_map.shape != (int(height), int(width)):
+            return None
+        return torch.from_numpy(self._region_weight_map.astype(np.float32, copy=False)).to(self.device)
+
     def _sample_candidate_positions(
         self,
         score_map: np.ndarray,
@@ -1598,6 +1773,13 @@ class PNG2SVGConverter:
                 np.empty((0,), dtype=np.int32),
                 np.empty((0,), dtype=np.float32),
             )
+
+        if (
+            self.region_weighting_enabled
+            and self._region_weight_map is not None
+            and self._region_weight_map.shape == score_map.shape
+        ):
+            score_map = np.asarray(score_map, dtype=np.float32) * self._region_weight_map
 
         threshold = float(np.percentile(score_map, percentile))
         mask = score_map >= threshold
@@ -1985,6 +2167,12 @@ class PNG2SVGConverter:
                     "residual_detail_iters": 8,
                     "residual_detail_edge_weight": 0.30,
                     "residual_detail_color_gain": 0.95,
+                    "region_weighting_enabled": True,
+                    "region_weight_base": 0.70,
+                    "region_weight_background": 0.25,
+                    "region_weight_foreground": 1.00,
+                    "region_weight_edge": 1.00,
+                    "svg_export_recipe": "browser-compatible",
                 },
                 "schedule": {
                     "enabled": True,

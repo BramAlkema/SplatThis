@@ -54,6 +54,13 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Output format. 'canvas' emits a self-contained HTML that renders the "
                              "splats via a JS canvas runtime with real linear-space alpha-over "
                              "compositing (breaks the SVG primitive's representational cap).")
+    parser.add_argument("--svg-recipe", default=None, choices=["standard", "browser-compatible"],
+                        help="SVG export recipe (default comes from quality profile). "
+                             "'browser-compatible' feathers gradients and compensates browser blending.")
+    parser.add_argument("--region-weighting", dest="region_weighting", action="store_true", default=None,
+                        help="Enable segmentation-derived spatial loss/sampling weights.")
+    parser.add_argument("--no-region-weighting", dest="region_weighting", action="store_false",
+                        help="Disable segmentation-derived spatial loss/sampling weights.")
     parser.add_argument("--device", default="cpu", help="Torch device (cpu or cuda)")
     parser.add_argument("--seed", type=int, default=0, help="Deterministic seed")
     parser.add_argument("--artifacts-dir", default=None, help="Optional directory for run manifest + iteration dumps")
@@ -72,6 +79,12 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     output = args.output or str(Path(input_path).with_suffix(f".{args.fmt}"))
 
+    refinement_config = {}
+    if args.svg_recipe is not None:
+        refinement_config["svg_export_recipe"] = args.svg_recipe
+    if args.region_weighting is not None:
+        refinement_config["region_weighting_enabled"] = bool(args.region_weighting)
+
     converter = PNG2SVGConverter(
         max_splats=args.splats,
         stages=args.stages,
@@ -80,6 +93,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         blend_mode=args.blend_mode,
         device=args.device,
         seed=args.seed,
+        refinement_config=refinement_config or None,
     )
     converter.convert(
         input_path=input_path,

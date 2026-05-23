@@ -33,6 +33,11 @@ MIN_ELLIPSE_RADIUS_PX = 0.35
 # without measurable fidelity gain.
 SVG_GRADIENT_STOPS = 8
 DEFAULT_EXPORT_ORDER = "importance"
+SVG_BROWSER_COMPAT_RECIPE = "browser-compatible"
+SVG_BACKGROUND_ALPHA_CAP = 0.20
+SVG_FEATHER_EXTENT = 2.0
+SVG_PRECOMP_ALPHA_THRESHOLD = 0.90
+SVG_PRECOMP_MAX_SRGB = 160.0
 
 
 def load_png(path: str, target_size: Optional[Tuple[int, int]] = None,
@@ -149,7 +154,11 @@ def save_svg(splats: List[GaussianSplat], width: int, height: int,
              output_path: str, k_sigma: float = 2.5,
              sort_by_area: bool = False,
              sort_mode: str = DEFAULT_EXPORT_ORDER,
-             background_linear_rgb: Optional[np.ndarray] = None) -> None:
+             background_linear_rgb: Optional[np.ndarray] = None,
+             export_recipe: str = "standard",
+             foreground_mask: Optional[np.ndarray] = None,
+             background_safe_mask: Optional[np.ndarray] = None,
+             edge_band_mask: Optional[np.ndarray] = None) -> None:
     """
     Save splats as SVG file.
 
@@ -176,6 +185,10 @@ def save_svg(splats: List[GaussianSplat], width: int, height: int,
         height,
         k_sigma,
         background_linear_rgb=background_linear_rgb,
+        export_recipe=export_recipe,
+        foreground_mask=foreground_mask,
+        background_safe_mask=background_safe_mask,
+        edge_band_mask=edge_band_mask,
     )
 
     # Write to file
@@ -371,6 +384,10 @@ def generate_svg_content(
     height: int,
     k_sigma: float = 2.5,
     background_linear_rgb: Optional[np.ndarray] = None,
+    export_recipe: str = "standard",
+    foreground_mask: Optional[np.ndarray] = None,
+    background_safe_mask: Optional[np.ndarray] = None,
+    edge_band_mask: Optional[np.ndarray] = None,
 ) -> str:
     """
     Generate SVG content from splats.
@@ -381,16 +398,41 @@ def generate_svg_content(
         height: Image height
         k_sigma: Sigma multiplier for ellipse size
         background_linear_rgb: Optional background color in linear RGB [0,1]
+        export_recipe: "standard" or "browser-compatible". The browser recipe
+            feathers gradients, pre-compensates dark opaque splats against the
+            background, and caps alpha in safe background regions.
 
     Returns:
         Complete SVG document as string
     """
+    normalized_recipe = str(export_recipe).strip().lower()
+    if normalized_recipe in {"browser", "browser_compatible", "browser-compatible"}:
+        normalized_recipe = SVG_BROWSER_COMPAT_RECIPE
+    if normalized_recipe not in {"standard", SVG_BROWSER_COMPAT_RECIPE}:
+        raise ValueError(f"Unsupported SVG export recipe: {export_recipe}")
+    use_browser_recipe = normalized_recipe == SVG_BROWSER_COMPAT_RECIPE
+
+    def _valid_mask(mask: Optional[np.ndarray]) -> Optional[np.ndarray]:
+        if mask is None:
+            return None
+        arr = np.asarray(mask)
+        if arr.shape != (int(height), int(width)):
+            raise ValueError("SVG region masks must match output height/width")
+        return arr.astype(bool, copy=False)
+
+    foreground = _valid_mask(foreground_mask)
+    background_safe = _valid_mask(background_safe_mask)
+    edge_band = _valid_mask(edge_band_mask)
+
+    bg_linear: Optional[np.ndarray] = None
+    bg_srgb: Optional[np.ndarray] = None
     background_rect_line: Optional[str] = None
     if background_linear_rgb is not None:
         bg = np.asarray(background_linear_rgb, dtype=np.float32).reshape(-1)
         if bg.size != 3:
             raise ValueError("background_linear_rgb must have exactly 3 components")
         bg = np.clip(bg, 0.0, 1.0)
+        bg_linear = bg
         bg_srgb = linear_to_srgb(bg)
         bg_r = int(np.clip(np.round(bg_srgb[0] * 255), 0, 255))
         bg_g = int(np.clip(np.round(bg_srgb[1] * 255), 0, 255))
@@ -414,28 +456,80 @@ def generate_svg_content(
         "    </style>",
     ]
 
+    def _splat_center(splat: GaussianSplat) -> Tuple[int, int]:
+        x = int(np.clip(round(float(splat.mu[0])), 0, max(int(width) - 1, 0)))
+        y = int(np.clip(round(float(splat.mu[1])), 0, max(int(height) - 1, 0)))
+        return x, y
+
+    def _in_safe_background(splat: GaussianSplat) -> bool:
+        if background_safe is None:
+            return False
+        x, y = _splat_center(splat)
+        if not bool(background_safe[y, x]):
+            return False
+        if foreground is not None and bool(foreground[y, x]):
+            return False
+        if edge_band is not None and bool(edge_band[y, x]):
+            return False
+        return True
+
+    def _browser_compensated_color(splat: GaussianSplat, alpha: float) -> np.ndarray:
+        color_linear = np.clip(np.array(splat.color[:3], dtype=np.float32), 0.0, 1.0)
+        color_srgb = linear_to_srgb(color_linear)
+        if (
+            not use_browser_recipe
+            or bg_linear is None
+            or bg_srgb is None
+            or float(splat.alpha) < SVG_PRECOMP_ALPHA_THRESHOLD
+            or float(np.max(color_srgb) * 255.0) > SVG_PRECOMP_MAX_SRGB
+        ):
+            return color_srgb
+
+        # Browsers blend SVG stops in display space. Solve the stop color that
+        # gives the same center-over-background result as linear alpha-over.
+        paint_alpha = 1.0 - math.exp(-float(np.clip(alpha, 0.0, 1.0)))
+        target_srgb = linear_to_srgb(paint_alpha * color_linear + (1.0 - paint_alpha) * bg_linear)
+        if paint_alpha <= 1e-6:
+            return color_srgb
+        return np.clip((target_srgb - (1.0 - paint_alpha) * bg_srgb) / paint_alpha, 0.0, 1.0)
+
+    gradient_footprint = ELLIPSE_OVERLAP_BOOST * k_sigma
+    feather_extent = SVG_FEATHER_EXTENT if use_browser_recipe else 1.0
+    inner_end = 1.0 / feather_extent
+
     # Per-splat radial gradients approximate gaussian opacity in exported SVG.
     for i, splat in enumerate(splats):
         gradient_id = f"splat_grad_{i}"
-        rgb_srgb = linear_to_srgb(np.array(splat.color[:3], dtype=np.float32))
+        alpha = float(np.clip(splat.alpha, 0.0, 1.0))
+        if use_browser_recipe and _in_safe_background(splat):
+            alpha = min(alpha, SVG_BACKGROUND_ALPHA_CAP)
+
+        rgb_srgb = _browser_compensated_color(splat, alpha)
         r = int(np.clip(np.round(rgb_srgb[0] * 255), 0, 255))
         g = int(np.clip(np.round(rgb_srgb[1] * 255), 0, 255))
         b = int(np.clip(np.round(rgb_srgb[2] * 255), 0, 255))
         color = f"rgb({r},{g},{b})"
-        alpha = float(np.clip(splat.alpha, 0.0, 1.0))
         # True-Gaussian gradient stops: reproduce the renderer's per-splat
         # alpha-over opacity, 1 - exp(-a * exp(-0.5 * r^2)), sampled across the
         # ellipse. The gradient edge (offset 100%) is the ellipse boundary at
         # `footprint` sigmas, so the normalized radius t maps to t*footprint
         # sigmas. This matches render_splats_numpy far better than the old
         # 3-stop ramp (+~0.02 perceptual SSIM at no extra cost).
-        footprint = ELLIPSE_OVERLAP_BOOST * k_sigma
         stop_lines = []
         for j in range(SVG_GRADIENT_STOPS):
             t = j / (SVG_GRADIENT_STOPS - 1)
-            opacity = 1.0 - math.exp(-alpha * math.exp(-0.5 * (t * footprint) ** 2))
+            opacity = 1.0 - math.exp(-alpha * math.exp(-0.5 * (t * gradient_footprint) ** 2))
+            offset = t * inner_end
             stop_lines.append(
-                f'      <stop offset="{t * 100:.1f}%" stop-color="{color}" stop-opacity="{opacity:.5f}"/>'
+                f'      <stop offset="{offset * 100:.1f}%" stop-color="{color}" stop-opacity="{opacity:.5f}"/>'
+            )
+        if use_browser_recipe:
+            mid_fade = (inner_end + 1.0) / 2.0
+            stop_lines.append(
+                f'      <stop offset="{mid_fade * 100:.1f}%" stop-color="{color}" stop-opacity="0"/>'
+            )
+            stop_lines.append(
+                f'      <stop offset="100.0%" stop-color="{color}" stop-opacity="0"/>'
             )
         svg_lines.append(
             f'    <radialGradient id="{gradient_id}" cx="50%" cy="50%" r="50%" '
@@ -454,6 +548,7 @@ def generate_svg_content(
             k_sigma=k_sigma,
             element_id=f"splat_{i}",
             gradient_id=f"splat_grad_{i}",
+            radius_scale=feather_extent,
         )
         svg_lines.append(f"  {ellipse_element}")
 
@@ -611,6 +706,7 @@ def splat_to_svg_ellipse(
     k_sigma: float = 2.5,
     element_id: Optional[str] = None,
     gradient_id: Optional[str] = None,
+    radius_scale: float = 1.0,
 ) -> str:
     """
     Convert Gaussian splat to SVG ellipse element.
@@ -630,11 +726,11 @@ def splat_to_svg_ellipse(
     # Semi-axes lengths (k * σ where σ = sqrt(eigenvalue))
     rx = max(
         MIN_ELLIPSE_RADIUS_PX,
-        ELLIPSE_OVERLAP_BOOST * k_sigma * np.sqrt(eigenvals[0]),
+        float(max(radius_scale, 0.0)) * ELLIPSE_OVERLAP_BOOST * k_sigma * np.sqrt(eigenvals[0]),
     )
     ry = max(
         MIN_ELLIPSE_RADIUS_PX,
-        ELLIPSE_OVERLAP_BOOST * k_sigma * np.sqrt(eigenvals[1]),
+        float(max(radius_scale, 0.0)) * ELLIPSE_OVERLAP_BOOST * k_sigma * np.sqrt(eigenvals[1]),
     )
 
     # Rotation angle (from first eigenvector)

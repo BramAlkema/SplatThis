@@ -41,6 +41,36 @@ def test_generate_svg_content_can_embed_background_rect():
     assert '<rect x="0" y="0" width="32" height="24"' in svg
 
 
+def test_browser_compatible_svg_recipe_feathers_and_clamps_background_alpha():
+    """Browser recipe should expand splats and cap safe-background opacity."""
+    splat = create_isotropic_splat(
+        center=np.array([8.0, 8.0]),
+        sigma=2.0,
+        color=np.array([0.2, 0.2, 0.2]),
+        alpha=0.8,
+    )
+    background_safe = np.ones((20, 20), dtype=bool)
+    foreground = np.zeros((20, 20), dtype=bool)
+    edge_band = np.zeros((20, 20), dtype=bool)
+
+    svg = generate_svg_content(
+        [splat],
+        width=20,
+        height=20,
+        k_sigma=2.5,
+        background_linear_rgb=np.array([1.0, 1.0, 1.0], dtype=np.float32),
+        export_recipe="browser-compatible",
+        foreground_mask=foreground,
+        background_safe_mask=background_safe,
+        edge_band_mask=edge_band,
+    )
+
+    assert 'rx="11.50" ry="11.50"' in svg
+    assert 'offset="50.0%"' in svg
+    assert 'offset="75.0%" stop-color=' in svg
+    assert 'stop-opacity="0.18127"' in svg
+
+
 def test_numpy_renderer_returns_background_when_no_splats():
     """Numpy renderer should emit requested background for empty splat sets."""
     rendered = render_splats_numpy(
@@ -138,3 +168,25 @@ def test_oklab_loss_runs_and_is_differentiable():
     assert torch.isfinite(loss)
     loss.backward()
     assert rendered.grad is not None and torch.isfinite(rendered.grad).all()
+
+
+def test_spatial_weighted_l1_prioritizes_weighted_pixels():
+    """Spatial weights should affect the L1 term while leaving the API differentiable."""
+    import torch
+    from png2svg_gs.renderer import L1SSIMLoss
+
+    target = torch.zeros(2, 2, 3)
+    rendered = torch.zeros(2, 2, 3, requires_grad=True)
+    rendered.data[0, 0, :] = 1.0
+    rendered.data[1, 1, :] = 1.0
+    weights = torch.tensor([[0.1, 1.0], [1.0, 1.0]])
+
+    weighted_loss = L1SSIMLoss(l1_weight=1.0, ssim_weight=0.0, spatial_weight_map=weights)(
+        rendered,
+        target,
+    )
+    unweighted_loss = L1SSIMLoss(l1_weight=1.0, ssim_weight=0.0)(rendered, target)
+
+    assert weighted_loss < unweighted_loss
+    weighted_loss.backward()
+    assert rendered.grad is not None
