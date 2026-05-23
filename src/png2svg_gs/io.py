@@ -960,6 +960,8 @@ def _pptx_content_types_xml() -> str:
   <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
   <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
   <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+  <Override PartName="/ppt/presProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presProps+xml"/>
+  <Override PartName="/ppt/viewProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.viewProps+xml"/>
   <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
   <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
 </Types>
@@ -1026,7 +1028,30 @@ def _pptx_presentation_rels_xml() -> str:
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/presProps" Target="presProps.xml"/>
+  <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/viewProps" Target="viewProps.xml"/>
+  <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>
 </Relationships>
+"""
+
+
+def _pptx_pres_props_xml() -> str:
+    """Minimal presentationPr part. PowerPoint emits its 'unreadable content'
+    repair dialog when this relationship is absent, even when everything else
+    is valid (per openxml-audit semantic check)."""
+    return """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentationPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+                  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+                  xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"/>
+"""
+
+
+def _pptx_view_props_xml() -> str:
+    """Minimal viewPr part. Same repair-dialog trigger as presProps."""
+    return """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:viewPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+          xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"/>
 """
 
 
@@ -1201,22 +1226,36 @@ def _pptx_theme_xml() -> str:
       <a:folHlink><a:srgbClr val="800080"/></a:folHlink>
     </a:clrScheme>
     <a:fontScheme name="SplatThis">
-      <a:majorFont><a:latin typeface="Calibri"/></a:majorFont>
-      <a:minorFont><a:latin typeface="Calibri"/></a:minorFont>
+      <a:majorFont>
+        <a:latin typeface="Calibri"/>
+        <a:ea typeface=""/>
+        <a:cs typeface=""/>
+      </a:majorFont>
+      <a:minorFont>
+        <a:latin typeface="Calibri"/>
+        <a:ea typeface=""/>
+        <a:cs typeface=""/>
+      </a:minorFont>
     </a:fontScheme>
     <a:fmtScheme name="SplatThis">
       <a:fillStyleLst>
         <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
+        <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
+        <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
       </a:fillStyleLst>
       <a:lnStyleLst>
-        <a:ln w="9525" cap="flat" cmpd="sng" algn="ctr">
-          <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
-        </a:ln>
+        <a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln>
+        <a:ln w="19050" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln>
+        <a:ln w="38100" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln>
       </a:lnStyleLst>
       <a:effectStyleLst>
         <a:effectStyle><a:effectLst/></a:effectStyle>
+        <a:effectStyle><a:effectLst/></a:effectStyle>
+        <a:effectStyle><a:effectLst/></a:effectStyle>
       </a:effectStyleLst>
       <a:bgFillStyleLst>
+        <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
+        <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
         <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
       </a:bgFillStyleLst>
     </a:fmtScheme>
@@ -1283,6 +1322,8 @@ def save_pptx_with_splat_png(
         zf.writestr("ppt/slideMasters/slideMaster1.xml", _pptx_slide_master_xml())
         zf.writestr("ppt/slideMasters/_rels/slideMaster1.xml.rels", _pptx_slide_master_rels_xml())
         zf.writestr("ppt/theme/theme1.xml", _pptx_theme_xml())
+        zf.writestr("ppt/presProps.xml", _pptx_pres_props_xml())
+        zf.writestr("ppt/viewProps.xml", _pptx_view_props_xml())
         zf.writestr("ppt/media/image1.png", png_bytes)
 
     logger.info("Saved PPTX with rasterized splat image: %s", output_path)
