@@ -11,6 +11,7 @@ from png2svg_gs.converter import PNG2SVGConverter
 from png2svg_gs.io import (
     generate_svg_content,
     save_pptx_with_splat_png,
+    save_pptx_with_splats,
 )
 from png2svg_gs.renderer import render_splats_numpy
 from png2svg_gs.splat import create_isotropic_splat
@@ -84,7 +85,7 @@ def test_numpy_renderer_returns_background_when_no_splats():
 
 
 def test_save_pptx_with_splat_png_creates_minimal_package(tmp_path: Path):
-    """PPTX helper should produce a package with expected core parts."""
+    """Raster PPTX helper remains available as an explicit fallback."""
     splats = [create_isotropic_splat(center=np.array([8.0, 8.0]), sigma=2.5, color=np.array([0.9, 0.1, 0.2]), alpha=0.7)]
     out = tmp_path / "slide.pptx"
     save_pptx_with_splat_png(splats=splats, width=32, height=24, output_path=str(out))
@@ -102,6 +103,54 @@ def test_save_pptx_with_splat_png_creates_minimal_package(tmp_path: Path):
         "ppt/media/image1.png",
     }
     assert required.issubset(names)
+
+
+def test_save_pptx_with_splats_creates_native_shape_package(tmp_path: Path):
+    """Default PPTX export should contain native DrawingML splat shapes, not PNG media."""
+    splats = [
+        create_isotropic_splat(
+            center=np.array([8.0, 8.0]),
+            sigma=2.5,
+            color=np.array([0.9, 0.1, 0.2]),
+            alpha=0.7,
+        ),
+        create_isotropic_splat(
+            center=np.array([18.0, 12.0]),
+            sigma=1.5,
+            color=np.array([0.1, 0.6, 0.9]),
+            alpha=0.5,
+        ),
+    ]
+    splats[0].layer = 0
+    splats[0].importance = 0.1
+    splats[1].layer = 2
+    splats[1].importance = 2.4
+    out = tmp_path / "slide_shapes.pptx"
+    save_pptx_with_splats(
+        splats=splats,
+        width=32,
+        height=24,
+        output_path=str(out),
+        background_linear_rgb=np.array([0.05, 0.04, 0.03], dtype=np.float32),
+    )
+
+    assert out.exists()
+    with zipfile.ZipFile(out, "r") as zf:
+        names = set(zf.namelist())
+        slide_xml = zf.read("ppt/slides/slide1.xml").decode("utf-8")
+        rels_xml = zf.read("ppt/slides/_rels/slide1.xml.rels").decode("utf-8")
+
+    assert "ppt/media/image1.png" not in names
+    assert "<p:pic>" not in slide_xml
+    assert slide_xml.count("<p:grpSp>") == 3
+    assert 'name="Splat Group"' in slide_xml
+    assert 'name="Base Layer"' in slide_xml
+    assert 'name="Detail Layer"' in slide_xml
+    assert slide_xml.count("<p:sp>") == 3  # background + two splats
+    assert 'name="Splat Background"' in slide_xml
+    assert "<a:softEdge" in slide_xml
+    assert "<a:gradFill>" not in slide_xml
+    assert "relationships/image" not in rels_xml
 
 
 def test_converter_exports_pptx_and_comparison_artifacts(tmp_path: Path):
@@ -124,6 +173,7 @@ def test_converter_exports_pptx_and_comparison_artifacts(tmp_path: Path):
         seed=19,
         device="cpu",
         blend_mode="alpha-over",
+        layered_saliency=True,
     )
     converter.convert(
         input_path=str(input_path),
@@ -139,9 +189,25 @@ def test_converter_exports_pptx_and_comparison_artifacts(tmp_path: Path):
     assert output_path.exists()
     assert preview_path.exists()
     assert side_by_side_path.exists()
+    with zipfile.ZipFile(output_path, "r") as zf:
+        names = set(zf.namelist())
+        slide_xml = zf.read("ppt/slides/slide1.xml").decode("utf-8")
+    assert "ppt/media/image1.png" not in names
+    assert "<p:pic>" not in slide_xml
+    assert "<p:grpSp>" in slide_xml
+    assert 'name="Splat Group"' in slide_xml
+    assert 'name="Base Layer"' in slide_xml
+    assert 'name="Mass Layer"' in slide_xml
+    assert "<p:sp>" in slide_xml
+    assert "<a:softEdge" in slide_xml
+    assert "<a:gradFill>" not in slide_xml
     manifest = json.loads((artifacts_path / "run_manifest.json").read_text(encoding="utf-8"))
     assert "internal_metrics" in manifest
     assert "export_quality" in manifest
+    assert manifest["config"]["pptx_export_mode"] == "drawingml-splats"
+    assert manifest["config"]["pptx_splat_style"] == "soft-edge"
+    assert manifest["config"]["layered_saliency"] is True
+    assert manifest["layered_saliency"]["enabled"] is True
 
 
 def test_oklab_transform_reference_values():

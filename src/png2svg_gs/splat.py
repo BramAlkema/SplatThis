@@ -13,6 +13,16 @@ logger = logging.getLogger(__name__)
 
 RAW_SPLAT_SCHEMA_VERSION = "png2splat.raw/1"
 MIN_SCALE = 1e-4
+LAYER_BASE = 0
+LAYER_MASS = 1
+LAYER_DETAIL = 2
+LAYER_EDGE = 3
+SPLAT_LAYER_NAMES = {
+    LAYER_BASE: "base",
+    LAYER_MASS: "mass",
+    LAYER_DETAIL: "detail",
+    LAYER_EDGE: "edge",
+}
 
 
 @dataclass
@@ -114,6 +124,23 @@ class RawSplat:
         )
 
 
+def render_importance_for_raw(raw: RawSplat) -> float:
+    """Return the scalar draw-order key, preserving explicit layer bands."""
+    importance = float(raw.importance)
+    if raw.layer is None:
+        return importance
+
+    layer = float(int(raw.layer))
+    if layer <= importance < layer + 1.0:
+        return importance
+    return layer + float(np.clip(importance, 0.0, 0.999))
+
+
+def render_order_key(splat: "GaussianSplat") -> float:
+    """Back-to-front ordering key used by renderers and vector exporters."""
+    return render_importance_for_raw(splat.to_raw_splat())
+
+
 @dataclass
 class GaussianSplat:
     """
@@ -129,6 +156,7 @@ class GaussianSplat:
 
     # Optional metadata
     importance: float = 0.0    # For LOD and pruning
+    layer: Optional[int] = None
     _raw_cache: Optional[RawSplat] = field(default=None, init=False, repr=False, compare=False)
     _raw_cache_key: Optional[Tuple[float, ...]] = field(default=None, init=False, repr=False, compare=False)
 
@@ -139,6 +167,8 @@ class GaussianSplat:
         self.color = np.array(self.color, dtype=np.float32)
         self.alpha = float(self.alpha)
         self.importance = float(self.importance)
+        if self.layer is not None:
+            self.layer = int(self.layer)
 
         self._validate()
 
@@ -207,6 +237,7 @@ class GaussianSplat:
             float(self.color[2]),
             float(self.alpha),
             float(self.importance),
+            float(-1 if self.layer is None else int(self.layer)),
         )
 
     def _principal_params_from_sigma(self) -> Tuple[float, float, float]:
@@ -248,7 +279,8 @@ class GaussianSplat:
             sigma=self.sigma.copy(),
             color=self.color.copy(),
             alpha=self.alpha,
-            importance=self.importance
+            importance=self.importance,
+            layer=self.layer,
         )
         if self._raw_cache is not None:
             cloned._raw_cache = RawSplat(
@@ -292,6 +324,7 @@ class GaussianSplat:
             b=float(self.color[2]),
             a=float(self.alpha),
             importance=float(self.importance),
+            layer=self.layer,
         )
         self._raw_cache = raw
         self._raw_cache_key = cache_key
@@ -315,6 +348,7 @@ class GaussianSplat:
             color=np.array([raw.r, raw.g, raw.b], dtype=np.float32),
             alpha=float(raw.a),
             importance=float(raw.importance),
+            layer=raw.layer,
         )
         splat._raw_cache = RawSplat(
             x=float(raw.x),

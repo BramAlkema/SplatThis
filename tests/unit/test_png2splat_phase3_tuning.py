@@ -108,3 +108,75 @@ def test_converter_accepts_alpha_over_blend_mode(tmp_path: Path):
 
     manifest = json.loads((artifacts_path / "run_manifest.json").read_text(encoding="utf-8"))
     assert manifest["config"]["blend_mode"] == "alpha-over"
+
+
+def test_time_budget_plan_scales_splats_with_native_pixels_and_saliency():
+    """The budget prepass should give larger native images a larger splat budget."""
+
+    def guidance(width: int, height: int, *, foreground: float, edge: float, background: float):
+        area = width * height
+        return {
+            "summary": {
+                "foreground_pixels": int(area * foreground),
+                "edge_band_pixels": int(area * edge),
+                "background_safe_pixels": int(area * background),
+            },
+            "weight_map": np.full((2, 2), 0.85, dtype=np.float32),
+        }
+
+    small = PNG2SVGConverter(max_splats=5000, time_budget="30m", apple_silicon_splat_cap=None)
+    small_plan = small._apply_time_budget_plan(
+        width=400,
+        height=267,
+        guidance=guidance(400, 267, foreground=0.30, edge=0.25, background=0.55),
+    )
+    native = PNG2SVGConverter(max_splats=5000, time_budget="30m", apple_silicon_splat_cap=None)
+    native_plan = native._apply_time_budget_plan(
+        width=1500,
+        height=1000,
+        guidance=guidance(1500, 1000, foreground=0.30, edge=0.25, background=0.55),
+    )
+
+    assert small_plan["selected_max_splats"] < native_plan["selected_max_splats"]
+    assert native_plan["selected_max_splats"] > 2000
+    assert native_plan["preset_ceiling"] is None
+    assert native.stages == [80, 60, 40, 20]
+
+
+def test_time_budget_smoke_records_resolved_plan_in_manifest(tmp_path: Path):
+    """A budgeted conversion should record the resolved cap, stages, and prepass ratios."""
+    image = np.zeros((18, 18, 3), dtype=np.uint8)
+    image[4:14, 4:14, 0] = 220
+    image[7:11, 7:11, 2] = 255
+    input_path = tmp_path / "budget_input.png"
+    output_path = tmp_path / "budget_output.html"
+    artifacts_path = tmp_path / "budget_artifacts"
+    Image.fromarray(image).save(input_path)
+
+    converter = PNG2SVGConverter(
+        max_splats=24,
+        target_size=(18, 18),
+        seed=17,
+        quality_profile="fast",
+        device="cpu",
+        time_budget="smoke",
+        apple_silicon_splat_cap=None,
+    )
+    converter.convert(
+        input_path=str(input_path),
+        output_path=str(output_path),
+        output_format="canvas",
+        verbose=False,
+        seed=17,
+        artifacts_dir=str(artifacts_path),
+    )
+
+    manifest = json.loads((artifacts_path / "run_manifest.json").read_text(encoding="utf-8"))
+    plan = manifest["config"]["time_budget_plan"]
+    assert manifest["config"]["time_budget"] == "1m"
+    assert manifest["config"]["stages"] == [2]
+    assert manifest["config"]["max_splats"] == 24
+    assert plan["label"] == "1m smoke"
+    assert plan["selected_max_splats"] == 24
+    assert "region_guidance" in manifest["config"]
+    assert manifest["final_splat_count"] <= 24

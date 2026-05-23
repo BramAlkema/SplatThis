@@ -44,6 +44,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-o", "--output", help="Output path (default: <input>.svg)")
     parser.add_argument("--splats", type=int, default=2000, help="Max number of splats (default: 2000)")
     parser.add_argument(
+        "--time-budget",
+        default=None,
+        choices=["smoke", "1m", "5m", "10m", "30m"],
+        help="Use a content-aware training budget preset. Presets set stage schedule, "
+             "splat cap, and residual-detail cost; 'smoke' is an alias for 1m.",
+    )
+    parser.add_argument(
         "--stages", type=_parse_stages, default=_parse_stages("200,150,100,50"),
         help="Per-stage iteration schedule, comma-separated (default: 200,150,100,50)",
     )
@@ -54,6 +61,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Output format. 'canvas' emits a self-contained HTML that renders the "
                              "splats via a JS canvas runtime with real linear-space alpha-over "
                              "compositing (breaks the SVG primitive's representational cap).")
+    parser.add_argument("--pptx-splat-style", default="soft-edge", choices=["soft-edge", "gradient"],
+                        help="Native PPTX splat primitive style. 'soft-edge' is the current "
+                             "PowerPoint-friendly default; 'gradient' preserves the old radial-gradient path.")
     parser.add_argument("--svg-recipe", default=None, choices=["standard", "browser-compatible"],
                         help="SVG export recipe (default comes from quality profile). "
                              "'browser-compatible' feathers gradients and compensates browser blending.")
@@ -61,6 +71,24 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Enable segmentation-derived spatial loss/sampling weights.")
     parser.add_argument("--no-region-weighting", dest="region_weighting", action="store_false",
                         help="Disable segmentation-derived spatial loss/sampling weights.")
+    parser.add_argument("--layered-saliency", dest="layered_saliency", action="store_true", default=False,
+                        help="Tag splats into base/mass/detail/edge layers and export nested layer groups.")
+    parser.add_argument("--no-layered-saliency", dest="layered_saliency", action="store_false",
+                        help="Disable layered saliency tagging/export grouping.")
+    parser.add_argument(
+        "--apple-silicon-splat-cap",
+        dest="apple_silicon_splat_cap",
+        type=int,
+        default=2000,
+        help="Safety cap applied on Apple Silicon before budget selection (default: 2000).",
+    )
+    parser.add_argument(
+        "--no-apple-silicon-splat-cap",
+        dest="apple_silicon_splat_cap",
+        action="store_const",
+        const=None,
+        help="Disable the conservative Apple Silicon splat cap for exploratory runs.",
+    )
     parser.add_argument("--device", default="cpu", help="Torch device (cpu or cuda)")
     parser.add_argument("--seed", type=int, default=0, help="Deterministic seed")
     parser.add_argument("--artifacts-dir", default=None, help="Optional directory for run manifest + iteration dumps")
@@ -94,6 +122,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         device=args.device,
         seed=args.seed,
         refinement_config=refinement_config or None,
+        time_budget=args.time_budget,
+        apple_silicon_splat_cap=args.apple_silicon_splat_cap,
+        layered_saliency=args.layered_saliency,
+        pptx_splat_style=args.pptx_splat_style,
     )
     converter.convert(
         input_path=input_path,

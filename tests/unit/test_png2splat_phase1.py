@@ -34,12 +34,15 @@ def test_raw_splat_validation_rejects_invalid_scale():
 def test_gaussian_raw_roundtrip_preserves_core_parameters():
     """Gaussian <-> raw schema roundtrip should preserve key values."""
     splat = create_isotropic_splat(center=np.array([12.0, 9.0]), sigma=3.0, color=np.array([0.2, 0.4, 0.6]), alpha=0.7)
+    splat.layer = 2
     raw = splat.to_raw_splat()
     restored = GaussianSplat.from_raw_splat(raw)
 
     assert np.allclose(restored.mu, splat.mu, atol=1e-5)
     assert np.allclose(restored.color[:3], splat.color[:3], atol=1e-5)
     assert restored.alpha == pytest.approx(splat.alpha, abs=1e-5)
+    assert raw.layer == 2
+    assert restored.layer == 2
     assert raw.sx > 0
     assert raw.sy > 0
 
@@ -68,17 +71,25 @@ def test_save_and_load_splats_json_canonical(tmp_path: Path):
         create_isotropic_splat(center=np.array([4.0, 5.0]), sigma=2.0, color=np.array([1.0, 0.0, 0.0]), alpha=0.9),
         create_isotropic_splat(center=np.array([8.0, 9.0]), sigma=1.5, color=np.array([0.0, 1.0, 0.0]), alpha=0.6),
     ]
+    splats[0].layer = 0
+    splats[1].layer = 2
     out_path = tmp_path / "splats.json"
     save_splats_json(splats, str(out_path))
 
     data = json.loads(out_path.read_text(encoding="utf-8"))
     assert data["schema"] == "png2splat.raw/1"
     assert data["num_splats"] == 2
+    assert data["layers"] == [
+        {"count": 1, "id": 0, "name": "base"},
+        {"count": 1, "id": 2, "name": "detail"},
+    ]
     assert {"x", "y", "sx", "sy", "theta", "r", "g", "b", "a"}.issubset(data["splats"][0])
 
     loaded = load_splats_json(str(out_path))
     assert len(loaded) == 2
     assert np.allclose(loaded[0].mu, splats[0].mu, atol=1e-5)
+    assert loaded[0].layer == 0
+    assert loaded[1].layer == 2
 
 
 def test_seeded_initializer_is_deterministic():

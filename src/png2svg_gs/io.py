@@ -21,7 +21,15 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from PIL import Image
 
-from .splat import GaussianSplat, RAW_SPLAT_SCHEMA_VERSION, RawSplat
+from .splat import (
+    LAYER_BASE,
+    SPLAT_LAYER_NAMES,
+    GaussianSplat,
+    RAW_SPLAT_SCHEMA_VERSION,
+    RawSplat,
+    render_importance_for_raw,
+    render_order_key,
+)
 
 logger = logging.getLogger(__name__)
 EMU_PER_PX = 9525
@@ -33,11 +41,38 @@ MIN_ELLIPSE_RADIUS_PX = 0.35
 # without measurable fidelity gain.
 SVG_GRADIENT_STOPS = 8
 DEFAULT_EXPORT_ORDER = "importance"
+DEFAULT_PPTX_SPLAT_STYLE = "soft-edge"
+PPTX_SOFT_EDGE_ALPHA_SCALE = 0.25
+PPTX_SOFT_EDGE_RADIUS_FACTOR = 0.20
+PPTX_SOFT_EDGE_K_SIGMA_SCALE = 0.92
 SVG_BROWSER_COMPAT_RECIPE = "browser-compatible"
 SVG_BACKGROUND_ALPHA_CAP = 0.20
 SVG_FEATHER_EXTENT = 2.0
 SVG_PRECOMP_ALPHA_THRESHOLD = 0.90
 SVG_PRECOMP_MAX_SRGB = 160.0
+
+
+def _layer_name(layer: Optional[int]) -> str:
+    if layer is None:
+        return "unassigned"
+    return SPLAT_LAYER_NAMES.get(int(layer), f"layer-{int(layer)}")
+
+
+def _layer_title(layer: Optional[int]) -> str:
+    return _layer_name(layer).replace("-", " ").title()
+
+
+def _splat_layer(splat: GaussianSplat) -> Optional[int]:
+    return splat.to_raw_splat().layer
+
+
+def _normalize_pptx_splat_style(splat_style: str) -> str:
+    normalized = str(splat_style).strip().lower().replace("_", "-")
+    if normalized in {"softedge", "soft-edge", "soft"}:
+        return "soft-edge"
+    if normalized in {"gradient", "grad"}:
+        return "gradient"
+    raise ValueError(f"Unsupported PPTX splat style: {splat_style}")
 
 
 def load_png(path: str, target_size: Optional[Tuple[int, int]] = None,
@@ -146,7 +181,7 @@ def _sort_splats_for_export(
     if normalized == "area":
         return sorted(splats, key=lambda s: s.area(), reverse=True)
     if normalized == "importance":
-        return sorted(splats, key=lambda s: float(s.importance))
+        return sorted(splats, key=render_order_key)
     raise ValueError(f"Unsupported export sort mode: {sort_mode}")
 
 
@@ -214,6 +249,8 @@ def save_drawingml(
     k_sigma: float = 2.5,
     sort_by_area: bool = False,
     sort_mode: str = DEFAULT_EXPORT_ORDER,
+    background_linear_rgb: Optional[np.ndarray] = None,
+    splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
 ) -> None:
     """
     Save splats as PresentationML slide XML with DrawingML ellipse shapes.
@@ -226,7 +263,14 @@ def save_drawingml(
         sort_by_area=sort_by_area,
     )
 
-    drawingml_content = generate_drawingml_slide_content(ordered_splats, width, height, k_sigma)
+    drawingml_content = generate_drawingml_slide_content(
+        ordered_splats,
+        width,
+        height,
+        k_sigma,
+        background_linear_rgb=background_linear_rgb,
+        splat_style=splat_style,
+    )
 
     try:
         with open(output_path, "w", encoding="utf-8") as f:
@@ -263,7 +307,7 @@ def generate_canvas_html(
         else [float(np.clip(c, 0.0, 1.0)) for c in np.asarray(background_linear_rgb).reshape(-1)[:3]]
     )
 
-    # Compact per-splat record: x, y, sx, sy, theta, r, g, b, a, importance.
+    # Compact per-splat record: x, y, sx, sy, theta, r, g, b, a, render_order, layer.
     rows: List[List[float]] = []
     for splat in splats:
         raw = splat.to_raw_splat()
@@ -273,7 +317,8 @@ def generate_canvas_html(
             float(raw.theta),
             float(raw.r), float(raw.g), float(raw.b),
             float(raw.a),
-            float(raw.importance),
+            render_importance_for_raw(raw),
+            -1.0 if raw.layer is None else float(raw.layer),
         ])
     splats_json = json.dumps(rows, separators=(",", ":"))
 
@@ -288,7 +333,7 @@ def generate_canvas_html(
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d', { willReadFrequently: false });
 
-  // Back-to-front: lowest importance first, highest last (painted on top).
+  // Back-to-front: lowest render_order first, highest last (painted on top).
   SPLATS.sort((a, b) => a[9] - b[9]);
 
   const lin = new Float32Array(W * H * 3);
@@ -557,9 +602,15 @@ def generate_svg_content(
 
 
 def generate_drawingml_slide_content(
-    splats: List[GaussianSplat], width: int, height: int, k_sigma: float = 2.5
+    splats: List[GaussianSplat],
+    width: int,
+    height: int,
+    k_sigma: float = 2.5,
+    background_linear_rgb: Optional[np.ndarray] = None,
+    splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
 ) -> str:
     """Generate PresentationML slide XML containing DrawingML ellipse shapes."""
+    normalized_splat_style = _normalize_pptx_splat_style(splat_style)
     slide_width_emu = max(px_to_emu(width), 1)
     slide_height_emu = max(px_to_emu(height), 1)
 
@@ -584,10 +635,81 @@ def generate_drawingml_slide_content(
         "      </p:grpSpPr>",
     ]
 
-    shape_id = 2
-    for splat in splats:
-        lines.extend(_splat_to_drawingml_shape_lines(splat, shape_id, k_sigma))
-        shape_id += 1
+    group_shape_id = 2
+    lines.extend(
+        _drawingml_group_start_lines(
+            width_emu=slide_width_emu,
+            height_emu=slide_height_emu,
+            shape_id=group_shape_id,
+            name="Splat Group",
+        )
+    )
+
+    shape_id = group_shape_id + 1
+    has_layers = any(_splat_layer(splat) is not None for splat in splats)
+    if has_layers:
+        by_layer: Dict[Optional[int], List[GaussianSplat]] = {}
+        for splat in splats:
+            by_layer.setdefault(_splat_layer(splat), []).append(splat)
+        layer_ids = sorted(
+            by_layer,
+            key=lambda layer: (layer is None, 0 if layer is None else int(layer)),
+        )
+        if background_linear_rgb is not None and LAYER_BASE not in by_layer:
+            layer_ids.insert(0, LAYER_BASE)
+
+        for layer_id in layer_ids:
+            layer_splats = by_layer.get(layer_id, [])
+            if not layer_splats and not (layer_id == LAYER_BASE and background_linear_rgb is not None):
+                continue
+            lines.extend(
+                _drawingml_group_start_lines(
+                    width_emu=slide_width_emu,
+                    height_emu=slide_height_emu,
+                    shape_id=shape_id,
+                    name=f"{_layer_title(layer_id)} Layer",
+                )
+            )
+            shape_id += 1
+            if layer_id == LAYER_BASE and background_linear_rgb is not None:
+                lines.extend(
+                    _background_to_drawingml_shape_lines(
+                        width_emu=slide_width_emu,
+                        height_emu=slide_height_emu,
+                        shape_id=shape_id,
+                        background_linear_rgb=background_linear_rgb,
+                    )
+                )
+                shape_id += 1
+            for splat in layer_splats:
+                lines.extend(_splat_to_drawingml_shape_lines(
+                    splat,
+                    shape_id,
+                    k_sigma,
+                    splat_style=normalized_splat_style,
+                ))
+                shape_id += 1
+            lines.append("      </p:grpSp>")
+    else:
+        if background_linear_rgb is not None:
+            lines.extend(
+                _background_to_drawingml_shape_lines(
+                    width_emu=slide_width_emu,
+                    height_emu=slide_height_emu,
+                    shape_id=shape_id,
+                    background_linear_rgb=background_linear_rgb,
+                )
+            )
+            shape_id += 1
+        for splat in splats:
+            lines.extend(_splat_to_drawingml_shape_lines(
+                splat,
+                shape_id,
+                k_sigma,
+                splat_style=normalized_splat_style,
+            ))
+            shape_id += 1
+    lines.append("      </p:grpSp>")
 
     lines.extend(
         [
@@ -603,10 +725,86 @@ def generate_drawingml_slide_content(
     return "\n".join(lines)
 
 
-def _splat_to_drawingml_shape_lines(
-    splat: GaussianSplat, shape_id: int, k_sigma: float
+def _drawingml_group_start_lines(
+    width_emu: int,
+    height_emu: int,
+    shape_id: int,
+    name: str = "Splat Group",
 ) -> List[str]:
-    """Convert one Gaussian splat to a DrawingML ellipse shape."""
+    """Create the opening XML for a native DrawingML group containing all splats."""
+    return [
+        "      <p:grpSp>",
+        "        <p:nvGrpSpPr>",
+        f'          <p:cNvPr id="{shape_id}" name="{name}"/>',
+        "          <p:cNvGrpSpPr/>",
+        "          <p:nvPr/>",
+        "        </p:nvGrpSpPr>",
+        "        <p:grpSpPr>",
+        "          <a:xfrm>",
+        '            <a:off x="0" y="0"/>',
+        f'            <a:ext cx="{width_emu}" cy="{height_emu}"/>',
+        '            <a:chOff x="0" y="0"/>',
+        f'            <a:chExt cx="{width_emu}" cy="{height_emu}"/>',
+        "          </a:xfrm>",
+        "        </p:grpSpPr>",
+    ]
+
+
+def _background_to_drawingml_shape_lines(
+    width_emu: int,
+    height_emu: int,
+    shape_id: int,
+    background_linear_rgb: np.ndarray,
+) -> List[str]:
+    """Create a native DrawingML rectangle for the estimated canvas background."""
+    bg = np.asarray(background_linear_rgb, dtype=np.float32).reshape(-1)
+    if bg.size != 3:
+        raise ValueError("background_linear_rgb must have exactly 3 components")
+    bg_srgb = linear_to_srgb(np.clip(bg, 0.0, 1.0))
+    r = int(np.clip(np.round(bg_srgb[0] * 255), 0, 255))
+    g = int(np.clip(np.round(bg_srgb[1] * 255), 0, 255))
+    b = int(np.clip(np.round(bg_srgb[2] * 255), 0, 255))
+    color_hex = f"{r:02X}{g:02X}{b:02X}"
+    return [
+        "      <p:sp>",
+        "        <p:nvSpPr>",
+        f'          <p:cNvPr id="{shape_id}" name="Splat Background"/>',
+        "          <p:cNvSpPr>",
+        '            <a:spLocks noGrp="1"/>',
+        "          </p:cNvSpPr>",
+        "          <p:nvPr/>",
+        "        </p:nvSpPr>",
+        "        <p:spPr>",
+        "          <a:xfrm>",
+        '            <a:off x="0" y="0"/>',
+        f'            <a:ext cx="{width_emu}" cy="{height_emu}"/>',
+        "          </a:xfrm>",
+        '          <a:prstGeom prst="rect">',
+        "            <a:avLst/>",
+        "          </a:prstGeom>",
+        "          <a:solidFill>",
+        f'            <a:srgbClr val="{color_hex}"/>',
+        "          </a:solidFill>",
+        "          <a:ln>",
+        "            <a:noFill/>",
+        "          </a:ln>",
+        "        </p:spPr>",
+        "        <p:txBody>",
+        "          <a:bodyPr/>",
+        "          <a:lstStyle/>",
+        "          <a:p>",
+        "            <a:endParaRPr/>",
+        "          </a:p>",
+        "        </p:txBody>",
+        "      </p:sp>",
+    ]
+
+
+def _splat_geometry_for_drawingml(
+    splat: GaussianSplat,
+    k_sigma: float,
+) -> Tuple[int, int, int, int, str, str]:
+    """Return common DrawingML geometry and color fields for one splat."""
     eigenvals, eigenvecs = splat.eigendecomposition()
     rx = float(
         max(
@@ -642,6 +840,21 @@ def _splat_to_drawingml_shape_lines(
     g = int(np.clip(np.round(rgb_srgb[1] * 255), 0, 255))
     b = int(np.clip(np.round(rgb_srgb[2] * 255), 0, 255))
     color_hex = f"{r:02X}{g:02X}{b:02X}"
+    return x_emu, y_emu, w_emu, h_emu, rot_attr, color_hex
+
+
+def _splat_to_drawingml_shape_lines(
+    splat: GaussianSplat,
+    shape_id: int,
+    k_sigma: float,
+    splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
+) -> List[str]:
+    """Convert one Gaussian splat to a DrawingML ellipse shape."""
+    normalized_splat_style = _normalize_pptx_splat_style(splat_style)
+    if normalized_splat_style == "soft-edge":
+        return _splat_to_drawingml_soft_edge_shape_lines(splat, shape_id, k_sigma)
+
+    x_emu, y_emu, w_emu, h_emu, rot_attr, color_hex = _splat_geometry_for_drawingml(splat, k_sigma)
 
     # Radial gradient stops mirroring the SVG path: the renderer's per-splat
     # alpha-over opacity 1-exp(-a*exp(-0.5*(t*footprint)^2)). DrawingML pos/alpha
@@ -689,6 +902,58 @@ def _splat_to_drawingml_shape_lines(
         "          <a:ln>",
         "            <a:noFill/>",
         "          </a:ln>",
+        "        </p:spPr>",
+        "        <p:txBody>",
+        "          <a:bodyPr/>",
+        "          <a:lstStyle/>",
+        "          <a:p>",
+        "            <a:endParaRPr/>",
+        "          </a:p>",
+        "        </p:txBody>",
+        "      </p:sp>",
+    ]
+
+
+def _splat_to_drawingml_soft_edge_shape_lines(
+    splat: GaussianSplat,
+    shape_id: int,
+    k_sigma: float,
+) -> List[str]:
+    """Convert one splat to a PowerPoint-friendly soft-edge native ellipse."""
+    effective_k_sigma = float(k_sigma) * PPTX_SOFT_EDGE_K_SIGMA_SCALE
+    x_emu, y_emu, w_emu, h_emu, rot_attr, color_hex = _splat_geometry_for_drawingml(
+        splat,
+        effective_k_sigma,
+    )
+    center_opacity = 1.0 - math.exp(-float(np.clip(splat.alpha, 0.0, 1.0)))
+    alpha_units = int(np.clip(round(center_opacity * PPTX_SOFT_EDGE_ALPHA_SCALE * 100000.0), 0, 100000))
+    soft_radius = int(max(0, round(min(w_emu, h_emu) * PPTX_SOFT_EDGE_RADIUS_FACTOR)))
+    return [
+        "      <p:sp>",
+        "        <p:nvSpPr>",
+        f'          <p:cNvPr id="{shape_id}" name="Splat {shape_id}"/>',
+        "          <p:cNvSpPr>",
+        '            <a:spLocks noGrp="1"/>',
+        "          </p:cNvSpPr>",
+        "          <p:nvPr/>",
+        "        </p:nvSpPr>",
+        "        <p:spPr>",
+        f"          <a:xfrm{rot_attr}>",
+        f'            <a:off x="{x_emu}" y="{y_emu}"/>',
+        f'            <a:ext cx="{w_emu}" cy="{h_emu}"/>',
+        "          </a:xfrm>",
+        '          <a:prstGeom prst="ellipse">',
+        "            <a:avLst/>",
+        "          </a:prstGeom>",
+        "          <a:solidFill>",
+        f'            <a:srgbClr val="{color_hex}"><a:alpha val="{alpha_units}"/></a:srgbClr>',
+        "          </a:solidFill>",
+        "          <a:ln>",
+        "            <a:noFill/>",
+        "          </a:ln>",
+        "          <a:effectLst>",
+        f'            <a:softEdge rad="{soft_radius}"/>',
+        "          </a:effectLst>",
         "        </p:spPr>",
         "        <p:txBody>",
         "          <a:bodyPr/>",
@@ -800,6 +1065,21 @@ def save_splats_json(splats: List[GaussianSplat], output_path: str) -> None:
         "num_splats": len(raw_splats),
         "splats": raw_splats,
     }
+    layer_counts: Dict[int, int] = {}
+    for item in raw_splats:
+        layer = item.get("layer")
+        if layer is None:
+            continue
+        layer_counts[int(layer)] = layer_counts.get(int(layer), 0) + 1
+    if layer_counts:
+        payload["layers"] = [
+            {
+                "id": layer,
+                "name": _layer_name(layer),
+                "count": count,
+            }
+            for layer, count in sorted(layer_counts.items())
+        ]
 
     try:
         with open(output_path, "w", encoding="utf-8") as f:
@@ -1213,6 +1493,14 @@ def _pptx_slide_rels_xml() -> str:
 """
 
 
+def _pptx_vector_slide_rels_xml() -> str:
+    return """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+</Relationships>
+"""
+
+
 def _pptx_slide_layout_xml() -> str:
     return """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
@@ -1423,6 +1711,60 @@ def save_pptx_with_splat_png(
         zf.writestr("ppt/media/image1.png", png_bytes)
 
     logger.info("Saved PPTX with rasterized splat image: %s", output_path)
+
+
+def save_pptx_with_splats(
+    splats: List[GaussianSplat],
+    width: int,
+    height: int,
+    output_path: str,
+    k_sigma: float = 2.5,
+    sort_mode: str = DEFAULT_EXPORT_ORDER,
+    sort_by_area: bool = False,
+    background_linear_rgb: Optional[np.ndarray] = None,
+    splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
+) -> None:
+    """
+    Save a self-contained PPTX containing native DrawingML splat shapes.
+
+    This is the real vector-PPTX path: it writes one ellipse shape per splat
+    into `ppt/slides/slide1.xml` and does not embed a raster preview image.
+    """
+    ordered_splats = _sort_splats_for_export(
+        splats=splats,
+        sort_mode=sort_mode,
+        sort_by_area=sort_by_area,
+    )
+    slide_cx = max(px_to_emu(width), 1)
+    slide_cy = max(px_to_emu(height), 1)
+    slide_xml = generate_drawingml_slide_content(
+        ordered_splats,
+        width=width,
+        height=height,
+        k_sigma=k_sigma,
+        background_linear_rgb=background_linear_rgb,
+        splat_style=splat_style,
+    )
+    now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+    with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", _pptx_content_types_xml())
+        zf.writestr("_rels/.rels", _pptx_root_rels_xml())
+        zf.writestr("docProps/core.xml", _pptx_core_props_xml(now_iso))
+        zf.writestr("docProps/app.xml", _pptx_app_props_xml())
+        zf.writestr("ppt/presentation.xml", _pptx_presentation_xml(slide_cx=slide_cx, slide_cy=slide_cy))
+        zf.writestr("ppt/_rels/presentation.xml.rels", _pptx_presentation_rels_xml())
+        zf.writestr("ppt/slides/slide1.xml", slide_xml)
+        zf.writestr("ppt/slides/_rels/slide1.xml.rels", _pptx_vector_slide_rels_xml())
+        zf.writestr("ppt/slideLayouts/slideLayout1.xml", _pptx_slide_layout_xml())
+        zf.writestr("ppt/slideLayouts/_rels/slideLayout1.xml.rels", _pptx_slide_layout_rels_xml())
+        zf.writestr("ppt/slideMasters/slideMaster1.xml", _pptx_slide_master_xml())
+        zf.writestr("ppt/slideMasters/_rels/slideMaster1.xml.rels", _pptx_slide_master_rels_xml())
+        zf.writestr("ppt/theme/theme1.xml", _pptx_theme_xml())
+        zf.writestr("ppt/presProps.xml", _pptx_pres_props_xml())
+        zf.writestr("ppt/viewProps.xml", _pptx_view_props_xml())
+
+    logger.info("Saved PPTX with %s native splat shapes: %s", len(ordered_splats), output_path)
 
 
 def save_side_by_side_html(

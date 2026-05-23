@@ -32,7 +32,7 @@ from .io import (
     generate_drawingml_slide_content,
     load_png,
     render_splats_preview_png,
-    save_pptx_with_splat_png,
+    save_pptx_with_splats,
     save_side_by_side_html,
     save_drawingml,
     save_splats_json,
@@ -49,9 +49,104 @@ from .renderer import (
     tensor_to_splats,
     torch_linear_rgb_to_oklab,
 )
-from .splat import GaussianSplat, create_anisotropic_splat, create_isotropic_splat
+from .splat import (
+    LAYER_BASE,
+    LAYER_DETAIL,
+    LAYER_EDGE,
+    LAYER_MASS,
+    SPLAT_LAYER_NAMES,
+    GaussianSplat,
+    create_anisotropic_splat,
+    create_isotropic_splat,
+)
 
 logger = logging.getLogger(__name__)
+
+TIME_BUDGET_ALIASES = {
+    "smoke": "1m",
+    "1min": "1m",
+    "1minute": "1m",
+    "5min": "5m",
+    "5minute": "5m",
+    "10min": "10m",
+    "10minute": "10m",
+    "30min": "30m",
+    "30minute": "30m",
+}
+
+TIME_BUDGET_PRESETS: Dict[str, Dict[str, Any]] = {
+    # Budget presets are calibrated for the CPU/Apple-Silicon path by using the
+    # native 1500x1000 photo run as the high-end anchor. They are still heuristic:
+    # actual runtime depends on backend, image content, and memory pressure.
+    "1m": {
+        "label": "1m smoke",
+        "target_seconds": 60.0,
+        "stages": [2],
+        "splats_per_megapixel": 340.0,
+        "min_splats": 96,
+        "max_splats": 512,
+        "coverage_sigma_cap_multiplier": 1.00,
+        "refinement_overrides": {
+            "base_layer_fraction": 0.80,
+            "base_layer_alpha": 0.54,
+        },
+        "residual_detail_enabled": False,
+        "residual_detail_reserve_fraction": 0.0,
+        "residual_detail_passes": 0,
+        "residual_detail_iters": 0,
+    },
+    "5m": {
+        "label": "5m",
+        "target_seconds": 300.0,
+        "stages": [18, 12, 6],
+        "splats_per_megapixel": 900.0,
+        "min_splats": 256,
+        "max_splats": 1400,
+        "coverage_sigma_cap_multiplier": 0.90,
+        "refinement_overrides": {
+            "base_layer_fraction": 0.60,
+            "base_layer_alpha": 0.48,
+        },
+        "residual_detail_enabled": True,
+        "residual_detail_reserve_fraction": 0.04,
+        "residual_detail_passes": 1,
+        "residual_detail_iters": 2,
+    },
+    "10m": {
+        "label": "10m",
+        "target_seconds": 600.0,
+        "stages": [30, 20, 10],
+        "splats_per_megapixel": 1350.0,
+        "min_splats": 512,
+        "max_splats": 2000,
+        "coverage_sigma_cap_multiplier": 0.80,
+        "refinement_overrides": {
+            "base_layer_fraction": 0.48,
+            "base_layer_alpha": 0.44,
+        },
+        "residual_detail_enabled": True,
+        "residual_detail_reserve_fraction": 0.06,
+        "residual_detail_passes": 1,
+        "residual_detail_iters": 4,
+    },
+    "30m": {
+        "label": "30m",
+        "target_seconds": 1800.0,
+        "stages": [80, 60, 40, 20],
+        "splats_per_megapixel": 2500.0,
+        "min_splats": 768,
+        "max_splats": None,
+        "coverage_sigma_cap_multiplier": 0.70,
+        "refinement_overrides": {
+            "base_layer_fraction": 0.38,
+            "base_layer_alpha": 0.42,
+        },
+        "residual_detail_enabled": True,
+        "residual_detail_reserve_fraction": 0.08,
+        "residual_detail_passes": 1,
+        "residual_detail_iters": 8,
+    },
+}
 
 
 class PNG2SVGConverter:
@@ -79,8 +174,13 @@ class PNG2SVGConverter:
         blend_mode: str = "weighted",
         compositing_space: str = "linear",
         loss_color_space: str = "oklab",
+        time_budget: Optional[str] = None,
+        apple_silicon_splat_cap: Optional[int] = 2000,
+        layered_saliency: bool = False,
+        pptx_splat_style: str = "soft-edge",
     ):
-        self.max_splats = max_splats
+        self.requested_max_splats = int(max_splats)
+        self.max_splats = int(max_splats)
         self.k_sigma = k_sigma
         self.stages = stages or [200, 150, 100, 50]
         self.target_size = target_size
@@ -106,6 +206,17 @@ class PNG2SVGConverter:
         self.resolution_scale = float(max(1.0, resolution_scale))
         self.init_random_ratio = float(np.clip(init_random_ratio, 0.0, 1.0))
         self.init_gradient_weight = float(np.clip(init_gradient_weight, 0.0, 1.0))
+        self.time_budget = self._normalize_time_budget(time_budget)
+        self.layered_saliency = bool(layered_saliency)
+        self.pptx_splat_style = str(pptx_splat_style).strip().lower().replace("_", "-")
+        self.time_budget_plan: Optional[Dict[str, Any]] = None
+        self._time_budget_deadline: Optional[float] = None
+        self._platform_splat_cap: Optional[Dict[str, Any]] = None
+        self.apple_silicon_splat_cap = (
+            None
+            if apple_silicon_splat_cap is None or int(apple_silicon_splat_cap) <= 0
+            else int(apple_silicon_splat_cap)
+        )
 
         profile_defaults = self._get_profile_defaults(quality_profile)
 
@@ -145,12 +256,19 @@ class PNG2SVGConverter:
         self._region_background_safe_mask: Optional[np.ndarray] = None
         self._region_edge_band_mask: Optional[np.ndarray] = None
 
-        if "arm" in platform.processor().lower():
-            self.max_splats = min(self.max_splats, 2000)
+        if "arm" in platform.processor().lower() and self.apple_silicon_splat_cap is not None:
+            before_cap = self.max_splats
+            self.max_splats = min(self.max_splats, self.apple_silicon_splat_cap)
+            self._platform_splat_cap = {
+                "platform": "apple-silicon",
+                "cap": int(self.apple_silicon_splat_cap),
+                "requested_max_splats": int(before_cap),
+                "applied": bool(before_cap != self.max_splats),
+            }
             logger.info("Apple Silicon detected - limiting max_splats to %s", self.max_splats)
 
         logger.info(
-            "Initialized PNG2SVG converter: max_splats=%s, stages=%s, device=%s, backend=%s->%s, blend=%s, seed=%s, profile=%s, resolution_scale=%.2f, init_random_ratio=%.2f",
+            "Initialized PNG2SVG converter: max_splats=%s, stages=%s, device=%s, backend=%s->%s, blend=%s, seed=%s, profile=%s, resolution_scale=%.2f, init_random_ratio=%.2f, time_budget=%s, layered_saliency=%s",
             self.max_splats,
             self.stages,
             device,
@@ -161,7 +279,196 @@ class PNG2SVGConverter:
             self.quality_profile,
             self.resolution_scale,
             self.init_random_ratio,
+            self.time_budget,
+            self.layered_saliency,
         )
+
+    def _normalize_time_budget(self, time_budget: Optional[str]) -> Optional[str]:
+        """Normalize time-budget labels accepted by the CLI/API."""
+        if time_budget is None:
+            return None
+        key = str(time_budget).strip().lower().replace("_", "-")
+        key = TIME_BUDGET_ALIASES.get(key, key)
+        if key not in TIME_BUDGET_PRESETS:
+            valid = ", ".join(sorted(TIME_BUDGET_PRESETS))
+            raise ValueError(f"Unknown time budget: {time_budget!r}. Expected one of: {valid}")
+        return key
+
+    def _apply_time_budget_plan(
+        self,
+        width: int,
+        height: int,
+        guidance: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Resolve a budget preset into stage schedule, splat cap, and residual settings."""
+        if self.time_budget is None:
+            return {}
+        preset = TIME_BUDGET_PRESETS[self.time_budget]
+        area = max(1, int(width) * int(height))
+        megapixels = area / 1_000_000.0
+        saliency_multiplier, saliency_summary = self._estimate_saliency_multiplier(
+            width=width,
+            height=height,
+            guidance=guidance,
+        )
+        raw_splats = int(round(
+            megapixels * float(preset["splats_per_megapixel"]) * saliency_multiplier
+        ))
+        min_splats = int(preset["min_splats"])
+        preset_cap = preset.get("max_splats")
+        requested_ceiling = max(1, int(self.max_splats))
+        budget_ceiling = requested_ceiling
+        if preset_cap is not None:
+            budget_ceiling = min(budget_ceiling, int(preset_cap))
+        selected_splats = int(max(1, min(budget_ceiling, max(min_splats, raw_splats))))
+
+        self.max_splats = selected_splats
+        self.stages = [int(v) for v in preset["stages"]]
+        refinement_overrides = dict(preset.get("refinement_overrides") or {})
+        self.refinement_config.update(refinement_overrides)
+        for key in (
+            "residual_detail_enabled",
+            "residual_detail_reserve_fraction",
+            "residual_detail_passes",
+            "residual_detail_iters",
+        ):
+            self.refinement_config[key] = preset[key]
+
+        initial_count = max(1, min(self.max_splats // 2, 1200))
+        base_fraction = float(np.clip(self.refinement_config.get("base_layer_fraction", 0.35), 0.10, 0.80))
+        base_count = max(4, int(round(initial_count * base_fraction)))
+        native_base_sigma = float(np.sqrt(area / max(base_count, 1)) * 0.85)
+        coverage_multiplier = float(max(0.0, preset.get("coverage_sigma_cap_multiplier", 0.0)))
+        dynamic_coverage_sigma_max = max(
+            float(self.refinement_config.get("coverage_sigma_max", 0.0)),
+            native_base_sigma * coverage_multiplier,
+        )
+        self.refinement_config["coverage_sigma_max"] = float(dynamic_coverage_sigma_max)
+
+        return {
+            "preset": self.time_budget,
+            "label": str(preset["label"]),
+            "target_seconds": float(preset["target_seconds"]),
+            "image_pixels": int(area),
+            "image_megapixels": float(megapixels),
+            "requested_ceiling": int(requested_ceiling),
+            "preset_ceiling": None if preset_cap is None else int(preset_cap),
+            "selected_max_splats": int(selected_splats),
+            "raw_recommended_splats": int(raw_splats),
+            "splats_per_megapixel": float(preset["splats_per_megapixel"]),
+            "saliency_multiplier": float(saliency_multiplier),
+            "saliency_summary": saliency_summary,
+            "stages": list(self.stages),
+            "initial_splat_estimate": int(initial_count),
+            "base_layer_estimate": int(base_count),
+            "base_layer_fraction": float(base_fraction),
+            "dynamic_coverage_sigma_max": float(dynamic_coverage_sigma_max),
+            "native_base_sigma": float(native_base_sigma),
+            "refinement_overrides": refinement_overrides,
+            "residual_detail_enabled": bool(self.refinement_config["residual_detail_enabled"]),
+            "residual_detail_iters": int(self.refinement_config["residual_detail_iters"]),
+        }
+
+    def _estimate_saliency_multiplier(
+        self,
+        width: int,
+        height: int,
+        guidance: Optional[Dict[str, Any]],
+    ) -> Tuple[float, Dict[str, float]]:
+        """Estimate how much content density should push the budget up or down."""
+        area = float(max(1, int(width) * int(height)))
+        summary = dict((guidance or {}).get("summary") or {})
+
+        def ratio(key: str) -> float:
+            return float(np.clip(float(summary.get(key, 0.0)) / area, 0.0, 1.0))
+
+        foreground_ratio = ratio("foreground_pixels")
+        edge_ratio = ratio("edge_band_pixels")
+        background_ratio = ratio("background_safe_pixels")
+        mean_weight = 0.70
+        weight_map = (guidance or {}).get("weight_map")
+        if isinstance(weight_map, np.ndarray) and weight_map.size:
+            mean_weight = float(np.clip(np.mean(weight_map), 0.0, 10.0))
+
+        raw_multiplier = (
+            0.72
+            + 0.85 * foreground_ratio
+            + 0.65 * edge_ratio
+            - 0.30 * background_ratio
+            + 0.20 * (mean_weight - 0.70)
+        )
+        multiplier = float(np.clip(raw_multiplier, 0.55, 1.75))
+        return multiplier, {
+            "foreground_ratio": float(foreground_ratio),
+            "edge_band_ratio": float(edge_ratio),
+            "background_safe_ratio": float(background_ratio),
+            "mean_region_weight": float(mean_weight),
+            "raw_multiplier": float(raw_multiplier),
+        }
+
+    def _time_budget_seconds_remaining(self) -> Optional[float]:
+        """Return training-budget seconds remaining, if a budget is active."""
+        if self._time_budget_deadline is None:
+            return None
+        return float(self._time_budget_deadline - time.time())
+
+    def _time_budget_exhausted(self) -> bool:
+        """Whether the active training budget has been exhausted."""
+        remaining = self._time_budget_seconds_remaining()
+        return remaining is not None and remaining <= 0.0
+
+    def _assign_splat_layer(
+        self,
+        splat: GaussianSplat,
+        layer: int,
+        local_importance: float,
+    ) -> None:
+        """Assign layered draw metadata while preserving legacy importance when disabled."""
+        if self.layered_saliency:
+            importance = float(np.clip(local_importance, 0.0, 0.999))
+            splat.layer = int(layer)
+            splat.importance = float(int(layer) + importance)
+        else:
+            splat.importance = float(np.clip(local_importance, 0.0, 1.0))
+
+    def _copy_splat_layers(
+        self,
+        source: List[GaussianSplat],
+        optimized: List[GaussianSplat],
+    ) -> List[GaussianSplat]:
+        """Restore non-optimized layer metadata after tensor optimizer round-trips."""
+        if not self.layered_saliency:
+            return optimized
+        for src, dst in zip(source, optimized):
+            dst.layer = src.layer
+            dst.importance = src.importance
+        return optimized
+
+    def _layer_summary(self, splats: List[GaussianSplat]) -> Dict[str, Any]:
+        """Summarize splat layer counts for manifests and debugging."""
+        counts: Dict[int, int] = {}
+        unassigned = 0
+        for splat in splats:
+            raw = splat.to_raw_splat()
+            if raw.layer is None:
+                unassigned += 1
+                continue
+            layer = int(raw.layer)
+            counts[layer] = counts.get(layer, 0) + 1
+
+        layers = [
+            {
+                "id": layer,
+                "name": SPLAT_LAYER_NAMES.get(layer, f"layer-{layer}"),
+                "count": count,
+            }
+            for layer, count in sorted(counts.items())
+        ]
+        return {
+            "enabled": bool(self.layered_saliency),
+            "layers": layers,
+            "unassigned": int(unassigned),
+        }
 
     def convert(
         self,
@@ -216,6 +523,7 @@ class PNG2SVGConverter:
             "input_sha256": self._sha256_file(input_path),
             "seed": run_seed,
             "config": {
+                "requested_max_splats": self.requested_max_splats,
                 "max_splats": self.max_splats,
                 "k_sigma": self.k_sigma,
                 "stages": list(self.stages),
@@ -230,6 +538,8 @@ class PNG2SVGConverter:
                 "resolved_renderer_backend": self.resolved_renderer_backend,
                 "blend_mode": self.blend_mode,
                 "output_format": output_format,
+                "pptx_export_mode": "drawingml-splats" if output_format == "pptx" else None,
+                "pptx_splat_style": self.pptx_splat_style,
                 "quality_profile": self.quality_profile,
                 "loss_weights": self.loss_weights,
                 "learning_rates": self.learning_rates,
@@ -237,6 +547,11 @@ class PNG2SVGConverter:
                 "schedule_config": self.schedule_config,
                 "region_weighting_enabled": self.region_weighting_enabled,
                 "svg_export_recipe": self.svg_export_recipe,
+                "time_budget": self.time_budget,
+                "time_budget_plan": self.time_budget_plan,
+                "platform_splat_cap": self._platform_splat_cap,
+                "apple_silicon_splat_cap": self.apple_silicon_splat_cap,
+                "layered_saliency": self.layered_saliency,
             },
             "stages": [],
         }
@@ -257,18 +572,53 @@ class PNG2SVGConverter:
         self._region_foreground_mask = None
         self._region_background_safe_mask = None
         self._region_edge_band_mask = None
-        if self.region_weighting_enabled or self.svg_export_recipe in {
-            "browser",
-            "browser_compatible",
-            "browser-compatible",
-        }:
+        guidance: Optional[Dict[str, Any]] = None
+        needs_region_guidance = (
+            self.time_budget is not None
+            or self.region_weighting_enabled
+            or self.svg_export_recipe in {
+                "browser",
+                "browser_compatible",
+                "browser-compatible",
+            }
+        )
+        if needs_region_guidance:
             guidance = self._compute_region_guidance(image)
+            manifest["config"]["region_guidance"] = guidance["summary"]
+        if self.time_budget is not None:
+            plan = self._apply_time_budget_plan(width=width, height=height, guidance=guidance)
+            self.time_budget_plan = plan
+            self._time_budget_deadline = start_time + float(plan["target_seconds"])
+            manifest["config"]["max_splats"] = self.max_splats
+            manifest["config"]["stages"] = list(self.stages)
+            manifest["config"]["refinement_config"] = self.refinement_config
+            manifest["config"]["time_budget_plan"] = plan
+            manifest["config"]["target_runtime_sec"] = float(plan["target_seconds"])
+            manifest["config"]["time_budget_deadline_enabled"] = True
+            if "max_splats" in self.acceptance_criteria:
+                self.acceptance_criteria["max_splats"] = float(self.max_splats)
+            if "max_runtime_sec" in self.acceptance_criteria:
+                self.acceptance_criteria["max_runtime_sec"] = float(plan["target_seconds"])
+            if verbose:
+                logger.info(
+                    "Applied %s budget: max_splats=%s, stages=%s, saliency_multiplier=%.2f",
+                    plan["label"],
+                    self.max_splats,
+                    self.stages,
+                    plan["saliency_multiplier"],
+                )
+        else:
+            self._time_budget_deadline = None
+            manifest["config"]["time_budget_deadline_enabled"] = False
+        if guidance is not None and (
+            self.region_weighting_enabled
+            or self.svg_export_recipe in {"browser", "browser_compatible", "browser-compatible"}
+        ):
             self._region_weight_map = guidance["weight_map"]
             self._region_foreground_mask = guidance["foreground_mask"]
             self._region_background_safe_mask = guidance["background_safe_mask"]
             self._region_edge_band_mask = guidance["edge_band_mask"]
             self._background_linear_rgb = guidance["background_linear_rgb"]
-            manifest["config"]["region_guidance"] = guidance["summary"]
         structure_enabled = bool(self.refinement_config.get("structure_precompute_enabled", False))
         structure_smoothing_sigma = float(max(0.0, self.refinement_config.get("structure_smoothing_sigma", 0.0)))
         structure_anisotropy_clip = float(max(1.0, self.refinement_config.get("structure_anisotropy_clip", 10.0)))
@@ -331,8 +681,8 @@ class PNG2SVGConverter:
             output_content = self._generate_drawingml(splats, width, height)
         elif output_format == "pptx":
             if verbose:
-                logger.info("Preparing PPTX package with rendered splat slide...")
-            output_content = ""
+                logger.info("Preparing PPTX package with native DrawingML splat shapes...")
+            output_content = self._generate_drawingml(splats, width, height)
         elif output_format == "canvas":
             if verbose:
                 logger.info("Generating canvas HTML with %s splats...", len(splats))
@@ -350,16 +700,26 @@ class PNG2SVGConverter:
 
         if output_path:
             if output_format == "drawingml":
-                save_drawingml(splats, width, height, output_path, k_sigma=self.k_sigma)
+                save_drawingml(
+                    splats,
+                    width,
+                    height,
+                    output_path,
+                    k_sigma=self.k_sigma,
+                    background_linear_rgb=self._background_linear_rgb,
+                    splat_style=self.pptx_splat_style,
+                )
                 if verbose:
                     logger.info("Saved DrawingML: %s", output_path)
             elif output_format == "pptx":
-                save_pptx_with_splat_png(
+                save_pptx_with_splats(
                     splats=splats,
                     width=width,
                     height=height,
                     output_path=output_path,
+                    k_sigma=self.k_sigma,
                     background_linear_rgb=self._background_linear_rgb,
+                    splat_style=self.pptx_splat_style,
                 )
                 if verbose:
                     logger.info("Saved PPTX: %s", output_path)
@@ -397,6 +757,7 @@ class PNG2SVGConverter:
             height=height,
             device=self.device,
             blend_mode=self.blend_mode,
+            background_color=self._background_linear_rgb,
             compositing_space=self.compositing_space,
         )
         final_loss_fn = L1SSIMLoss(
@@ -409,7 +770,12 @@ class PNG2SVGConverter:
         internal_metrics["splat_count"] = float(len(splats))
 
         # Export-proxy metrics always available from CPU preview render.
-        preview_linear = render_splats_numpy(splats, width, height)
+        preview_linear = render_splats_numpy(
+            splats,
+            width,
+            height,
+            background_linear_rgb=self._background_linear_rgb,
+        )
         export_quality: Dict[str, Any] = {
             "available": True,
             "method": "proxy-render",
@@ -470,6 +836,7 @@ class PNG2SVGConverter:
                 width=width,
                 height=height,
                 output_path=preview_path,
+                background_linear_rgb=self._background_linear_rgb,
             )
         if side_by_side_html:
             side_metrics = {
@@ -491,8 +858,12 @@ class PNG2SVGConverter:
                 metrics=side_metrics,
             )
 
+        remaining_budget = self._time_budget_seconds_remaining()
         manifest["total_time_sec"] = total_time
+        manifest["time_budget_remaining_sec"] = None if remaining_budget is None else max(0.0, float(remaining_budget))
+        manifest["time_budget_exhausted"] = bool(self._time_budget_exhausted())
         manifest["final_splat_count"] = len(splats)
+        manifest["layered_saliency"] = self._layer_summary(splats)
         manifest["final_metrics"] = final_metrics
         manifest["internal_metrics"] = internal_metrics
         manifest["export_quality"] = export_quality
@@ -502,6 +873,7 @@ class PNG2SVGConverter:
             manifest["roundtrip_validation"] = roundtrip_result
 
         self._write_manifest(artifacts_path, manifest)
+        self._time_budget_deadline = None
 
         if verbose:
             logger.info("Conversion completed in %.2fs", total_time)
@@ -628,8 +1000,12 @@ class PNG2SVGConverter:
                     alpha=alpha,
                 )
 
-            # Base layer should sit behind detail splats.
-            splat.importance = 0.1 if is_base else 0.35
+            # Base sits behind broad salient mass when layered export is enabled.
+            self._assign_splat_layer(
+                splat,
+                LAYER_BASE if is_base else LAYER_MASS,
+                0.10 if is_base else 0.35,
+            )
             splats.append(splat)
 
         logger.info(
@@ -720,6 +1096,7 @@ class PNG2SVGConverter:
             height=height,
             device=self.device,
             blend_mode=self.blend_mode,
+            background_color=self._background_linear_rgb,
             compositing_space=self.compositing_space,
         )
         loss_fn = L1SSIMLoss(
@@ -738,6 +1115,10 @@ class PNG2SVGConverter:
         main_budget = max(1, self.max_splats - max(0, reserved_slots))
 
         for stage_idx, num_iters in enumerate(self.stages):
+            if self._time_budget_exhausted():
+                if verbose:
+                    logger.info("Training budget exhausted before stage %s/%s", stage_idx + 1, len(self.stages))
+                break
             if verbose:
                 logger.info("Stage %s/%s: %s iterations", stage_idx + 1, len(self.stages), num_iters)
 
@@ -760,6 +1141,10 @@ class PNG2SVGConverter:
             stage_metric.update(quality)
             stage_metric["stage"] = stage_idx + 1
             stage_metric["splat_count"] = len(current_splats)
+            remaining = self._time_budget_seconds_remaining()
+            if remaining is not None:
+                stage_metric["time_budget_remaining_sec"] = max(0.0, float(remaining))
+                stage_metric["time_budget_exhausted"] = bool(self._time_budget_exhausted())
             stage_metrics.append(stage_metric)
             self._write_stage_artifact(
                 artifacts_dir,
@@ -769,7 +1154,7 @@ class PNG2SVGConverter:
             )
 
             coverage_after_densify: Optional[np.ndarray] = None
-            if stage_idx < len(self.stages) - 1:
+            if stage_idx < len(self.stages) - 1 and not self._time_budget_exhausted():
                 current_splats, coverage_after_densify = self._add_error_driven_splats(
                     splats=current_splats,
                     image=image,
@@ -794,16 +1179,21 @@ class PNG2SVGConverter:
                     precomputed_coverage_map=coverage_after_densify,
                 )
 
-        current_splats, residual_metrics = self._run_residual_detail_passes(
-            splats=current_splats,
-            image=image,
-            target=target,
-            renderer=renderer,
-            loss_fn=loss_fn,
-            rng=rng,
-            edge_map=edge_map,
-            verbose=verbose,
-        )
+        if self._time_budget_exhausted():
+            if verbose:
+                logger.info("Skipping residual detail pass because training budget is exhausted.")
+            residual_metrics = []
+        else:
+            current_splats, residual_metrics = self._run_residual_detail_passes(
+                splats=current_splats,
+                image=image,
+                target=target,
+                renderer=renderer,
+                loss_fn=loss_fn,
+                rng=rng,
+                edge_map=edge_map,
+                verbose=verbose,
+            )
         for metric in residual_metrics:
             stage_metrics.append(metric)
             pass_idx = int(metric.get("residual_pass", len(stage_metrics)))
@@ -868,8 +1258,14 @@ class PNG2SVGConverter:
 
         image_height = int(target.shape[0])
         image_width = int(target.shape[1])
+        stopped_for_time_budget = False
 
         for iteration in range(max(0, num_iters)):
+            if self._time_budget_exhausted():
+                stopped_for_time_budget = True
+                if verbose:
+                    logger.info("  Time budget exhausted at iteration %s/%s", iteration, num_iters)
+                break
             iterations_run = iteration + 1
             optimizer.zero_grad(set_to_none=True)
             rendered = renderer(params.as_tensor())
@@ -927,12 +1323,17 @@ class PNG2SVGConverter:
         with torch.no_grad():
             best_rendered = renderer(params.as_tensor()).detach()
 
-        return tensor_to_splats(params.as_tensor().detach()), {
+        optimized_splats = self._copy_splat_layers(
+            splats,
+            tensor_to_splats(params.as_tensor().detach()),
+        )
+        return optimized_splats, {
             "start_loss": start_loss,
             "end_loss": end_loss,
             "best_loss": best_loss,
             "iterations": int(iterations_run),
             "lr_decays": int(decay_count),
+            "stopped_for_time_budget": bool(stopped_for_time_budget),
         }, best_rendered
 
     def _compute_quality_metrics(
@@ -1189,7 +1590,11 @@ class PNG2SVGConverter:
                         alpha=alpha,
                     )
                 )
-            new_splat.importance = float(np.clip(sample_weights[idx], 0.0, 1.0))
+            self._assign_splat_layer(
+                new_splat,
+                LAYER_DETAIL,
+                float(sample_weights[idx]),
+            )
             new_splats.append(new_splat)
 
         logger.info(
@@ -1233,6 +1638,8 @@ class PNG2SVGConverter:
         height, width = image.shape[:2]
 
         for pass_idx in range(passes):
+            if self._time_budget_exhausted():
+                break
             if len(current_splats) >= self.max_splats:
                 break
 
@@ -1297,7 +1704,11 @@ class PNG2SVGConverter:
                     color=color,
                     alpha=alpha,
                 )
-                splat.importance = float(np.clip(0.65 + 0.35 * sample_weights[idx], 0.0, 1.0))
+                self._assign_splat_layer(
+                    splat,
+                    LAYER_EDGE,
+                    float(0.65 + 0.35 * sample_weights[idx]),
+                )
                 new_splats.append(splat)
 
             if not new_splats:
@@ -1329,6 +1740,10 @@ class PNG2SVGConverter:
             stage_metric["stage_type"] = "residual_detail"
             stage_metric["residual_pass"] = pass_idx + 1
             stage_metric["splat_count"] = len(current_splats)
+            remaining = self._time_budget_seconds_remaining()
+            if remaining is not None:
+                stage_metric["time_budget_remaining_sec"] = max(0.0, float(remaining))
+                stage_metric["time_budget_exhausted"] = bool(self._time_budget_exhausted())
             residual_metrics.append(stage_metric)
 
         return current_splats, residual_metrics
@@ -1482,7 +1897,7 @@ class PNG2SVGConverter:
                         color=color,
                         alpha=alpha_fill,
                     )
-                    splat.importance = 0.05
+                    self._assign_splat_layer(splat, LAYER_BASE, 0.05)
                     splats.append(splat)
 
             coverage_map = self._build_alpha_coverage_map(splats=splats, width=width, height=height)
@@ -1513,7 +1928,14 @@ class PNG2SVGConverter:
 
     def _generate_drawingml(self, splats: List[GaussianSplat], width: int, height: int) -> str:
         """Generate DrawingML slide XML content."""
-        return generate_drawingml_slide_content(splats, width, height, self.k_sigma)
+        return generate_drawingml_slide_content(
+            splats,
+            width,
+            height,
+            self.k_sigma,
+            background_linear_rgb=self._background_linear_rgb,
+            splat_style=self.pptx_splat_style,
+        )
 
     def _write_stage_artifact(
         self,
@@ -1684,9 +2106,13 @@ class PNG2SVGConverter:
                 "edge_band_mask": zeros,
                 "background_linear_rgb": np.zeros(3, dtype=np.float32),
                 "summary": {
+                    "total_pixels": int(height * width),
                     "foreground_pixels": 0,
                     "background_safe_pixels": 0,
                     "edge_band_pixels": 0,
+                    "foreground_ratio": 0.0,
+                    "background_safe_ratio": 0.0,
+                    "edge_band_ratio": 0.0,
                     "weight_min": 1.0,
                     "weight_max": 1.0,
                 },
@@ -1730,6 +2156,10 @@ class PNG2SVGConverter:
         weights[background_safe & ~edge_band] = np.clip(background_weight, 0.0, 10.0)
         weights[foreground] = np.clip(foreground_weight, 0.0, 10.0)
         weights[edge_band] = np.clip(edge_weight, 0.0, 10.0)
+        total_pixels = max(1, int(width * height))
+        foreground_pixels = int(np.count_nonzero(foreground))
+        background_safe_pixels = int(np.count_nonzero(background_safe))
+        edge_band_pixels = int(np.count_nonzero(edge_band))
 
         return {
             "weight_map": weights,
@@ -1738,11 +2168,16 @@ class PNG2SVGConverter:
             "edge_band_mask": edge_band,
             "background_linear_rgb": background,
             "summary": {
-                "foreground_pixels": int(np.count_nonzero(foreground)),
-                "background_safe_pixels": int(np.count_nonzero(background_safe)),
-                "edge_band_pixels": int(np.count_nonzero(edge_band)),
+                "total_pixels": int(total_pixels),
+                "foreground_pixels": foreground_pixels,
+                "background_safe_pixels": background_safe_pixels,
+                "edge_band_pixels": edge_band_pixels,
+                "foreground_ratio": float(foreground_pixels / total_pixels),
+                "background_safe_ratio": float(background_safe_pixels / total_pixels),
+                "edge_band_ratio": float(edge_band_pixels / total_pixels),
                 "weight_min": float(np.min(weights)),
                 "weight_max": float(np.max(weights)),
+                "weight_mean": float(np.mean(weights)),
                 "background_linear_rgb": [
                     float(background[0]),
                     float(background[1]),

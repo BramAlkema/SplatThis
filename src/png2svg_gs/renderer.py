@@ -13,7 +13,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from .splat import GaussianSplat
+from .splat import GaussianSplat, render_importance_for_raw, render_order_key
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ def _splats_to_numpy_table(splats: List[GaussianSplat]) -> np.ndarray:
         rows[idx, 7] = float(raw.g)
         rows[idx, 8] = float(raw.b)
         rows[idx, 9] = float(raw.a)
-        rows[idx, 10] = float(raw.importance)
+        rows[idx, 10] = render_importance_for_raw(raw)
     return rows
 
 
@@ -791,7 +791,7 @@ def render_splats_numpy(
     transmittance = np.ones((height, width), dtype=np.float32)
 
     # Composite low-importance -> high-importance.
-    ordered = sorted(splats, key=lambda s: float(s.importance))
+    ordered = sorted(splats, key=render_order_key)
 
     for splat in ordered:
         raw = splat.to_raw_splat()
