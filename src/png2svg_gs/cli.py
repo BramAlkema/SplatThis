@@ -50,7 +50,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--profile", default="max-fidelity", help="Quality profile (default: max-fidelity)")
     parser.add_argument("--blend-mode", default="alpha-over", choices=["alpha-over", "weighted"], help="Compositing blend mode")
     parser.add_argument("--max-edge", type=int, default=None, help="Downscale so the longest edge is at most N px")
-    parser.add_argument("--format", default="svg", choices=["svg", "pptx"], dest="fmt", help="Output format")
+    parser.add_argument("--format", default="svg", choices=["svg", "pptx", "canvas"], dest="fmt",
+                        help="Output format. 'canvas' emits a self-contained HTML that renders the "
+                             "splats via a JS canvas runtime with real linear-space alpha-over "
+                             "compositing (breaks the SVG primitive's representational cap).")
     parser.add_argument("--device", default="cpu", help="Torch device (cpu or cuda)")
     parser.add_argument("--seed", type=int, default=0, help="Deterministic seed")
     parser.add_argument("--artifacts-dir", default=None, help="Optional directory for run manifest + iteration dumps")

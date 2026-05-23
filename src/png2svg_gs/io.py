@@ -224,6 +224,147 @@ def save_drawingml(
         raise
 
 
+def generate_canvas_html(
+    splats: List[GaussianSplat],
+    width: int,
+    height: int,
+    background_linear_rgb: Optional[np.ndarray] = None,
+    title: str = "SplatThis Canvas",
+) -> str:
+    """Self-contained HTML that renders the splats via a JS canvas runtime
+    doing real linear-space alpha-over compositing.
+
+    Mirrors `render_splats_numpy` math exactly (3σ footprint, sorted by
+    importance ascending = back-to-front, per-splat alpha-over with
+    `layer_alpha = 1 - exp(-a * exp(-0.5 * q))`, then linear -> sRGB on
+    output). The browser's gamma-space SVG compositing and 8-stop gradient
+    discretization are the things you can't reproduce with `radialGradient`;
+    a JS canvas can. So the displayed result == the optimizer's own forward,
+    breaking the SVG primitive's structural cap.
+    """
+    import json
+
+    bg_lin = (
+        [0.0, 0.0, 0.0]
+        if background_linear_rgb is None
+        else [float(np.clip(c, 0.0, 1.0)) for c in np.asarray(background_linear_rgb).reshape(-1)[:3]]
+    )
+
+    # Compact per-splat record: x, y, sx, sy, theta, r, g, b, a, importance.
+    rows: List[List[float]] = []
+    for splat in splats:
+        raw = splat.to_raw_splat()
+        rows.append([
+            float(raw.x), float(raw.y),
+            float(raw.sx), float(raw.sy),
+            float(raw.theta),
+            float(raw.r), float(raw.g), float(raw.b),
+            float(raw.a),
+            float(raw.importance),
+        ])
+    splats_json = json.dumps(rows, separators=(",", ":"))
+
+    js = r"""
+(function(){
+  const t0 = performance.now();
+  const W = __W__, H = __H__;
+  const BG = __BG__;
+  const SPLATS = __SPLATS__;
+  const FOOTPRINT = 3.0;
+  const status = document.getElementById('status');
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d', { willReadFrequently: false });
+
+  // Back-to-front: lowest importance first, highest last (painted on top).
+  SPLATS.sort((a, b) => a[9] - b[9]);
+
+  const lin = new Float32Array(W * H * 3);
+  const T = new Float32Array(W * H).fill(1);
+
+  for (let si = 0; si < SPLATS.length; si++) {
+    const s = SPLATS[si];
+    const x = s[0], y = s[1];
+    const sx = Math.max(s[2], 1e-4), sy = Math.max(s[3], 1e-4);
+    const theta = s[4];
+    const r = s[5], g = s[6], b = s[7];
+    const a = Math.min(1, Math.max(0, s[8]));
+    const rx = Math.max(1, Math.ceil(FOOTPRINT * sx));
+    const ry = Math.max(1, Math.ceil(FOOTPRINT * sy));
+    const x0 = Math.max(0, Math.floor(x - rx));
+    const x1 = Math.min(W, Math.ceil(x + rx + 1));
+    const y0 = Math.max(0, Math.floor(y - ry));
+    const y1 = Math.min(H, Math.ceil(y + ry + 1));
+    if (x0 >= x1 || y0 >= y1) continue;
+    const ct = Math.cos(theta), st = Math.sin(theta);
+    const invSx2 = 1 / (sx * sx), invSy2 = 1 / (sy * sy);
+    for (let py = y0; py < y1; py++) {
+      const baseRow = py * W;
+      for (let px = x0; px < x1; px++) {
+        const dx = px - x, dy = py - y;
+        const u = ct * dx + st * dy;
+        const v = -st * dx + ct * dy;
+        const q = u * u * invSx2 + v * v * invSy2;
+        const w = Math.exp(-0.5 * q);
+        const la = 1 - Math.exp(-a * w);
+        const idx = baseRow + px;
+        const tt = T[idx];
+        const contrib = tt * la;
+        const j = idx * 3;
+        lin[j]     += contrib * r;
+        lin[j + 1] += contrib * g;
+        lin[j + 2] += contrib * b;
+        T[idx] = tt * (1 - la);
+      }
+    }
+  }
+
+  // Linear -> sRGB and pack into ImageData.
+  const img = ctx.createImageData(W, H);
+  const out = img.data;
+  const THR = 0.0031308;
+  for (let i = 0; i < W * H; i++) {
+    const j = i * 3, k = i * 4;
+    const tt = T[i];
+    let rL = lin[j]     + tt * BG[0];
+    let gL = lin[j + 1] + tt * BG[1];
+    let bL = lin[j + 2] + tt * BG[2];
+    if (rL < 0) rL = 0; else if (rL > 1) rL = 1;
+    if (gL < 0) gL = 0; else if (gL > 1) gL = 1;
+    if (bL < 0) bL = 0; else if (bL > 1) bL = 1;
+    const rS = rL <= THR ? 12.92 * rL : 1.055 * Math.pow(rL, 1/2.4) - 0.055;
+    const gS = gL <= THR ? 12.92 * gL : 1.055 * Math.pow(gL, 1/2.4) - 0.055;
+    const bS = bL <= THR ? 12.92 * bL : 1.055 * Math.pow(bL, 1/2.4) - 0.055;
+    out[k]     = (rS * 255 + 0.5) | 0;
+    out[k + 1] = (gS * 255 + 0.5) | 0;
+    out[k + 2] = (bS * 255 + 0.5) | 0;
+    out[k + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  status.textContent = 'rendered ' + SPLATS.length + ' splats at ' + W + '×' + H + ' in ' + (performance.now() - t0).toFixed(0) + 'ms (linear-space alpha-over)';
+})();
+""".replace("__W__", str(int(width))) \
+   .replace("__H__", str(int(height))) \
+   .replace("__BG__", f"[{bg_lin[0]:.6f},{bg_lin[1]:.6f},{bg_lin[2]:.6f}]") \
+   .replace("__SPLATS__", splats_json)
+
+    safe_title = title.replace("<", "&lt;").replace(">", "&gt;")
+    return (
+        "<!doctype html>\n"
+        '<html><head><meta charset="utf-8"><title>' + safe_title + '</title>\n'
+        "<style>\n"
+        "  body{margin:0;background:#111;color:#eee;font:14px -apple-system,sans-serif;"
+        "display:flex;flex-direction:column;align-items:center;padding:16px}\n"
+        "  #c{image-rendering:pixelated;border:1px solid #333;border-radius:6px;max-width:100%}\n"
+        "  #status{color:#7fd17f;font-family:ui-monospace,monospace;font-size:12px;margin:8px 0}\n"
+        "</style></head>\n"
+        "<body>\n"
+        '<div id="status">rendering...</div>\n'
+        f'<canvas id="c" width="{int(width)}" height="{int(height)}"></canvas>\n'
+        "<script>\n" + js + "\n</script>\n"
+        "</body></html>\n"
+    )
+
+
 def generate_svg_content(
     splats: List[GaussianSplat],
     width: int,

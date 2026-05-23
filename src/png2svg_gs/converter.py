@@ -28,6 +28,7 @@ from .features import (
 from .io import (
     compute_quality_metrics,
     evaluate_svg_export_quality,
+    generate_canvas_html,
     generate_drawingml_slide_content,
     load_png,
     render_splats_preview_png,
@@ -188,7 +189,7 @@ class PNG2SVGConverter:
         Returns:
             Generated vector content as string.
         """
-        if output_format not in {"svg", "drawingml", "pptx"}:
+        if output_format not in {"svg", "drawingml", "pptx", "canvas"}:
             raise ValueError(f"Unsupported output format: {output_format}")
 
         run_seed = self.seed if seed is None else seed
@@ -307,6 +308,16 @@ class PNG2SVGConverter:
             if verbose:
                 logger.info("Preparing PPTX package with rendered splat slide...")
             output_content = ""
+        elif output_format == "canvas":
+            if verbose:
+                logger.info("Generating canvas HTML with %s splats...", len(splats))
+            output_content = generate_canvas_html(
+                splats,
+                width,
+                height,
+                background_linear_rgb=self._background_linear_rgb,
+                title=Path(input_path).stem,
+            )
         else:
             if verbose:
                 logger.info("Generating SVG with %s splats...", len(splats))
@@ -327,6 +338,10 @@ class PNG2SVGConverter:
                 )
                 if verbose:
                     logger.info("Saved PPTX: %s", output_path)
+            elif output_format == "canvas":
+                Path(output_path).write_text(output_content, encoding="utf-8")
+                if verbose:
+                    logger.info("Saved canvas HTML: %s", output_path)
             else:
                 save_svg(
                     splats,
