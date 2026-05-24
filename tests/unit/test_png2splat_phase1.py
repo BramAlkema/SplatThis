@@ -9,7 +9,11 @@ import torch
 from PIL import Image
 
 from png2svg_gs.converter import PNG2SVGConverter
-from png2svg_gs.features import analyze_local_structure, compute_structure_field, init_seeds_content_adaptive
+from png2svg_gs.features import (
+    analyze_local_structure,
+    compute_structure_field,
+    init_seeds_content_adaptive,
+)
 from png2svg_gs.io import load_splats_json, save_splats_json
 from png2svg_gs.renderer import L1SSIMLoss, splats_to_tensor, tensor_to_splats
 from png2svg_gs.splat import GaussianSplat, RawSplat, create_isotropic_splat
@@ -33,7 +37,12 @@ def test_raw_splat_validation_rejects_invalid_scale():
 
 def test_gaussian_raw_roundtrip_preserves_core_parameters():
     """Gaussian <-> raw schema roundtrip should preserve key values."""
-    splat = create_isotropic_splat(center=np.array([12.0, 9.0]), sigma=3.0, color=np.array([0.2, 0.4, 0.6]), alpha=0.7)
+    splat = create_isotropic_splat(
+        center=np.array([12.0, 9.0]),
+        sigma=3.0,
+        color=np.array([0.2, 0.4, 0.6]),
+        alpha=0.7,
+    )
     splat.layer = 2
     raw = splat.to_raw_splat()
     restored = GaussianSplat.from_raw_splat(raw)
@@ -68,8 +77,18 @@ def test_tensor_parameterization_uses_scale_rotation_and_roundtrips():
 def test_save_and_load_splats_json_canonical(tmp_path: Path):
     """Canonical raw JSON should serialize and deserialize successfully."""
     splats = [
-        create_isotropic_splat(center=np.array([4.0, 5.0]), sigma=2.0, color=np.array([1.0, 0.0, 0.0]), alpha=0.9),
-        create_isotropic_splat(center=np.array([8.0, 9.0]), sigma=1.5, color=np.array([0.0, 1.0, 0.0]), alpha=0.6),
+        create_isotropic_splat(
+            center=np.array([4.0, 5.0]),
+            sigma=2.0,
+            color=np.array([1.0, 0.0, 0.0]),
+            alpha=0.9,
+        ),
+        create_isotropic_splat(
+            center=np.array([8.0, 9.0]),
+            sigma=1.5,
+            color=np.array([0.0, 1.0, 0.0]),
+            alpha=0.6,
+        ),
     ]
     splats[0].layer = 0
     splats[1].layer = 2
@@ -83,7 +102,9 @@ def test_save_and_load_splats_json_canonical(tmp_path: Path):
         {"count": 1, "id": 0, "name": "base"},
         {"count": 1, "id": 2, "name": "detail"},
     ]
-    assert {"x", "y", "sx", "sy", "theta", "r", "g", "b", "a"}.issubset(data["splats"][0])
+    assert {"x", "y", "sx", "sy", "theta", "r", "g", "b", "a"}.issubset(
+        data["splats"][0]
+    )
 
     loaded = load_splats_json(str(out_path))
     assert len(loaded) == 2
@@ -95,15 +116,21 @@ def test_save_and_load_splats_json_canonical(tmp_path: Path):
 def test_seeded_initializer_is_deterministic():
     """Content-adaptive seeding should be deterministic with a fixed RNG seed."""
     image = np.linspace(0.0, 1.0, 32 * 32 * 3, dtype=np.float32).reshape(32, 32, 3)
-    seeds_a = init_seeds_content_adaptive(image, target_count=24, rng=np.random.default_rng(123))
-    seeds_b = init_seeds_content_adaptive(image, target_count=24, rng=np.random.default_rng(123))
+    seeds_a = init_seeds_content_adaptive(
+        image, target_count=24, rng=np.random.default_rng(123)
+    )
+    seeds_b = init_seeds_content_adaptive(
+        image, target_count=24, rng=np.random.default_rng(123)
+    )
     assert seeds_a == seeds_b
 
 
 def test_structure_field_has_valid_shapes_and_ranges():
     """Structure field precompute should return normalized directions and anisotropy >= 1."""
     image = np.linspace(0.0, 1.0, 24 * 20 * 3, dtype=np.float32).reshape(24, 20, 3)
-    dirs, anis = compute_structure_field(image, method="sobel", smoothing_sigma=1.0, anisotropy_clip=7.0)
+    dirs, anis = compute_structure_field(
+        image, method="sobel", smoothing_sigma=1.0, anisotropy_clip=7.0
+    )
 
     assert dirs.shape == (24, 20, 2)
     assert anis.shape == (24, 20)
@@ -171,7 +198,9 @@ def test_converter_writes_artifacts_and_is_seed_reproducible(tmp_path: Path):
     json2 = Path(str(out2.with_suffix(".json"))).read_text(encoding="utf-8")
     assert json1 == json2
 
-    manifest = json.loads((artifacts1 / "run_manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (artifacts1 / "run_manifest.json").read_text(encoding="utf-8")
+    )
     assert manifest["seed"] == 7
     assert (artifacts1 / "init.raw.json").exists()
     assert (artifacts1 / "iter-1.raw.json").exists()

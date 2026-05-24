@@ -6,11 +6,11 @@ Implements perceptual and content-aware loss functions that go beyond simple MSE
 to optimize for human visual perception and structural preservation.
 """
 
+from typing import Any, Dict
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-from typing import Optional, Dict, Any, Tuple
 import torchvision.transforms as transforms
 from torchvision.models import vgg16
 
@@ -21,10 +21,12 @@ class PerceptualLoss(nn.Module):
     Uses pre-trained VGG features to compare images in perceptual space.
     """
 
-    def __init__(self,
-                 feature_layers: list = [3, 8, 15, 22],
-                 weights: list = [1.0, 1.0, 1.0, 1.0],
-                 device: str = 'cpu'):
+    def __init__(
+        self,
+        feature_layers: list = [3, 8, 15, 22],
+        weights: list = [1.0, 1.0, 1.0, 1.0],
+        device: str = "cpu",
+    ):
         super().__init__()
 
         self.device = device
@@ -50,8 +52,7 @@ class PerceptualLoss(nn.Module):
 
         # Normalization for ImageNet pre-trained models
         self.normalize = transforms.Normalize(
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225]
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
         )
 
     def extract_features(self, x: torch.Tensor) -> list:
@@ -97,19 +98,29 @@ class EdgePreservingLoss(nn.Module):
     Uses Sobel gradients to detect and preserve structural boundaries.
     """
 
-    def __init__(self, edge_weight: float = 1.0, device: str = 'cpu'):
+    def __init__(self, edge_weight: float = 1.0, device: str = "cpu"):
         super().__init__()
         self.edge_weight = edge_weight
         self.device = device
 
         # Sobel kernels
-        sobel_x = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]],
-                              dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
-        sobel_y = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]],
-                              dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
+        sobel_x = (
+            torch.tensor(
+                [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32, device=device
+            )
+            .unsqueeze(0)
+            .unsqueeze(0)
+        )
+        sobel_y = (
+            torch.tensor(
+                [[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=torch.float32, device=device
+            )
+            .unsqueeze(0)
+            .unsqueeze(0)
+        )
 
-        self.register_buffer('sobel_x', sobel_x)
-        self.register_buffer('sobel_y', sobel_y)
+        self.register_buffer("sobel_x", sobel_x)
+        self.register_buffer("sobel_y", sobel_y)
 
     def compute_gradients(self, x: torch.Tensor) -> torch.Tensor:
         """Compute gradient magnitude using Sobel operators."""
@@ -138,10 +149,12 @@ class ContentAdaptiveLoss(nn.Module):
     Uses saliency and texture complexity to focus optimization on important areas.
     """
 
-    def __init__(self,
-                 saliency_weight: float = 2.0,
-                 texture_weight: float = 1.5,
-                 device: str = 'cpu'):
+    def __init__(
+        self,
+        saliency_weight: float = 2.0,
+        texture_weight: float = 1.5,
+        device: str = "cpu",
+    ):
         super().__init__()
         self.saliency_weight = saliency_weight
         self.texture_weight = texture_weight
@@ -169,8 +182,8 @@ class ContentAdaptiveLoss(nn.Module):
         kernel1 = gaussian_kernel(sigma1).unsqueeze(0).unsqueeze(0)
         kernel2 = gaussian_kernel(sigma2, size=15).unsqueeze(0).unsqueeze(0)
 
-        blur1 = F.conv2d(gray, kernel1, padding=kernel1.shape[-1]//2)
-        blur2 = F.conv2d(gray, kernel2, padding=kernel2.shape[-1]//2)
+        blur1 = F.conv2d(gray, kernel1, padding=kernel1.shape[-1] // 2)
+        blur2 = F.conv2d(gray, kernel2, padding=kernel2.shape[-1] // 2)
 
         saliency = torch.abs(blur1 - blur2)
         return saliency / (saliency.max() + 1e-8)
@@ -200,7 +213,9 @@ class ContentAdaptiveLoss(nn.Module):
         texture = self.compute_texture_complexity(target)
 
         # Combine importance maps
-        importance = 1.0 + self.saliency_weight * saliency + self.texture_weight * texture
+        importance = (
+            1.0 + self.saliency_weight * saliency + self.texture_weight * texture
+        )
 
         # Weight loss by importance
         weighted_loss = base_loss * importance
@@ -214,12 +229,14 @@ class AdvancedLoss(nn.Module):
     Balances pixel accuracy, perceptual quality, edge preservation, and content adaptation.
     """
 
-    def __init__(self,
-                 mse_weight: float = 1.0,
-                 perceptual_weight: float = 0.5,
-                 edge_weight: float = 0.3,
-                 content_weight: float = 0.2,
-                 device: str = 'cpu'):
+    def __init__(
+        self,
+        mse_weight: float = 1.0,
+        perceptual_weight: float = 0.5,
+        edge_weight: float = 0.3,
+        content_weight: float = 0.2,
+        device: str = "cpu",
+    ):
         super().__init__()
 
         self.mse_weight = mse_weight
@@ -235,7 +252,9 @@ class AdvancedLoss(nn.Module):
         if content_weight > 0:
             self.content_loss = ContentAdaptiveLoss(device=device)
 
-    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def forward(
+        self, pred: torch.Tensor, target: torch.Tensor
+    ) -> Dict[str, torch.Tensor]:
         """Compute combined advanced loss with component breakdown."""
         losses = {}
         total_loss = 0.0
@@ -243,45 +262,45 @@ class AdvancedLoss(nn.Module):
         # MSE loss
         if self.mse_weight > 0:
             mse_loss = F.mse_loss(pred, target)
-            losses['mse'] = mse_loss
+            losses["mse"] = mse_loss
             total_loss += self.mse_weight * mse_loss
 
         # Perceptual loss
-        if self.perceptual_weight > 0 and hasattr(self, 'perceptual_loss'):
+        if self.perceptual_weight > 0 and hasattr(self, "perceptual_loss"):
             perc_loss = self.perceptual_loss(pred, target)
-            losses['perceptual'] = perc_loss
+            losses["perceptual"] = perc_loss
             total_loss += self.perceptual_weight * perc_loss
 
         # Edge preservation loss
-        if self.edge_weight > 0 and hasattr(self, 'edge_loss'):
+        if self.edge_weight > 0 and hasattr(self, "edge_loss"):
             edge_loss = self.edge_loss(pred, target)
-            losses['edge'] = edge_loss
+            losses["edge"] = edge_loss
             total_loss += self.edge_weight * edge_loss
 
         # Content-adaptive loss
-        if self.content_weight > 0 and hasattr(self, 'content_loss'):
+        if self.content_weight > 0 and hasattr(self, "content_loss"):
             content_loss = self.content_loss(pred, target)
-            losses['content'] = content_loss
+            losses["content"] = content_loss
             total_loss += self.content_weight * content_loss
 
-        losses['total'] = total_loss
+        losses["total"] = total_loss
         return losses
 
 
 def create_advanced_loss(config: Dict[str, Any]) -> AdvancedLoss:
     """Factory function to create advanced loss from configuration."""
     return AdvancedLoss(
-        mse_weight=config.get('mse_weight', 1.0),
-        perceptual_weight=config.get('perceptual_weight', 0.5),
-        edge_weight=config.get('edge_weight', 0.3),
-        content_weight=config.get('content_weight', 0.2),
-        device=config.get('device', 'cpu')
+        mse_weight=config.get("mse_weight", 1.0),
+        perceptual_weight=config.get("perceptual_weight", 0.5),
+        edge_weight=config.get("edge_weight", 0.3),
+        content_weight=config.get("content_weight", 0.2),
+        device=config.get("device", "cpu"),
     )
 
 
 if __name__ == "__main__":
     # Test the advanced loss functions
-    device = 'cpu'
+    device = "cpu"
 
     # Create sample images
     pred = torch.randn(1, 3, 64, 64, device=device)
@@ -308,6 +327,6 @@ if __name__ == "__main__":
     # Combined loss
     combined_loss = AdvancedLoss(device=device)
     combined_vals = combined_loss(pred, target)
-    print(f"Combined Loss Breakdown:")
+    print("Combined Loss Breakdown:")
     for name, val in combined_vals.items():
         print(f"  {name}: {val.item():.6f}")

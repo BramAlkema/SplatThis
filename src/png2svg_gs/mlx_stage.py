@@ -12,7 +12,6 @@ import numpy as np
 
 from .mlx_losses import MlxLossConfig, make_loss_fn
 from .mlx_optimizer import (
-    MlxAdam,
     MlxSplatParams,
     clone_tree,
     constrain_trainable_tree,

@@ -4,10 +4,11 @@ Feature extraction and content-adaptive seeding.
 Implements gradient-based analysis and spatial organization for Gaussian placement.
 """
 
+import logging
+from typing import List, Optional, Tuple
+
 import numpy as np
 from scipy import ndimage
-from typing import List, Tuple, Optional
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -20,18 +21,26 @@ def _resolve_rng(rng: Optional[np.random.Generator] = None) -> np.random.Generat
 def _to_grayscale(image: np.ndarray) -> np.ndarray:
     """Convert image to float32 grayscale."""
     if image.ndim == 3:
-        return (0.299 * image[..., 0] + 0.587 * image[..., 1] + 0.114 * image[..., 2]).astype(np.float32)
+        return (
+            0.299 * image[..., 0] + 0.587 * image[..., 1] + 0.114 * image[..., 2]
+        ).astype(np.float32)
     return np.asarray(image, dtype=np.float32)
 
 
-def _compute_gradients(gray: np.ndarray, method: str = "sobel") -> Tuple[np.ndarray, np.ndarray]:
+def _compute_gradients(
+    gray: np.ndarray, method: str = "sobel"
+) -> Tuple[np.ndarray, np.ndarray]:
     """Compute image gradients for a grayscale image."""
     if method == "sobel":
         grad_x = ndimage.sobel(gray, axis=1)
         grad_y = ndimage.sobel(gray, axis=0)
     elif method == "scharr":
-        scharr_x = np.array([[-3, 0, 3], [-10, 0, 10], [-3, 0, 3]], dtype=np.float32) / 32.0
-        scharr_y = np.array([[-3, -10, -3], [0, 0, 0], [3, 10, 3]], dtype=np.float32) / 32.0
+        scharr_x = (
+            np.array([[-3, 0, 3], [-10, 0, 10], [-3, 0, 3]], dtype=np.float32) / 32.0
+        )
+        scharr_y = (
+            np.array([[-3, -10, -3], [0, 0, 0], [3, 10, 3]], dtype=np.float32) / 32.0
+        )
         grad_x = ndimage.convolve(gray, scharr_x)
         grad_y = ndimage.convolve(gray, scharr_y)
     elif method == "prewitt":
@@ -42,7 +51,7 @@ def _compute_gradients(gray: np.ndarray, method: str = "sobel") -> Tuple[np.ndar
     return grad_x.astype(np.float32), grad_y.astype(np.float32)
 
 
-def compute_gradient_magnitude(image: np.ndarray, method: str = 'sobel') -> np.ndarray:
+def compute_gradient_magnitude(image: np.ndarray, method: str = "sobel") -> np.ndarray:
     """
     Compute gradient magnitude for content-adaptive seeding.
 
@@ -89,7 +98,7 @@ def compute_structure_field(
         i_xy = ndimage.gaussian_filter(i_xy, sigma=sigma)
 
     trace = i_xx + i_yy
-    disc = np.maximum((i_xx - i_yy) ** 2 + 4.0 * (i_xy ** 2), 0.0)
+    disc = np.maximum((i_xx - i_yy) ** 2 + 4.0 * (i_xy**2), 0.0)
     root = np.sqrt(disc)
     lambda1 = 0.5 * (trace + root)
     lambda2 = 0.5 * (trace - root)
@@ -135,10 +144,13 @@ def compute_laplacian_of_gaussian(image: np.ndarray, sigma: float = 1.0) -> np.n
     return np.abs(log_response)  # Take absolute value for feature strength
 
 
-def init_seeds_content_adaptive(image: np.ndarray, target_count: int,
-                               gradient_weight: float = 0.7,
-                               method: str = 'sobel',
-                               rng: Optional[np.random.Generator] = None) -> List[Tuple[float, float]]:
+def init_seeds_content_adaptive(
+    image: np.ndarray,
+    target_count: int,
+    gradient_weight: float = 0.7,
+    method: str = "sobel",
+    rng: Optional[np.random.Generator] = None,
+) -> List[Tuple[float, float]]:
     """
     Generate content-adaptive seed positions.
 
@@ -173,9 +185,9 @@ def init_seeds_content_adaptive(image: np.ndarray, target_count: int,
     return seeds
 
 
-def sample_from_probability_map(prob_map: np.ndarray,
-                               num_samples: int,
-                               rng: Optional[np.random.Generator] = None) -> List[Tuple[float, float]]:
+def sample_from_probability_map(
+    prob_map: np.ndarray, num_samples: int, rng: Optional[np.random.Generator] = None
+) -> List[Tuple[float, float]]:
     """
     Sample positions from probability map.
 
@@ -206,9 +218,13 @@ def sample_from_probability_map(prob_map: np.ndarray,
     return positions
 
 
-def poisson_disk_sampling(width: int, height: int, min_distance: float,
-                         max_attempts: int = 30,
-                         rng: Optional[np.random.Generator] = None) -> List[Tuple[float, float]]:
+def poisson_disk_sampling(
+    width: int,
+    height: int,
+    min_distance: float,
+    max_attempts: int = 30,
+    rng: Optional[np.random.Generator] = None,
+) -> List[Tuple[float, float]]:
     """
     Generate Poisson disk sampling for uniform coverage.
 
@@ -265,8 +281,18 @@ def poisson_disk_sampling(width: int, height: int, min_distance: float,
             grid_x = int(cx / cell_size)
             grid_y = int(cy / cell_size)
 
-            if _is_valid_poisson_point(cx, cy, points, grid, grid_x, grid_y,
-                                     grid_width, grid_height, cell_size, min_distance):
+            if _is_valid_poisson_point(
+                cx,
+                cy,
+                points,
+                grid,
+                grid_x,
+                grid_y,
+                grid_width,
+                grid_height,
+                cell_size,
+                min_distance,
+            ):
                 # Add new point
                 points.append((cx, cy))
                 active_list.append(len(points) - 1)
@@ -282,10 +308,18 @@ def poisson_disk_sampling(width: int, height: int, min_distance: float,
     return points
 
 
-def _is_valid_poisson_point(x: float, y: float, points: List[Tuple[float, float]],
-                          grid: np.ndarray, grid_x: int, grid_y: int,
-                          grid_width: int, grid_height: int,
-                          cell_size: float, min_distance: float) -> bool:
+def _is_valid_poisson_point(
+    x: float,
+    y: float,
+    points: List[Tuple[float, float]],
+    grid: np.ndarray,
+    grid_x: int,
+    grid_y: int,
+    grid_width: int,
+    grid_height: int,
+    cell_size: float,
+    min_distance: float,
+) -> bool:
     """Check if point is valid for Poisson disk sampling."""
     # Check neighborhood in grid
     for dy in range(-2, 3):
@@ -297,16 +331,16 @@ def _is_valid_poisson_point(x: float, y: float, points: List[Tuple[float, float]
                 point_idx = grid[gy, gx]
                 if point_idx >= 0:
                     px, py = points[point_idx]
-                    distance = np.sqrt((x - px)**2 + (y - py)**2)
+                    distance = np.sqrt((x - px) ** 2 + (y - py) ** 2)
                     if distance < min_distance:
                         return False
 
     return True
 
 
-def create_spatial_grid(positions: List[Tuple[float, float]],
-                       width: int, height: int,
-                       grid_size: int = 32) -> dict:
+def create_spatial_grid(
+    positions: List[Tuple[float, float]], width: int, height: int, grid_size: int = 32
+) -> dict:
     """
     Create spatial grid for fast neighbor queries.
 
@@ -364,7 +398,11 @@ def analyze_local_structure(
 
     # Extract local patch
     if len(image.shape) == 3:
-        patch = 0.299 * image[y1:y2, x1:x2, 0] + 0.587 * image[y1:y2, x1:x2, 1] + 0.114 * image[y1:y2, x1:x2, 2]
+        patch = (
+            0.299 * image[y1:y2, x1:x2, 0]
+            + 0.587 * image[y1:y2, x1:x2, 1]
+            + 0.114 * image[y1:y2, x1:x2, 2]
+        )
     else:
         patch = image[y1:y2, x1:x2]
 
@@ -384,7 +422,7 @@ def analyze_local_structure(
     if not np.isfinite(trace) or trace <= float(max(0.0, min_energy)):
         return np.array([1.0, 0.0], dtype=np.float32), 1.0
 
-    disc = max((i_xx - i_yy) ** 2 + 4.0 * (i_xy ** 2), 0.0)
+    disc = max((i_xx - i_yy) ** 2 + 4.0 * (i_xy**2), 0.0)
     root = float(np.sqrt(disc))
     lambda1 = 0.5 * (trace + root)
     lambda2 = 0.5 * (trace - root)
@@ -401,8 +439,9 @@ def analyze_local_structure(
     return primary_direction, anisotropy
 
 
-def estimate_local_color(image: np.ndarray, x: int, y: int,
-                        window_size: int = 5) -> np.ndarray:
+def estimate_local_color(
+    image: np.ndarray, x: int, y: int, window_size: int = 5
+) -> np.ndarray:
     """
     Estimate local color by averaging neighborhood.
 

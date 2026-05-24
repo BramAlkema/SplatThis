@@ -515,7 +515,6 @@ def generate_parallax_canvas_html(
         ],
         separators=(",", ":"),
     )
-    counts = {k: len(v) for k, v in buckets.items()}
 
     js = (
         r"""

@@ -172,14 +172,14 @@ def torch_linear_rgb_to_oklab(rgb: torch.Tensor) -> torch.Tensor:
     r = rgb[..., 0]
     g = rgb[..., 1]
     b = rgb[..., 2]
-    l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b
-    m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b
-    s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b
-    # l,m,s are nonneg for in-gamut colors; clamp guards tiny negatives and keeps
+    lms_l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b
+    lms_m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b
+    lms_s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b
+    # lms_* are nonneg for in-gamut colors; clamp guards tiny negatives and keeps
     # the cube-root gradient finite near zero.
-    l_ = torch.clamp(l, min=1e-8).pow(1.0 / 3.0)
-    m_ = torch.clamp(m, min=1e-8).pow(1.0 / 3.0)
-    s_ = torch.clamp(s, min=1e-8).pow(1.0 / 3.0)
+    l_ = torch.clamp(lms_l, min=1e-8).pow(1.0 / 3.0)
+    m_ = torch.clamp(lms_m, min=1e-8).pow(1.0 / 3.0)
+    s_ = torch.clamp(lms_s, min=1e-8).pow(1.0 / 3.0)
     L = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_
     a = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_
     bb = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_

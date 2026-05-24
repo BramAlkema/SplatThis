@@ -4,10 +4,11 @@ Gaussian Splat data structure and utilities.
 Streamlined splat representation optimized for PNG→SVG conversion.
 """
 
-import numpy as np
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
-import logging
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -148,17 +149,22 @@ class GaussianSplat:
 
     Simplified from AdaptiveGaussian2D for practical use.
     """
+
     # Core parameters
-    mu: np.ndarray      # mean μᵢ = (x, y) in image coordinates
-    sigma: np.ndarray   # covariance Σᵢ ∈ ℝ²ˣ² (positive-definite)
-    color: np.ndarray   # color cᵢ = (r, g, b) in [0,1]
-    alpha: float        # opacity αᵢ ∈ [0,1]
+    mu: np.ndarray  # mean μᵢ = (x, y) in image coordinates
+    sigma: np.ndarray  # covariance Σᵢ ∈ ℝ²ˣ² (positive-definite)
+    color: np.ndarray  # color cᵢ = (r, g, b) in [0,1]
+    alpha: float  # opacity αᵢ ∈ [0,1]
 
     # Optional metadata
-    importance: float = 0.0    # For LOD and pruning
+    importance: float = 0.0  # For LOD and pruning
     layer: Optional[int] = None
-    _raw_cache: Optional[RawSplat] = field(default=None, init=False, repr=False, compare=False)
-    _raw_cache_key: Optional[Tuple[float, ...]] = field(default=None, init=False, repr=False, compare=False)
+    _raw_cache: Optional[RawSplat] = field(
+        default=None, init=False, repr=False, compare=False
+    )
+    _raw_cache_key: Optional[Tuple[float, ...]] = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self):
         """Validate and ensure proper types."""
@@ -179,7 +185,9 @@ class GaussianSplat:
         if self.sigma.shape != (2, 2):
             raise ValueError(f"sigma must be 2x2, got shape {self.sigma.shape}")
         if self.color.shape[0] < 3:
-            raise ValueError(f"color must have at least 3 components, got {len(self.color)}")
+            raise ValueError(
+                f"color must have at least 3 components, got {len(self.color)}"
+            )
         if not (0 <= self.alpha <= 1):
             raise ValueError(f"alpha must be in [0,1], got {self.alpha}")
 
@@ -272,7 +280,7 @@ class GaussianSplat:
         det = np.linalg.det(self.sigma)
         return np.pi * np.sqrt(max(det, 1e-8))  # Prevent negative determinant
 
-    def copy(self) -> 'GaussianSplat':
+    def copy(self) -> "GaussianSplat":
         """Create deep copy."""
         cloned = GaussianSplat(
             mu=self.mu.copy(),
@@ -303,8 +311,10 @@ class GaussianSplat:
 
     def __str__(self) -> str:
         eigenvals, _ = self.eigendecomposition()
-        return (f"GaussianSplat(mu={self.mu}, eigenvals={eigenvals}, "
-                f"alpha={self.alpha:.3f}, area={self.area():.3f})")
+        return (
+            f"GaussianSplat(mu={self.mu}, eigenvals={eigenvals}, "
+            f"alpha={self.alpha:.3f}, area={self.area():.3f})"
+        )
 
     def to_raw_splat(self) -> RawSplat:
         """Convert Gaussian representation to canonical raw schema."""
@@ -338,7 +348,10 @@ class GaussianSplat:
         sin_t = np.sin(theta)
         rotation = np.array([[cos_t, -sin_t], [sin_t, cos_t]], dtype=np.float32)
         scales_sq = np.diag(
-            np.array([max(raw.sx, MIN_SCALE) ** 2, max(raw.sy, MIN_SCALE) ** 2], dtype=np.float32)
+            np.array(
+                [max(raw.sx, MIN_SCALE) ** 2, max(raw.sy, MIN_SCALE) ** 2],
+                dtype=np.float32,
+            )
         )
         sigma = rotation @ scales_sq @ rotation.T
 
@@ -374,8 +387,9 @@ class GaussianSplat:
         return cls.from_raw_splat(RawSplat.from_dict(data))
 
 
-def create_isotropic_splat(center: np.ndarray, sigma: float,
-                          color: np.ndarray, alpha: float = 0.8) -> GaussianSplat:
+def create_isotropic_splat(
+    center: np.ndarray, sigma: float, color: np.ndarray, alpha: float = 0.8
+) -> GaussianSplat:
     """
     Create isotropic (circular) Gaussian splat.
 
@@ -388,18 +402,22 @@ def create_isotropic_splat(center: np.ndarray, sigma: float,
     Returns:
         Isotropic GaussianSplat
     """
-    covariance = np.eye(2, dtype=np.float32) * (sigma ** 2)
+    covariance = np.eye(2, dtype=np.float32) * (sigma**2)
     return GaussianSplat(
         mu=np.array(center, dtype=np.float32),
         sigma=covariance,
         color=np.array(color, dtype=np.float32),
-        alpha=alpha
+        alpha=alpha,
     )
 
 
-def create_anisotropic_splat(center: np.ndarray, eigenvals: np.ndarray,
-                           eigenvecs: np.ndarray, color: np.ndarray,
-                           alpha: float = 0.8) -> GaussianSplat:
+def create_anisotropic_splat(
+    center: np.ndarray,
+    eigenvals: np.ndarray,
+    eigenvecs: np.ndarray,
+    color: np.ndarray,
+    alpha: float = 0.8,
+) -> GaussianSplat:
     """
     Create anisotropic Gaussian splat from eigendecomposition.
 
@@ -421,7 +439,7 @@ def create_anisotropic_splat(center: np.ndarray, eigenvals: np.ndarray,
         mu=np.array(center, dtype=np.float32),
         sigma=covariance.astype(np.float32),
         color=np.array(color, dtype=np.float32),
-        alpha=alpha
+        alpha=alpha,
     )
 
 
@@ -434,7 +452,9 @@ def is_positive_definite(matrix: np.ndarray, tolerance: float = 1e-8) -> bool:
         return False
 
 
-def clamp_positive_definite(matrix: np.ndarray, min_eigenval: float = 1e-6) -> np.ndarray:
+def clamp_positive_definite(
+    matrix: np.ndarray, min_eigenval: float = 1e-6
+) -> np.ndarray:
     """
     Clamp matrix to be positive definite.
 
@@ -456,8 +476,9 @@ def clamp_positive_definite(matrix: np.ndarray, min_eigenval: float = 1e-6) -> n
         return np.eye(2) * min_eigenval
 
 
-def merge_nearby_splats(splats: list[GaussianSplat],
-                       distance_threshold: float = 2.0) -> list[GaussianSplat]:
+def merge_nearby_splats(
+    splats: list[GaussianSplat], distance_threshold: float = 2.0
+) -> list[GaussianSplat]:
     """
     Merge splats that are very close together.
 
@@ -482,7 +503,7 @@ def merge_nearby_splats(splats: list[GaussianSplat],
         cluster = [splat1]
         used.add(i)
 
-        for j, splat2 in enumerate(splats[i+1:], start=i+1):
+        for j, splat2 in enumerate(splats[i + 1 :], start=i + 1):
             if j in used:
                 continue
 
@@ -524,9 +545,5 @@ def _merge_splat_cluster(splats: list[GaussianSplat]) -> GaussianSplat:
     importance = max(s.importance for s in splats)
 
     return GaussianSplat(
-        mu=mu,
-        sigma=sigma,
-        color=color,
-        alpha=alpha,
-        importance=importance
+        mu=mu, sigma=sigma, color=color, alpha=alpha, importance=importance
     )

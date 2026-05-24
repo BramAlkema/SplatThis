@@ -1,6 +1,9 @@
 [flake8]
 max-line-length = 88
-extend-ignore = E203,W503,E501
+# E203, W503: black-compatibility (slice colons + line breaks before binops).
+# E501: line-length is enforced by black, not flake8.
+# E128: continuation line indent; black is the source of truth for indentation.
+extend-ignore = E203,W503,E501,E128
 exclude =
     .git,
     __pycache__,
@@ -12,4 +15,12 @@ exclude =
 per-file-ignores =
     __init__.py:F401,
     cli.py:C901
+    # The large pipeline modules carry long-running, branch-heavy methods
+    # (multi-stage training, region-aware refinement). Their C901 complexity
+    # exceeds the default 10; refactor passes happen incrementally, not by
+    # gating CI. Per-file ignores let new code stay strict while the legacy
+    # heavy methods don't block the build.
+    converter.py:C901
+    io.py:C901
+    mlx_stage.py:C901
 max-complexity = 10

@@ -65,16 +65,18 @@ class SplatParams(nn.Module):
         Differentiable -- gradients on the output flow back into each parameter.
         """
         n = self.num_splats
-        reserved = torch.zeros(n, 1, dtype=self.position.dtype, device=self.position.device)
+        reserved = torch.zeros(
+            n, 1, dtype=self.position.dtype, device=self.position.device
+        )
         return torch.cat(
             [
-                self.position,                    # [N, 2]
-                self.scale,                       # [N, 2]
-                self.theta.unsqueeze(-1),         # [N, 1]
-                reserved,                         # [N, 1]
-                self.color,                       # [N, 3]
-                self.alpha.unsqueeze(-1),         # [N, 1]
-                self.importance.unsqueeze(-1),    # [N, 1]
+                self.position,  # [N, 2]
+                self.scale,  # [N, 2]
+                self.theta.unsqueeze(-1),  # [N, 1]
+                reserved,  # [N, 1]
+                self.color,  # [N, 3]
+                self.alpha.unsqueeze(-1),  # [N, 1]
+                self.importance.unsqueeze(-1),  # [N, 1]
             ],
             dim=1,
         )
