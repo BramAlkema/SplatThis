@@ -218,10 +218,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--training-export-target",
-        default="canvas",
-        choices=["canvas", "svg", "pptx-softedge"],
-        help="Renderer target used during optimization. 'pptx-softedge' trains directly "
-        "against a differentiable approximation of native PPTX soft-edge ellipses.",
+        default="auto",
+        choices=["auto", "canvas", "svg", "pptx-softedge"],
+        help="Renderer target used during optimization. 'auto' (default) picks "
+        "based on --format: svg->svg (sRGB compositing, matches browser SVG "
+        "blending), pptx->pptx-softedge (sRGB + PPTX soft-edge proxy), "
+        "canvas->canvas (linear-light compositing). 'pptx-softedge' trains "
+        "directly against a differentiable approximation of native PPTX "
+        "soft-edge ellipses.",
     )
     parser.add_argument(
         "--svg-recipe",
@@ -313,8 +317,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     refinement_config = {}
     if args.svg_recipe is not None:
         refinement_config["svg_export_recipe"] = args.svg_recipe
-    if args.training_export_target != "canvas":
-        refinement_config["training_export_target"] = args.training_export_target
+    # Resolve "auto" training_export_target: derive from output format so SVG
+    # exports train under sRGB compositing (matches browser blend), PPTX uses
+    # the soft-edge proxy, and canvas keeps real linear-light compositing.
+    training_export_target = args.training_export_target
+    if training_export_target == "auto":
+        if args.fmt == "svg":
+            training_export_target = "svg"
+        elif args.fmt == "pptx":
+            training_export_target = "pptx-softedge"
+        else:
+            training_export_target = "canvas"
+    if training_export_target != "canvas":
+        refinement_config["training_export_target"] = training_export_target
     if args.svg_proxy_postfit_iters > 0:
         refinement_config["svg_proxy_postfit_iters"] = int(args.svg_proxy_postfit_iters)
     if args.pptx_proxy_postfit_iters > 0:
