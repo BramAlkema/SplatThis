@@ -257,10 +257,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--svg-recipe",
         default=None,
-        choices=["standard", "browser-compatible", "scripted-matrix"],
+        choices=[
+            "standard",
+            "browser-compatible",
+            "scripted-matrix",
+            "palette-quantized",
+        ],
         help="SVG export recipe (default comes from quality profile). "
-        "'scripted-matrix' stores compact splat rows and expands browser-compatible "
-        "gradients at load time.",
+        "'scripted-matrix' stores compact splat rows and expands "
+        "browser-compatible gradients at load time (JS required). "
+        "'palette-quantized' k-means-clusters splat colors into a small "
+        "palette (default 128 colors), defines one shared <radialGradient> "
+        "per palette color, and references it per-splat with per-element "
+        "opacity for the alpha scale. ~3-4x smaller than 'standard' at "
+        "high splat counts and renders in any SVG-capable surface "
+        "(browsers AND headless rasterizers); slight color banding at very "
+        "small palette sizes.",
     )
     parser.add_argument(
         "--svg-proxy-postfit-iters",
