@@ -1,15 +1,29 @@
 # MLX Implementation Status
 
-Date: May 24, 2026
+Last updated: May 24, 2026 (post-compile, post-sRGB, post-MLX-sRGB).
 
 This document captures the current state of the MLX renderer and optimizer work
 so the next session can resume without reconstructing the thread.
 
 ## Current Verdict
 
-MLX is the strongest Apple Silicon path tested so far.
+MLX is the strongest Apple Silicon path tested so far, **and** it now produces
+SVG-faithful output thanks to the sRGB compositing mode.
 
-The useful boundary is not "make NumPy faster". It is:
+Measured headline at production scale (chameleon, 2000 splats, 1000px,
+balanced profile, stages 100/50/25):
+
+| Pipeline | Wall clock | Export SSIM (sRGB) | Pixel mean err |
+|---|---:|---:|---:|
+| torch + linear training | 2:52 (172s) | 0.683 | 14.61 |
+| torch + sRGB training   | 2:52 (172s) | **0.719** | 10.08 |
+| **MLX + sRGB training** | **18.8s** | 0.702 | 10.93 |
+
+**MLX + sRGB reaches ~95% of torch+sRGB quality in 1/9th the wall clock.**
+Beats torch+linear on both axes. Comparison HTML is at
+`tmp/scale_mlx_comparison.html` when artifacts are present.
+
+The useful boundary is still:
 
 ```text
 renderer + loss + gradients + optimizer step inside MLX
@@ -18,6 +32,52 @@ renderer + loss + gradients + optimizer step inside MLX
 Preprocessing, image loading, saliency maps, export, and final metrics still use
 the existing Python/NumPy/scikit-image/PyTorch code where that is simpler and
 not the main bottleneck.
+
+## Major Changes Since Initial MLX Landing
+
+In rough order:
+
+1. **`mx.compile`-wrapped train_step** (commit 8dba5e7). Forward render +
+   value_and_grad + Adam + constrain fused into a single compiled graph.
+   Best-tree tracking moved entirely MLX-side via `mx.where`; per-iter host
+   syncs eliminated. Measured ~24% faster per-iter on periodic-1 geometry
+   at 1923 splats.
+
+2. **MLX-path `batch_tile_count` default bumped 16 -> 128** (same commit).
+   `mx.compile` fuses fewer-but-bigger batches more effectively. For 400px
+   static color/alpha runs, dropped per-iter from ~463ms to ~272ms (-41%).
+   Memory pressure dominates above ~256.
+
+3. **Vectorized `build_plan`** (same commit). The per-splat Python double
+   loop is now a single NumPy broadcast: build (splat, tile) pairs via a
+   `repeat` over each splat's bbox, group by tile via stable argsort +
+   bincount, then scatter into the indices/mask tensors. Helps at 10k+
+   splats where the Python loop would be unusable.
+
+4. **`mx.arange` instead of host->device per batch** (commit f8c4afb).
+   Trivial cleanup -- the renderer now slices a single MLX `arange` rather
+   than building a numpy slice and bouncing through `mx.array` each tile
+   batch.
+
+5. **Adaptive SVG gradient stops** (commit 0da04d0). Per-splat stop count
+   chosen so the piecewise-linear approximation stays within 0.02 of the
+   true Gaussian opacity curve. -26% SVG bytes on the chameleon (162 KB
+   -> 119 KB) without visible quality drop.
+
+6. **sRGB-space training by default for SVG/PPTX output** (commit a8724a0).
+   `--training-export-target` default changed from `canvas` to `auto`;
+   when `--format=svg` (the common case), the torch renderer's
+   `compositing_space="srgb"` mode is now selected by default. Closes the
+   train->deploy SSIM gap by ~50% (rsvg-rasterized SSIM goes from 0.62 to
+   0.72 at production scale). See `feedback-train-in-deployment-color-space`
+   memory.
+
+7. **MLX renderer matches torch sRGB mode** (commit 5e496b7). The MLX
+   renderer previously did all alpha-over math in linear-RGB; now it has
+   the same `compositing_space="srgb"` mode (gamma encode -> blend ->
+   gamma decode), wired through `MlxRendererConfig` and the converter so
+   `--optimizer-backend mlx --format svg` picks sRGB automatically.
+   Parity vs the torch renderer is 1.19e-7 in both modes.
 
 ## Implemented Modules
 
@@ -221,6 +281,23 @@ Useful weighted OKLab command:
 
 All numbers below are from local runs on May 24, 2026.
 
+### Headline: production-scale chameleon (1000px, 2000 splats)
+
+Artifacts under `tmp/scale_*` when present. Balanced profile, stages
+100/50/25. The MLX run uses `--mlx-tile-plan periodic
+--mlx-tile-plan-rebuild-interval 5 --mlx-trainable-groups
+position,scale,theta,color,alpha --renderer-max-active-splats-per-tile 128`
+and the auto sRGB compositing.
+
+| Pipeline | Wall clock | Final splats | Internal SSIM | Export SSIM (sRGB) | Pixel mean err vs source |
+|---|---:|---:|---:|---:|---:|
+| torch + linear training | 172.0s | 1551 | 0.7338 | 0.6831 | 14.61 |
+| torch + sRGB training | 172.0s | 1551 | **0.7529** | **0.7187** | **10.08** |
+| MLX + sRGB training | **17.4s** | 1551 | 0.7375 | 0.7022 | 10.93 |
+
+The sRGB training cut the train->deploy gap roughly in half on both
+backends. MLX gives a 9.2x wall-clock speedup at ~95% of torch's quality.
+
 ### Renderer-Only
 
 Artifact: `./tmp/renderer_backend_benchmark_mlx.json`
@@ -379,61 +456,47 @@ Keep these in place until there is more evidence:
    scikit-image.
 4. Some internal logger messages still print bare `tmp/...`; user-facing
    documentation should use `./tmp/...`.
-5. Full 400px/2000-splat MLX training has not been run for the full staged
-   schedule after periodic geometry and weighted OKLab were added.
-6. No 10k MLX run has been attempted yet.
+5. ~~Full 400px/2000-splat MLX training has not been run~~ Done; see headline
+   table for the 1000px production-scale numbers.
+6. No 10k MLX run has been attempted yet. The vectorized `build_plan` makes
+   it tractable, but max_active needs to be pinned aggressively to keep the
+   compile cache stable across periodic rebuilds.
 7. Weighted OKLab needs tuning against actual visual output, not just
    2-iteration smoke metrics.
+8. MLX+sRGB quality is ~95% of torch+sRGB on the chameleon. The gap may
+   be a real optimizer-side difference (MLX uses linear-l1 by default vs
+   torch's combined loss), not a renderer issue. Worth profiling before
+   declaring a quality regression.
 
 ## Suggested Next Work
 
-Do not start with a long run. The next useful sequence is:
+Done so far (no longer "next"):
 
-1. Run a 400px/2000-splat short schedule with periodic geometry and linear L1:
+- ✅ Periodic geometry + linear L1 at 400px/2000
+- ✅ Periodic geometry at 1000px/2000 (the production headline above)
+- ✅ Compile-fused train_step
+- ✅ sRGB compositing in MLX (matches torch)
 
-   ```bash
-   ./tmp/venv-mlx/bin/python -m png2svg_gs.cli input.png \
-     -o ./tmp/chameleon_400px_mlx_linear_short.canvas.html \
-     --format canvas \
-     --max-edge 400 \
-     --splats 2000 \
-     --stages 5 \
-     --profile fast \
-     --optimizer-backend mlx \
-     --mlx-loss linear-l1 \
-     --mlx-tile-plan periodic \
-     --mlx-tile-plan-rebuild-interval 1 \
-     --mlx-trainable-groups position,scale,theta,color,alpha \
-     --artifacts-dir ./tmp/chameleon_400px_mlx_linear_short_artifacts \
-     -v
-   ```
+Still open, in rough priority order:
 
-2. Repeat with `weighted-oklab-l1` and compare visual output:
+1. **Tune MLX loss to match torch quality**: investigate why MLX+sRGB
+   trails torch+sRGB by ~0.02 SSIM on the chameleon. Could be the
+   default `--mlx-loss linear-l1` vs torch's combined loss, or different
+   learning-rate schedules. Profile and close the gap.
 
-   ```bash
-   ./tmp/venv-mlx/bin/python -m png2svg_gs.cli input.png \
-     -o ./tmp/chameleon_400px_mlx_weighted_oklab_short.canvas.html \
-     --format canvas \
-     --max-edge 400 \
-     --splats 2000 \
-     --stages 5 \
-     --profile fast \
-     --optimizer-backend mlx \
-     --mlx-loss weighted-oklab-l1 \
-     --mlx-tile-plan periodic \
-     --mlx-tile-plan-rebuild-interval 1 \
-     --mlx-trainable-groups position,scale,theta,color,alpha \
-     --artifacts-dir ./tmp/chameleon_400px_mlx_weighted_oklab_short_artifacts \
-     -v
-   ```
+2. **Attempt 10k MLX run** at 1000px with pinned max_active. Compare
+   wall-clock vs torch and verify the speed advantage persists at higher
+   splat counts.
 
-3. If both are stable, tune rebuild interval:
+3. **Move `build_plan` to MLX** to remove the per-rebuild host roundtrip.
+   Marginal at periodic-5 (~5% per iter), more significant at
+   periodic-1. MLX currently lacks `scatter_add`/`bincount`, so the
+   implementation needs a fixed-upper-bound workaround. Skip until the
+   periodic rebuild cost shows up in a profile as the dominant cost.
 
-   ```text
-   1, 2, 5, 10
-   ```
-
-4. Only after that, attempt a longer 400px/2000 staged run.
+4. **Tune adaptive gradient stops for the sRGB-blended path**: some
+   splat profiles may compress better now that the blend space matches
+   the deployment.
 
 ## Files Touched In This MLX Line
 
