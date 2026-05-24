@@ -36,10 +36,20 @@ EMU_PER_PX = 9525
 # Favor fidelity over blanket coverage in export geometry.
 ELLIPSE_OVERLAP_BOOST = 1.15
 MIN_ELLIPSE_RADIUS_PX = 0.35
-# Number of radial-gradient stops used to approximate each splat's Gaussian
-# opacity falloff in exported SVG. ~6-8 captures the profile; more adds bytes
-# without measurable fidelity gain.
+# Upper bound on radial-gradient stops used to approximate each splat's
+# Gaussian opacity falloff in exported SVG. Per-splat the count is chosen
+# adaptively (see _adaptive_gradient_stops) so that the piecewise-linear
+# stop interpolation stays within SVG_GRADIENT_STOP_MAX_ERROR of the true
+# Gaussian curve. Low-alpha splats often need just 2; mid-alpha 3-4; only
+# high-alpha sharp curves want the full 8.
 SVG_GRADIENT_STOPS = 8
+SVG_GRADIENT_STOPS_MIN = 2
+# Max absolute opacity error (0..1) tolerated between the true Gaussian
+# curve and the linear interpolation between adjacent gradient stops.
+# 0.02 is well under JND for normal viewing once splats composite over a
+# scene; tightening this raises stop counts (more bytes), loosening drops
+# them.
+SVG_GRADIENT_STOP_MAX_ERROR = 0.02
 DEFAULT_EXPORT_ORDER = "importance"
 DEFAULT_PPTX_SPLAT_STYLE = "soft-edge"
 PPTX_SOFT_EDGE_ALPHA_SCALE = 0.25
@@ -77,6 +87,57 @@ def _layer_title(layer: Optional[int]) -> str:
 
 def _splat_layer(splat: GaussianSplat) -> Optional[int]:
     return splat.to_raw_splat().layer
+
+
+def _gaussian_opacity_curve(
+    t: np.ndarray, alpha: float, gradient_footprint: float
+) -> np.ndarray:
+    """The opacity curve sampled by SVG gradient stops.
+
+    Matches the renderer's per-splat alpha-over opacity at a normalized radius
+    t in [0, 1] where 1.0 is `gradient_footprint` sigmas from the center.
+    """
+    return 1.0 - np.exp(
+        -float(alpha) * np.exp(-0.5 * (t * float(gradient_footprint)) ** 2)
+    )
+
+
+def _adaptive_gradient_stops(
+    alpha: float,
+    gradient_footprint: float,
+    inner_end: float,
+    *,
+    min_stops: int = SVG_GRADIENT_STOPS_MIN,
+    max_stops: int = SVG_GRADIENT_STOPS,
+    max_error: float = SVG_GRADIENT_STOP_MAX_ERROR,
+) -> List[Tuple[float, float]]:
+    """Return (offset, opacity) tuples approximating the Gaussian opacity curve.
+
+    Picks the smallest stop count N in [min_stops, max_stops] whose linear
+    interpolation between adjacent stops has max absolute error <= max_error
+    against the true curve. Offsets span [0, inner_end].
+    """
+
+    min_stops = max(2, int(min_stops))
+    max_stops = max(min_stops, int(max_stops))
+
+    if float(alpha) <= 1e-6 or float(gradient_footprint) <= 0.0:
+        # Effectively transparent or degenerate: a flat zero ramp suffices.
+        return [(0.0, 0.0), (float(inner_end), 0.0)]
+
+    sample_t = np.linspace(0.0, 1.0, 65)
+    true_op = _gaussian_opacity_curve(sample_t, alpha, gradient_footprint)
+
+    for n_stops in range(min_stops, max_stops + 1):
+        stop_t = np.linspace(0.0, 1.0, n_stops)
+        stop_op = _gaussian_opacity_curve(stop_t, alpha, gradient_footprint)
+        interp_op = np.interp(sample_t, stop_t, stop_op)
+        if float(np.max(np.abs(interp_op - true_op))) <= float(max_error):
+            return [(float(t * inner_end), float(op)) for t, op in zip(stop_t, stop_op)]
+
+    stop_t = np.linspace(0.0, 1.0, max_stops)
+    stop_op = _gaussian_opacity_curve(stop_t, alpha, gradient_footprint)
+    return [(float(t * inner_end), float(op)) for t, op in zip(stop_t, stop_op)]
 
 
 def _normalize_pptx_splat_style(splat_style: str) -> str:
@@ -599,22 +660,18 @@ def generate_svg_content(
         g = int(np.clip(np.round(rgb_srgb[1] * 255), 0, 255))
         b = int(np.clip(np.round(rgb_srgb[2] * 255), 0, 255))
         color = f"rgb({r},{g},{b})"
-        # True-Gaussian gradient stops: reproduce the renderer's per-splat
-        # alpha-over opacity, 1 - exp(-a * exp(-0.5 * r^2)), sampled across the
-        # ellipse. The gradient edge (offset 100%) is the ellipse boundary at
-        # `footprint` sigmas, so the normalized radius t maps to t*footprint
-        # sigmas. This matches render_splats_numpy far better than the old
-        # 3-stop ramp (+~0.02 perceptual SSIM at no extra cost).
-        stop_lines = []
-        for j in range(SVG_GRADIENT_STOPS):
-            t = j / (SVG_GRADIENT_STOPS - 1)
-            opacity = 1.0 - math.exp(
-                -alpha * math.exp(-0.5 * (t * gradient_footprint) ** 2)
-            )
-            offset = t * inner_end
-            stop_lines.append(
-                f'      <stop offset="{offset * 100:.1f}%" stop-color="{color}" stop-opacity="{opacity:.5f}"/>'
-            )
+        # True-Gaussian gradient stops with adaptive count: reproduce the
+        # renderer's per-splat alpha-over opacity 1 - exp(-a * exp(-0.5 * r^2))
+        # using only as many stops as needed to keep the piecewise-linear
+        # interpolation within SVG_GRADIENT_STOP_MAX_ERROR of the true curve.
+        # Low-alpha splats are nearly linear and need just 2-3 stops; mid- and
+        # high-alpha splats keep more. This roughly halves SVG byte size for
+        # typical scenes without visibly changing per-splat appearance.
+        adaptive_stops = _adaptive_gradient_stops(alpha, gradient_footprint, inner_end)
+        stop_lines = [
+            f'      <stop offset="{offset * 100:.1f}%" stop-color="{color}" stop-opacity="{opacity:.5f}"/>'
+            for offset, opacity in adaptive_stops
+        ]
         if use_browser_recipe:
             mid_fade = (inner_end + 1.0) / 2.0
             stop_lines.append(
