@@ -188,6 +188,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="For torch-batched, cap padded active splats per tile; default is uncapped.",
     )
     parser.add_argument(
+        "--initial-splat-cap",
+        type=int,
+        default=None,
+        help="Hard cap on the initial splat population before staged densification "
+        "(default 1200). Raise this when --splats is large and you want the "
+        "optimizer to actually use the full budget instead of being throttled at "
+        "the historical initial cap.",
+    )
+    parser.add_argument(
+        "--initial-splat-fraction",
+        type=float,
+        default=None,
+        help="Fraction of --splats to seed the initial population with before "
+        "densification (default 0.50). Clipped to [0.05, 1.0].",
+    )
+    parser.add_argument(
         "--blend-mode",
         default="alpha-over",
         choices=["alpha-over", "weighted"],
@@ -358,6 +374,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
     if args.mlx_trainable_groups is not None:
         refinement_config["mlx_trainable_groups"] = args.mlx_trainable_groups
+    if args.initial_splat_cap is not None:
+        refinement_config["initial_splat_cap"] = int(args.initial_splat_cap)
+    if args.initial_splat_fraction is not None:
+        refinement_config["initial_splat_fraction"] = float(args.initial_splat_fraction)
 
     max_splats, apple_silicon_splat_cap = _resolve_cli_resource_limits(
         time_budget=args.time_budget,
