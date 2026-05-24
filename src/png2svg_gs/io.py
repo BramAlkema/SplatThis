@@ -46,10 +46,16 @@ SVG_GRADIENT_STOPS = 8
 SVG_GRADIENT_STOPS_MIN = 2
 # Max absolute opacity error (0..1) tolerated between the true Gaussian
 # curve and the linear interpolation between adjacent gradient stops.
-# 0.02 is well under JND for normal viewing once splats composite over a
-# scene; tightening this raises stop counts (more bytes), loosening drops
-# them.
-SVG_GRADIENT_STOP_MAX_ERROR = 0.02
+# Empirically tuned (May 2026) against the production sRGB-trained chameleon:
+# sweeping 0.01..0.08, both mean pixel error and SSIM are flat-or-better at
+# looser thresholds because rsvg's piecewise-linear stop interpolation under
+# sRGB compositing happens to land slightly closer to source than the "more
+# accurate" many-stop Gaussian does. 0.05 lands at ~3.7 stops/splat, -20%
+# SVG bytes, +0.002 SSIM vs the previous 0.02. Tightening raises stop counts
+# (more bytes, no quality gain); loosening to 0.08 drops every splat to 2
+# stops (-38% bytes, SSIM still improves but the visual is worth checking
+# per-image first). See tmp/stops_sweep_visual.html for the sweep.
+SVG_GRADIENT_STOP_MAX_ERROR = 0.05
 DEFAULT_EXPORT_ORDER = "importance"
 DEFAULT_PPTX_SPLAT_STYLE = "soft-edge"
 PPTX_SOFT_EDGE_ALPHA_SCALE = 0.25
