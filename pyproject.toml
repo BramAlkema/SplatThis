@@ -43,7 +43,10 @@ dev = [
     "pytest-cov>=4.0.0",
     # Formatters PINNED so CI and local devs agree on the rules.
     # Bump in lockstep with requirements-dev.txt.
-    "black==26.5.1",
+    # Black 26.x requires Python >=3.10. We keep 3.9 in the CI matrix, so
+    # this pin tracks the latest 25.x (the last line that supports 3.9).
+    # When 3.9 drops from the matrix (EOL Oct 2025), bump to 26.x.
+    "black==25.11.0",
     "isort==5.13.2",
     "mypy>=0.991",
     "flake8>=5.0.0"

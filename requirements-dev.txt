@@ -4,7 +4,7 @@
 # and re-run `black src/ tests/` + `isort src/ tests/`.
 pytest>=7.0.0
 pytest-cov>=4.0.0
-black==26.5.1
+black==25.11.0
 mypy>=0.991
 flake8>=5.0.0
 isort==5.13.2
