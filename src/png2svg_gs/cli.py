@@ -229,14 +229,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--pptx-splat-style",
-        default="soft-edge",
+        default="gradient",
         choices=["soft-edge", "gradient"],
-        help="Native PPTX splat primitive style. 'soft-edge' (default) is the "
-        "LibreOffice-tolerant style; 'gradient' uses DrawingML radial gradients "
-        "with semi-transparent stops and produces noticeably better fidelity "
-        "in PowerPoint, especially when combined with --pptx-proxy-postfit-iters "
-        "(e.g. 40 or 120) for a post-fit color/alpha refinement against the "
-        "gradient compositor.",
+        help="Native PPTX splat primitive style. 'gradient' (default) uses "
+        "DrawingML radial gradients with per-stop alpha falloff -- each splat's "
+        "color stays radially confined and there is no inter-splat color "
+        "spreading. 'soft-edge' fills each splat's bounding ellipse with a "
+        "uniform color plus an outer feather; in PowerPoint that spreads pink "
+        "splats placed near (e.g.) the chameleon's eye across the surrounding "
+        "teal body. Use --pptx-proxy-postfit-iters 40-120 for an additional "
+        "post-fit color/alpha refinement against the gradient compositor.",
     )
     parser.add_argument(
         "--training-export-target",

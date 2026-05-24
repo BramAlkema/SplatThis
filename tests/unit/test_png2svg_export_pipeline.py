@@ -231,8 +231,10 @@ def test_save_pptx_with_splats_creates_native_shape_package(tmp_path: Path):
     assert 'name="Detail Layer"' in slide_xml
     assert slide_xml.count("<p:sp>") == 3  # background + two splats
     assert 'name="Splat Background"' in slide_xml
-    assert "<a:softEdge" in slide_xml
-    assert "<a:gradFill>" not in slide_xml
+    # Default PPTX splat style is now 'gradient' (radial gradient with per-stop
+    # alpha) rather than 'soft-edge'. See DEFAULT_PPTX_SPLAT_STYLE.
+    assert "<a:gradFill>" in slide_xml
+    assert "<a:softEdge" not in slide_xml
     assert "relationships/image" not in rels_xml
 
 
@@ -282,15 +284,16 @@ def test_converter_exports_pptx_and_comparison_artifacts(tmp_path: Path):
     assert 'name="Base Layer"' in slide_xml
     assert 'name="Mass Layer"' in slide_xml
     assert "<p:sp>" in slide_xml
-    assert "<a:softEdge" in slide_xml
-    assert "<a:gradFill>" not in slide_xml
+    # Default PPTX splat style flipped from 'soft-edge' to 'gradient'.
+    assert "<a:gradFill>" in slide_xml
+    assert "<a:softEdge" not in slide_xml
     manifest = json.loads(
         (artifacts_path / "run_manifest.json").read_text(encoding="utf-8")
     )
     assert "internal_metrics" in manifest
     assert "export_quality" in manifest
     assert manifest["config"]["pptx_export_mode"] == "drawingml-splats"
-    assert manifest["config"]["pptx_splat_style"] == "soft-edge"
+    assert manifest["config"]["pptx_splat_style"] == "gradient"
     assert manifest["config"]["layered_saliency"] is True
     assert manifest["layered_saliency"]["enabled"] is True
 
@@ -361,6 +364,7 @@ def test_converter_can_postfit_pptx_proxy(tmp_path: Path):
         refinement_config={"pptx_proxy_postfit_iters": 1},
         apple_silicon_splat_cap=None,
         layered_saliency=True,
+        pptx_splat_style="soft-edge",
     )
     converter.convert(
         input_path=str(input_path),
@@ -460,6 +464,7 @@ def test_converter_can_train_against_pptx_proxy(tmp_path: Path):
         refinement_config={"training_export_target": "pptx-softedge"},
         apple_silicon_splat_cap=None,
         layered_saliency=True,
+        pptx_splat_style="soft-edge",
     )
     converter.convert(
         input_path=str(input_path),

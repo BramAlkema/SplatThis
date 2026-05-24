@@ -19,7 +19,12 @@ def test_px_to_emu_conversion():
 
 
 def test_generate_drawingml_slide_content_basic():
-    """Generated DrawingML should contain expected slide and shape tags."""
+    """Generated DrawingML should contain expected slide and shape tags.
+
+    Default style is now 'gradient' (radial gradient with per-stop alpha);
+    'soft-edge' is opt-in via splat_style="soft-edge". See
+    test_generate_drawingml_slide_content_soft_edge_style for the soft-edge path.
+    """
     splat = create_isotropic_splat(
         center=[20.0, 30.0], sigma=5.0, color=[1.0, 0.0, 0.0], alpha=0.5
     )
@@ -35,14 +40,33 @@ def test_generate_drawingml_slide_content_basic():
     assert 'name="Splat 3"' in content
     assert '<a:prstGeom prst="ellipse">' in content
     assert 'val="FF0000"' in content
+    assert "<a:gradFill>" in content
+    assert "<a:gsLst>" in content
+    assert "<a:alpha val=" in content
+    assert "<a:softEdge" not in content
+
+
+def test_generate_drawingml_slide_content_soft_edge_style():
+    """Soft-edge DrawingML path remains available via explicit splat_style."""
+    splat = create_isotropic_splat(
+        center=[20.0, 30.0], sigma=5.0, color=[1.0, 0.0, 0.0], alpha=0.5
+    )
+    content = generate_drawingml_slide_content(
+        [splat],
+        width=100,
+        height=80,
+        k_sigma=2.5,
+        splat_style="soft-edge",
+    )
+
     assert "<a:solidFill>" in content
     assert "<a:softEdge" in content
-    assert "<a:alpha val=" in content
+    assert 'val="FF0000"' in content
     assert "<a:gradFill>" not in content
 
 
 def test_generate_drawingml_slide_content_gradient_style():
-    """The legacy radial-gradient DrawingML path remains available explicitly."""
+    """The radial-gradient DrawingML path is the default; explicit selection matches."""
     splat = create_isotropic_splat(
         center=[20.0, 30.0], sigma=5.0, color=[1.0, 0.0, 0.0], alpha=0.5
     )

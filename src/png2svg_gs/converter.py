@@ -26,6 +26,7 @@ from .features import (
     poisson_disk_sampling,
 )
 from .io import (
+    DEFAULT_PPTX_SPLAT_STYLE,
     PPTX_GRADIENT_ALPHA_SCALE,
     PPTX_SOFT_EDGE_ALPHA_SCALE,
     PPTX_SOFT_EDGE_K_SIGMA_SCALE,
@@ -578,7 +579,7 @@ class PNG2SVGConverter:
         time_budget: Optional[str] = None,
         apple_silicon_splat_cap: Optional[int] = 2000,
         layered_saliency: bool = False,
-        pptx_splat_style: str = "soft-edge",
+        pptx_splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
     ):
         self.requested_max_splats = int(max_splats)
         self.max_splats = int(max_splats)
