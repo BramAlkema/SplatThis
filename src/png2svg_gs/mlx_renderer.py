@@ -249,11 +249,13 @@ class MlxBatchedGaussianRenderer:
             indexing="ij",
         )
         local = mlx.stack([local_x, local_y], axis=-1)
-        tile_ids_np = np.arange(plan.tiles_x * plan.tiles_y, dtype=np.int32)
+        num_tiles = plan.tiles_x * plan.tiles_y
+        tile_ids_all = mlx.arange(num_tiles, dtype=mlx.int32)
         outputs = []
 
-        for start in range(0, tile_ids_np.size, self.batch_tile_count):
-            ids = mlx.array(tile_ids_np[start : start + self.batch_tile_count])
+        for start in range(0, num_tiles, self.batch_tile_count):
+            end = min(start + self.batch_tile_count, num_tiles)
+            ids = tile_ids_all[start:end]
             outputs.append(self._render_tile_batch(ids, local, sorted_table, plan))
 
         tiles = mlx.concatenate(outputs, axis=0)
