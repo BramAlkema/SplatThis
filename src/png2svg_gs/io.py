@@ -451,13 +451,44 @@ def generate_parallax_canvas_html(
     bg_rgb = tuple(int(np.clip(np.round(c * 255), 0, 255)) for c in bg_srgb)
     bg_css = f"rgb({bg_rgb[0]},{bg_rgb[1]},{bg_rgb[2]})"
 
-    # Bucket splats by layer. Fallback: untagged splats -> layer 1.
-    buckets: Dict[int, List[List[float]]] = {0: [], 1: [], 2: [], 3: []}
+    # Bucket splats into three parallax planes (not four). The saliency
+    # layers (base=0, mass=1, detail=2, edge=3) get collapsed:
+    #   base (0)    -> background plane (stationary)
+    #   mass (1)    -> midground plane
+    #   detail (2)  -> foreground plane     (merged with edge)
+    #   edge (3)    -> foreground plane     (merged with detail)
+    # Merging detail+edge avoids visible tearing between near-foreground
+    # planes (the man's eye+glasses-rim splats would otherwise track at
+    # different speeds than the face-skin splats) and eliminates one
+    # cross-layer sRGB compositing seam at the most detailed region.
+    # Untagged splats fall back to midground.
+    PLANE_BACKGROUND = "background"
+    PLANE_MIDGROUND = "midground"
+    PLANE_FOREGROUND = "foreground"
+    PLANE_DEPTHS = {
+        PLANE_BACKGROUND: 0.0,
+        PLANE_MIDGROUND: 0.4,
+        PLANE_FOREGROUND: 1.0,
+    }
+
+    def _layer_to_plane(layer_id: Optional[int]) -> str:
+        if layer_id is None:
+            return PLANE_MIDGROUND
+        if layer_id <= 0:
+            return PLANE_BACKGROUND
+        if layer_id == 1:
+            return PLANE_MIDGROUND
+        return PLANE_FOREGROUND
+
+    buckets: Dict[str, List[List[float]]] = {
+        PLANE_BACKGROUND: [],
+        PLANE_MIDGROUND: [],
+        PLANE_FOREGROUND: [],
+    }
     for splat in splats:
         raw = splat.to_raw_splat()
-        layer = int(raw.layer) if raw.layer is not None else 1
-        layer = max(0, min(3, layer))
-        buckets[layer].append(
+        plane = _layer_to_plane(raw.layer)
+        buckets[plane].append(
             [
                 float(raw.x),
                 float(raw.y),
@@ -472,18 +503,15 @@ def generate_parallax_canvas_html(
             ]
         )
 
-    # depth multiplier per layer: base stationary, edge moves the most.
-    DEPTH_MULTIPLIERS = {0: 0.0, 1: 0.33, 2: 0.66, 3: 1.0}
-
     layer_data_json = json.dumps(
         [
             {
-                "layer": layer,
-                "depth": DEPTH_MULTIPLIERS[layer],
-                "splats": buckets[layer],
+                "layer": plane,
+                "depth": PLANE_DEPTHS[plane],
+                "splats": buckets[plane],
             }
-            for layer in (0, 1, 2, 3)
-            if buckets[layer]
+            for plane in (PLANE_BACKGROUND, PLANE_MIDGROUND, PLANE_FOREGROUND)
+            if buckets[plane]
         ],
         separators=(",", ":"),
     )
