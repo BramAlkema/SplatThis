@@ -46,16 +46,43 @@ SVG_GRADIENT_STOPS = 8
 SVG_GRADIENT_STOPS_MIN = 2
 # Max absolute opacity error (0..1) tolerated between the true Gaussian
 # curve and the linear interpolation between adjacent gradient stops.
-# Empirically tuned (May 2026) against the production sRGB-trained chameleon:
-# sweeping 0.01..0.08, both mean pixel error and SSIM are flat-or-better at
-# looser thresholds because rsvg's piecewise-linear stop interpolation under
-# sRGB compositing happens to land slightly closer to source than the "more
-# accurate" many-stop Gaussian does. 0.05 lands at ~3.7 stops/splat, -20%
-# SVG bytes, +0.002 SSIM vs the previous 0.02. Tightening raises stop counts
-# (more bytes, no quality gain); loosening to 0.08 drops every splat to 2
-# stops (-38% bytes, SSIM still improves but the visual is worth checking
-# per-image first). See tmp/stops_sweep_visual.html for the sweep.
+# This is the per-export *baseline* used when callers don't compute a
+# density-aware value via `_density_aware_stop_error(splat_count)`.
+#
+# Empirically (May 2026): sparse runs (~1800 splats / 1Mpx, large splats,
+# few overlaps per pixel) tolerate 0.05 -- the piecewise-linear stop
+# interpolation under sRGB compositing happens to land slightly closer to
+# source than the "more accurate" many-stop Gaussian does. Dense runs
+# (~3900 splats / 1Mpx, small splats, deep overlap stacks) need ~0.02
+# because per-splat 2-stop linear ramps stack visibly as "unsmoothed"
+# artifacts. The density-aware helper interpolates between them so users
+# don't have to think about it. See tmp/stops_sweep_visual.html and
+# tmp/forced_4000_thresholds_visual.html for the data.
 SVG_GRADIENT_STOP_MAX_ERROR = 0.05
+
+
+def _density_aware_stop_error(
+    splat_count: int,
+    *,
+    baseline: float = SVG_GRADIENT_STOP_MAX_ERROR,
+    floor: float = 0.01,
+    ceiling: float = 0.05,
+) -> float:
+    """Pick the adaptive-stop error threshold for an export.
+
+    The two empirical fit points are 1862 splats -> 0.05 and 3905 splats ->
+    0.02, both at ~1Mpx canvas. `threshold ~ 100 / N` interpolates them
+    cleanly: at N=1862 it gives 0.054 (clamped to ceiling 0.05), at N=3905
+    it gives 0.026. Floor at 0.01 prevents runaway stop counts on
+    pathological dense scenes.
+    """
+
+    if splat_count <= 0:
+        return float(baseline)
+    raw = 100.0 / float(splat_count)
+    return float(np.clip(raw, floor, ceiling))
+
+
 DEFAULT_EXPORT_ORDER = "importance"
 DEFAULT_PPTX_SPLAT_STYLE = "soft-edge"
 PPTX_SOFT_EDGE_ALPHA_SCALE = 0.25
@@ -653,6 +680,10 @@ def generate_svg_content(
     gradient_footprint = ELLIPSE_OVERLAP_BOOST * k_sigma
     feather_extent = SVG_FEATHER_EXTENT if use_browser_recipe else 1.0
     inner_end = 1.0 / feather_extent
+    # Density-aware stop-error threshold: sparse scenes tolerate fewer stops
+    # per splat; dense scenes need more because per-splat 2-stop ramps stack
+    # into visible "unsmoothed" artifacts.
+    stop_error = _density_aware_stop_error(len(splats))
 
     # Per-splat radial gradients approximate gaussian opacity in exported SVG.
     for i, splat in enumerate(splats):
@@ -669,11 +700,13 @@ def generate_svg_content(
         # True-Gaussian gradient stops with adaptive count: reproduce the
         # renderer's per-splat alpha-over opacity 1 - exp(-a * exp(-0.5 * r^2))
         # using only as many stops as needed to keep the piecewise-linear
-        # interpolation within SVG_GRADIENT_STOP_MAX_ERROR of the true curve.
-        # Low-alpha splats are nearly linear and need just 2-3 stops; mid- and
-        # high-alpha splats keep more. This roughly halves SVG byte size for
-        # typical scenes without visibly changing per-splat appearance.
-        adaptive_stops = _adaptive_gradient_stops(alpha, gradient_footprint, inner_end)
+        # interpolation within `stop_error` of the true curve. The threshold
+        # is density-aware (see _density_aware_stop_error): looser for sparse
+        # scenes, tighter for dense ones so 2-stop linear ramps don't pile up
+        # into visible artifacts.
+        adaptive_stops = _adaptive_gradient_stops(
+            alpha, gradient_footprint, inner_end, max_error=stop_error
+        )
         stop_lines = [
             f'      <stop offset="{offset * 100:.1f}%" stop-color="{color}" stop-opacity="{opacity:.5f}"/>'
             for offset, opacity in adaptive_stops
