@@ -409,6 +409,232 @@ def save_drawingml(
         raise
 
 
+def generate_parallax_canvas_html(
+    splats: List[GaussianSplat],
+    width: int,
+    height: int,
+    background_linear_rgb: Optional[np.ndarray] = None,
+    title: str = "SplatThis Parallax",
+    parallax_strength: float = 28.0,
+) -> str:
+    """Parallax canvas runtime: per-layer canvases driven by mouse position.
+
+    Splats with ``raw.layer`` set (via ``--layered-saliency``) get bucketed
+    into base/mass/detail/edge canvases. Each canvas runs the same
+    linear-light alpha-over render as ``generate_canvas_html`` but only on
+    its own splats. The canvases stack absolutely; on mousemove a
+    ``translate3d`` is applied per canvas scaled by its depth (base
+    stationary, edge moves the most). Background-rect plate is painted
+    behind layer 0 so areas revealed by foreground translation show the
+    scene background color, not black/empty.
+
+    Quality caveat: each layer composites linear-light internally, but the
+    DOM composites the layers in sRGB display space. Tiny color drift vs
+    the single-canvas runtime at static rest. The parallax effect itself
+    is the goal here, not pixel-perfect render parity.
+
+    Splats without a layer tag fall back to layer 1 ("mass") so they get
+    a modest parallax offset.
+    """
+
+    import json
+
+    bg_lin = (
+        [0.0, 0.0, 0.0]
+        if background_linear_rgb is None
+        else [
+            float(np.clip(c, 0.0, 1.0))
+            for c in np.asarray(background_linear_rgb).reshape(-1)[:3]
+        ]
+    )
+    bg_srgb = linear_to_srgb(np.array(bg_lin, dtype=np.float32))
+    bg_rgb = tuple(int(np.clip(np.round(c * 255), 0, 255)) for c in bg_srgb)
+    bg_css = f"rgb({bg_rgb[0]},{bg_rgb[1]},{bg_rgb[2]})"
+
+    # Bucket splats by layer. Fallback: untagged splats -> layer 1.
+    buckets: Dict[int, List[List[float]]] = {0: [], 1: [], 2: [], 3: []}
+    for splat in splats:
+        raw = splat.to_raw_splat()
+        layer = int(raw.layer) if raw.layer is not None else 1
+        layer = max(0, min(3, layer))
+        buckets[layer].append(
+            [
+                float(raw.x),
+                float(raw.y),
+                float(raw.sx),
+                float(raw.sy),
+                float(raw.theta),
+                float(raw.r),
+                float(raw.g),
+                float(raw.b),
+                float(raw.a),
+                render_importance_for_raw(raw),
+            ]
+        )
+
+    # depth multiplier per layer: base stationary, edge moves the most.
+    DEPTH_MULTIPLIERS = {0: 0.0, 1: 0.33, 2: 0.66, 3: 1.0}
+
+    layer_data_json = json.dumps(
+        [
+            {
+                "layer": layer,
+                "depth": DEPTH_MULTIPLIERS[layer],
+                "splats": buckets[layer],
+            }
+            for layer in (0, 1, 2, 3)
+            if buckets[layer]
+        ],
+        separators=(",", ":"),
+    )
+    counts = {k: len(v) for k, v in buckets.items()}
+
+    js = (
+        r"""
+(function(){
+  const t0 = performance.now();
+  const W = __W__, H = __H__;
+  const BG = __BG__;
+  const STRENGTH = __STRENGTH__;
+  const LAYERS = __LAYERS__;
+  const status = document.getElementById('status');
+  const stack = document.getElementById('stack');
+
+  function renderLayer(canvas, splats) {
+    const ctx = canvas.getContext('2d', { willReadFrequently: false });
+    splats.sort((a, b) => a[9] - b[9]);
+    const lin = new Float32Array(W * H * 3);
+    const T = new Float32Array(W * H).fill(1);
+    const FOOTPRINT = 3.0;
+    for (let si = 0; si < splats.length; si++) {
+      const s = splats[si];
+      const x = s[0], y = s[1];
+      const sx = Math.max(s[2], 1e-4), sy = Math.max(s[3], 1e-4);
+      const theta = s[4];
+      const r = s[5], g = s[6], b = s[7];
+      const a = Math.min(1, Math.max(0, s[8]));
+      const rx = Math.max(1, Math.ceil(FOOTPRINT * sx));
+      const ry = Math.max(1, Math.ceil(FOOTPRINT * sy));
+      const x0 = Math.max(0, Math.floor(x - rx));
+      const x1 = Math.min(W, Math.ceil(x + rx + 1));
+      const y0 = Math.max(0, Math.floor(y - ry));
+      const y1 = Math.min(H, Math.ceil(y + ry + 1));
+      if (x0 >= x1 || y0 >= y1) continue;
+      const ct = Math.cos(theta), st = Math.sin(theta);
+      const invSx2 = 1 / (sx * sx), invSy2 = 1 / (sy * sy);
+      for (let py = y0; py < y1; py++) {
+        const baseRow = py * W;
+        for (let px = x0; px < x1; px++) {
+          const dx = px - x, dy = py - y;
+          const u = ct * dx + st * dy;
+          const v = -st * dx + ct * dy;
+          const q = u * u * invSx2 + v * v * invSy2;
+          const w = Math.exp(-0.5 * q);
+          const la = 1 - Math.exp(-a * w);
+          const idx = baseRow + px;
+          const tt = T[idx];
+          const contrib = tt * la;
+          const j = idx * 3;
+          lin[j]     += contrib * r;
+          lin[j + 1] += contrib * g;
+          lin[j + 2] += contrib * b;
+          T[idx] = tt * (1 - la);
+        }
+      }
+    }
+    const img = ctx.createImageData(W, H);
+    const out = img.data;
+    const THR = 0.0031308;
+    // Per-layer canvases are stacked over the bg plate; transparent pixels
+    // (T near 1) reveal the layer below, so write alpha = 1 - T.
+    for (let i = 0; i < W * H; i++) {
+      const j = i * 3, k = i * 4;
+      const tt = T[i];
+      let rL = lin[j], gL = lin[j + 1], bL = lin[j + 2];
+      const denom = (1 - tt) > 1e-6 ? (1 - tt) : 1;
+      rL = rL / denom;
+      gL = gL / denom;
+      bL = bL / denom;
+      if (rL < 0) rL = 0; else if (rL > 1) rL = 1;
+      if (gL < 0) gL = 0; else if (gL > 1) gL = 1;
+      if (bL < 0) bL = 0; else if (bL > 1) bL = 1;
+      const rS = rL <= THR ? 12.92 * rL : 1.055 * Math.pow(rL, 1/2.4) - 0.055;
+      const gS = gL <= THR ? 12.92 * gL : 1.055 * Math.pow(gL, 1/2.4) - 0.055;
+      const bS = bL <= THR ? 12.92 * bL : 1.055 * Math.pow(bL, 1/2.4) - 0.055;
+      out[k]     = (rS * 255 + 0.5) | 0;
+      out[k + 1] = (gS * 255 + 0.5) | 0;
+      out[k + 2] = (bS * 255 + 0.5) | 0;
+      out[k + 3] = ((1 - tt) * 255 + 0.5) | 0;
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  const layerEls = [];
+  for (const ld of LAYERS) {
+    const cnv = document.createElement('canvas');
+    cnv.width = W; cnv.height = H;
+    cnv.className = 'layer';
+    cnv.dataset.depth = ld.depth;
+    stack.appendChild(cnv);
+    renderLayer(cnv, ld.splats);
+    layerEls.push(cnv);
+  }
+
+  let total = 0;
+  for (const ld of LAYERS) total += ld.splats.length;
+  status.textContent = 'parallax ready: ' + LAYERS.length + ' layers, ' + total + ' splats, rendered in ' + (performance.now() - t0).toFixed(0) + 'ms';
+
+  function onMove(e) {
+    const rect = stack.getBoundingClientRect();
+    const mx = ((e.clientX - rect.left) / rect.width  - 0.5) * 2;
+    const my = ((e.clientY - rect.top)  / rect.height - 0.5) * 2;
+    for (const el of layerEls) {
+      const d = parseFloat(el.dataset.depth);
+      // Foreground tracks the mouse, background stays still. We translate
+      // OPPOSITE the mouse so the parallax feels like looking through the scene.
+      const tx = -mx * d * STRENGTH;
+      const ty = -my * d * STRENGTH;
+      el.style.transform = 'translate3d(' + tx.toFixed(2) + 'px,' + ty.toFixed(2) + 'px,0)';
+    }
+  }
+  stack.addEventListener('mousemove', onMove);
+  stack.addEventListener('mouseleave', () => {
+    for (const el of layerEls) el.style.transform = 'translate3d(0,0,0)';
+  });
+})();
+""".replace(
+            "__W__", str(int(width))
+        )
+        .replace("__H__", str(int(height)))
+        .replace("__BG__", f"[{bg_lin[0]:.6f},{bg_lin[1]:.6f},{bg_lin[2]:.6f}]")
+        .replace("__STRENGTH__", f"{float(parallax_strength):.3f}")
+        .replace("__LAYERS__", layer_data_json)
+    )
+
+    safe_title = title.replace("<", "&lt;").replace(">", "&gt;")
+    return (
+        "<!doctype html>\n"
+        f'<html><head><meta charset="utf-8"><title>{safe_title}</title>\n'
+        "<style>\n"
+        "  body { margin: 0; background: #111; color: #eee;"
+        "    font: 14px -apple-system, sans-serif;"
+        "    display: flex; flex-direction: column; align-items: center; padding: 16px; }\n"
+        f"  #stack {{ position: relative; width: {int(width)}px; height: {int(height)}px;"
+        f"    background: {bg_css}; overflow: hidden; border: 1px solid #333; border-radius: 6px; }}\n"
+        "  #stack .layer { position: absolute; top: 0; left: 0;"
+        "    transition: transform 0.06s cubic-bezier(0.2,0.7,0.3,1.0);"
+        "    pointer-events: none; image-rendering: pixelated; }\n"
+        "  #status { color: #7fd17f; font-family: ui-monospace, monospace;"
+        "    font-size: 12px; margin: 8px 0; }\n"
+        "</style></head>\n"
+        "<body>\n"
+        '<div id="status">rendering...</div>\n'
+        f'<div id="stack" data-layers="{len(layer_data_json)}"></div>\n'
+        "<script>\n" + js + "\n</script>\n"
+        "</body></html>\n"
+    )
+
+
 def generate_canvas_html(
     splats: List[GaussianSplat],
     width: int,

@@ -191,6 +191,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="For torch-batched, cap padded active splats per tile; default is uncapped.",
     )
     parser.add_argument(
+        "--canvas-parallax-strength",
+        type=float,
+        default=None,
+        help="For --format=canvas: enable mouse-driven parallax with this max "
+        "pixel offset for the foreground layer (e.g. 24-40). Splats are "
+        "bucketed by their --layered-saliency tag into base/mass/detail/edge "
+        "canvases; on mousemove each canvas translates by its depth times this "
+        "strength. Requires --layered-saliency to give meaningful depth; "
+        "without it all splats fall back to a single mid-depth layer. "
+        "Default: 0 = static (use the existing single-canvas runtime).",
+    )
+    parser.add_argument(
         "--initial-splat-cap",
         type=int,
         default=None,
@@ -398,6 +410,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
     if args.mlx_trainable_groups is not None:
         refinement_config["mlx_trainable_groups"] = args.mlx_trainable_groups
+    if args.canvas_parallax_strength is not None:
+        refinement_config["canvas_parallax_strength"] = float(
+            args.canvas_parallax_strength
+        )
     if args.initial_splat_cap is not None:
         refinement_config["initial_splat_cap"] = int(args.initial_splat_cap)
     if args.initial_splat_fraction is not None:

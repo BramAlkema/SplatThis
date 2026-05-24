@@ -35,6 +35,7 @@ from .io import (
     evaluate_svg_export_quality,
     generate_canvas_html,
     generate_drawingml_slide_content,
+    generate_parallax_canvas_html,
     load_png,
     render_splats_preview_png,
     save_drawingml,
@@ -1642,15 +1643,34 @@ class PNG2SVGConverter:
                 )
             output_content = self._generate_drawingml(splats, width, height)
         elif output_format == "canvas":
-            if verbose:
-                logger.info("Generating canvas HTML with %s splats...", len(splats))
-            output_content = generate_canvas_html(
-                splats,
-                width,
-                height,
-                background_linear_rgb=self._background_linear_rgb,
-                title=Path(input_path).stem,
+            parallax_strength = float(
+                self.refinement_config.get("canvas_parallax_strength", 0.0)
             )
+            if parallax_strength > 0.0:
+                if verbose:
+                    logger.info(
+                        "Generating PARALLAX canvas HTML with %s splats (strength=%.1f)...",
+                        len(splats),
+                        parallax_strength,
+                    )
+                output_content = generate_parallax_canvas_html(
+                    splats,
+                    width,
+                    height,
+                    background_linear_rgb=self._background_linear_rgb,
+                    title=Path(input_path).stem,
+                    parallax_strength=parallax_strength,
+                )
+            else:
+                if verbose:
+                    logger.info("Generating canvas HTML with %s splats...", len(splats))
+                output_content = generate_canvas_html(
+                    splats,
+                    width,
+                    height,
+                    background_linear_rgb=self._background_linear_rgb,
+                    title=Path(input_path).stem,
+                )
         else:
             if verbose:
                 logger.info("Generating SVG with %s splats...", len(splats))
