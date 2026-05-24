@@ -128,6 +128,9 @@ class MlxBatchedGaussianRenderer:
         culling_sigma: float = 3.0,
         max_active_splats_per_tile: Optional[int] = None,
         compositing_space: str = "linear",
+        pptx_softedge_mode: bool = False,
+        pptx_alpha_scale: float = 0.25,
+        pptx_sigma_scale: float = 0.92,
     ):
         _require_mlx()
         self.width = int(width)
@@ -140,6 +143,15 @@ class MlxBatchedGaussianRenderer:
         self.compositing_space = str(compositing_space).strip().lower()
         if self.compositing_space not in {"linear", "srgb"}:
             raise ValueError(f"Unsupported compositing space: {compositing_space}")
+        # PPTX soft-edge proxy: mirror _PPTXSoftEdgeProxyRenderer in
+        # converter.py. PowerPoint renders ellipses brighter and slightly
+        # softer than a true Gaussian; without this transform a PPTX export
+        # of the trained splats looks washed out. With pptx_softedge_mode=True,
+        # render() applies sigma *= pptx_sigma_scale and rewrites alpha to the
+        # value that produces center_opacity = (1 - exp(-alpha)) * pptx_alpha_scale.
+        self.pptx_softedge_mode = bool(pptx_softedge_mode)
+        self.pptx_alpha_scale = float(np.clip(pptx_alpha_scale, 1e-4, 1.0))
+        self.pptx_sigma_scale = float(np.clip(pptx_sigma_scale, 0.25, 3.0))
         self.culling_sigma = float(max(1.0, culling_sigma))
         if max_active_splats_per_tile is None:
             self.max_active_splats_per_tile = None
@@ -260,6 +272,36 @@ class MlxBatchedGaussianRenderer:
             tile_size=self.tile_size,
         )
 
+    def _apply_pptx_softedge_transform(self, table_mx: Any) -> Any:
+        """Mirror _PPTXSoftEdgeProxyRenderer in converter.py for the MLX path.
+
+        Scales sigma columns and rewrites alpha so that center_opacity ==
+        (1 - exp(-raw_alpha)) * pptx_alpha_scale. Differentiable and pure
+        MLX ops, so it composes with mx.compile.
+        """
+
+        mlx = _require_mlx()
+        sigma_scaled = mlx.maximum(table_mx[:, 2:4] * self.pptx_sigma_scale, 1e-4)
+        raw_alpha = mlx.clip(table_mx[:, 9], 0.0, 1.0)
+        center_opacity = mlx.clip(
+            (1.0 - mlx.exp(-raw_alpha)) * self.pptx_alpha_scale,
+            0.0,
+            1.0 - 1e-5,
+        )
+        # -log1p(-x) = -log(1 - x); MLX has no log1p but log(1 - x) is safe
+        # for center_opacity clamped < 1.
+        effective_alpha = -mlx.log(1.0 - center_opacity)
+        return mlx.concatenate(
+            [
+                table_mx[:, 0:2],
+                sigma_scaled,
+                table_mx[:, 4:9],
+                mlx.expand_dims(effective_alpha, -1),
+                table_mx[:, 10:11],
+            ],
+            axis=1,
+        )
+
     def render(self, table: ArrayLike, plan: Optional[MlxTilePlan] = None) -> Any:
         """Render a canonical splat table to an MLX image [H, W, 3].
 
@@ -267,12 +309,19 @@ class MlxBatchedGaussianRenderer:
         linear->sRGB before the alpha-over math and the output is decoded
         sRGB->linear so external interfaces stay linear-RGB. Mirrors the
         torch path in renderer.py:305-317.
+
+        In pptx_softedge_mode=True the table is first run through the
+        sigma/alpha proxy transform that mirrors PowerPoint's soft-edge
+        rendering; see _apply_pptx_softedge_transform.
         """
 
         mlx = _require_mlx()
         table_mx = mlx.array(table) if isinstance(table, np.ndarray) else table
         if plan is None:
             plan = self.build_plan(table)
+
+        if self.pptx_softedge_mode:
+            table_mx = self._apply_pptx_softedge_transform(table_mx)
 
         srgb_mode = self.compositing_space == "srgb"
         saved_background = self.background

@@ -2890,12 +2890,15 @@ class PNG2SVGConverter:
         # training_export_target is svg or pptx-softedge, composite in sRGB
         # so the trained splats match what browsers/rsvg produce when the
         # SVG is rendered. Pure linear-light training (canvas runtime) keeps
-        # compositing_space="linear".
+        # compositing_space="linear". For pptx-softedge, also apply the
+        # sigma/alpha proxy transform that compensates for PowerPoint's
+        # brighter-than-Gaussian soft-edge rendering.
         mlx_compositing_space = (
             "srgb"
             if self.training_export_target in {"svg", "pptx-softedge"}
             else self.compositing_space
         )
+        pptx_softedge_mode = self._use_pptx_proxy_training()
         stage_config = MlxStageConfig(
             renderer=MlxRendererConfig(
                 tile_size=tile_size,
@@ -2906,6 +2909,17 @@ class PNG2SVGConverter:
                 ),
                 max_active_splats_per_tile=max_active_splats_per_tile,
                 compositing_space=mlx_compositing_space,
+                pptx_softedge_mode=pptx_softedge_mode,
+                pptx_alpha_scale=float(
+                    self.refinement_config.get(
+                        "pptx_proxy_train_alpha_scale", PPTX_SOFT_EDGE_ALPHA_SCALE
+                    )
+                ),
+                pptx_sigma_scale=float(
+                    self.refinement_config.get(
+                        "pptx_proxy_train_sigma_scale", PPTX_SOFT_EDGE_K_SIGMA_SCALE
+                    )
+                ),
             ),
             loss=MlxLossConfig(self.mlx_loss),
             trainable_groups=self.mlx_trainable_groups,
