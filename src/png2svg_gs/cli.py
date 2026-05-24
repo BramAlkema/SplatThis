@@ -10,7 +10,11 @@ from typing import List, Optional, Tuple
 
 from PIL import Image
 
-from .converter import PNG2SVGConverter
+from .converter import TIME_BUDGET_ALIASES, TIME_BUDGET_PRESETS, PNG2SVGConverter
+
+DEFAULT_MAX_SPLATS = 2000
+DEFAULT_APPLE_SILICON_SPLAT_CAP = 2000
+DISABLE_APPLE_SILICON_SPLAT_CAP = 0
 
 
 def _parse_stages(text: str) -> List[int]:
@@ -19,7 +23,9 @@ def _parse_stages(text: str) -> List[int]:
     except ValueError as exc:  # pragma: no cover - argparse surfaces the message
         raise argparse.ArgumentTypeError(f"invalid --stages '{text}': {exc}") from exc
     if not stages or any(s <= 0 for s in stages):
-        raise argparse.ArgumentTypeError("--stages must be positive integers, e.g. 200,150,100,50")
+        raise argparse.ArgumentTypeError(
+            "--stages must be positive integers, e.g. 200,150,100,50"
+        )
     return stages
 
 
@@ -35,6 +41,55 @@ def _target_size(input_path: str, max_edge: Optional[int]) -> Optional[Tuple[int
     return max(1, round(w * scale)), max(1, round(h * scale))
 
 
+def _normalize_time_budget_label(time_budget: Optional[str]) -> Optional[str]:
+    if time_budget is None:
+        return None
+    key = str(time_budget).strip().lower().replace("_", "-")
+    return TIME_BUDGET_ALIASES.get(key, key)
+
+
+def _preset_exact_splat_count(time_budget: Optional[str]) -> Optional[int]:
+    normalized = _normalize_time_budget_label(time_budget)
+    if normalized is None:
+        return None
+    preset = TIME_BUDGET_PRESETS.get(normalized)
+    if not preset:
+        return None
+    preset_cap = preset.get("max_splats")
+    if preset_cap is None:
+        return None
+    min_splats = int(preset.get("min_splats", 0))
+    max_splats = int(preset_cap)
+    if min_splats == max_splats:
+        return max_splats
+    return None
+
+
+def _resolve_cli_resource_limits(
+    time_budget: Optional[str],
+    splats: Optional[int],
+    apple_silicon_splat_cap: Optional[int],
+) -> Tuple[int, Optional[int]]:
+    exact_splats = _preset_exact_splat_count(time_budget)
+    max_splats = (
+        int(splats) if splats is not None else int(exact_splats or DEFAULT_MAX_SPLATS)
+    )
+
+    if apple_silicon_splat_cap == DISABLE_APPLE_SILICON_SPLAT_CAP:
+        resolved_cap = None
+    elif apple_silicon_splat_cap is not None:
+        resolved_cap = int(apple_silicon_splat_cap)
+    elif exact_splats is not None:
+        # Exact-count photo presets are opt-in long runs. Do not let the safety
+        # cap silently collapse photo-10k/photo-20k back to the interactive 2k
+        # ceiling unless the user explicitly supplies a cap.
+        resolved_cap = None
+    else:
+        resolved_cap = DEFAULT_APPLE_SILICON_SPLAT_CAP
+
+    return max_splats, resolved_cap
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="splatlify",
@@ -42,63 +97,211 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("input", help="Input image path (PNG/JPG)")
     parser.add_argument("-o", "--output", help="Output path (default: <input>.svg)")
-    parser.add_argument("--splats", type=int, default=2000, help="Max number of splats (default: 2000)")
+    parser.add_argument(
+        "--splats",
+        type=int,
+        default=None,
+        help="Max number of splats (default: 2000, or exact photo preset count).",
+    )
     parser.add_argument(
         "--time-budget",
         default=None,
-        choices=["smoke", "1m", "5m", "10m", "30m"],
+        choices=[
+            "smoke",
+            "1m",
+            "5m",
+            "10m",
+            "20m",
+            "30m",
+            "photo-native-10k",
+            "photo-10k",
+            "native-10k",
+            "photo-native-20k",
+            "photo-20k",
+            "native-20k",
+        ],
         help="Use a content-aware training budget preset. Presets set stage schedule, "
-             "splat cap, and residual-detail cost; 'smoke' is an alias for 1m.",
+        "splat cap, and residual-detail cost; 'smoke' is an alias for 1m.",
     )
     parser.add_argument(
-        "--stages", type=_parse_stages, default=_parse_stages("200,150,100,50"),
+        "--stages",
+        type=_parse_stages,
+        default=_parse_stages("200,150,100,50"),
         help="Per-stage iteration schedule, comma-separated (default: 200,150,100,50)",
     )
-    parser.add_argument("--profile", default="max-fidelity", help="Quality profile (default: max-fidelity)")
-    parser.add_argument("--blend-mode", default="alpha-over", choices=["alpha-over", "weighted"], help="Compositing blend mode")
-    parser.add_argument("--max-edge", type=int, default=None, help="Downscale so the longest edge is at most N px")
-    parser.add_argument("--format", default="svg", choices=["svg", "pptx", "canvas"], dest="fmt",
-                        help="Output format. 'canvas' emits a self-contained HTML that renders the "
-                             "splats via a JS canvas runtime with real linear-space alpha-over "
-                             "compositing (breaks the SVG primitive's representational cap).")
-    parser.add_argument("--pptx-splat-style", default="soft-edge", choices=["soft-edge", "gradient"],
-                        help="Native PPTX splat primitive style. 'soft-edge' is the current "
-                             "PowerPoint-friendly default; 'gradient' preserves the old radial-gradient path.")
-    parser.add_argument("--svg-recipe", default=None, choices=["standard", "browser-compatible"],
-                        help="SVG export recipe (default comes from quality profile). "
-                             "'browser-compatible' feathers gradients and compensates browser blending.")
-    parser.add_argument("--region-weighting", dest="region_weighting", action="store_true", default=None,
-                        help="Enable segmentation-derived spatial loss/sampling weights.")
-    parser.add_argument("--no-region-weighting", dest="region_weighting", action="store_false",
-                        help="Disable segmentation-derived spatial loss/sampling weights.")
-    parser.add_argument("--layered-saliency", dest="layered_saliency", action="store_true", default=False,
-                        help="Tag splats into base/mass/detail/edge layers and export nested layer groups.")
-    parser.add_argument("--no-layered-saliency", dest="layered_saliency", action="store_false",
-                        help="Disable layered saliency tagging/export grouping.")
+    parser.add_argument(
+        "--profile",
+        default="max-fidelity",
+        help="Quality profile (default: max-fidelity)",
+    )
+    parser.add_argument(
+        "--backend",
+        default="auto",
+        choices=["auto", "torch", "torch-batched", "gsplat"],
+        help="Renderer backend. 'torch-batched' batches tiles for MPS/GPU experiments.",
+    )
+    parser.add_argument(
+        "--optimizer-backend",
+        default="torch",
+        choices=["torch", "mlx"],
+        help="Optimizer backend. 'mlx' is experimental.",
+    )
+    parser.add_argument(
+        "--mlx-loss",
+        default=None,
+        choices=["linear-l1", "oklab-l1", "weighted-oklab-l1"],
+        help="MLX optimizer loss profile when --optimizer-backend=mlx.",
+    )
+    parser.add_argument(
+        "--mlx-tile-plan",
+        default=None,
+        choices=["static", "periodic"],
+        help="MLX tile-plan mode. Use 'periodic' for geometry training.",
+    )
+    parser.add_argument(
+        "--mlx-tile-plan-rebuild-interval",
+        type=int,
+        default=None,
+        help="For --mlx-tile-plan periodic, rebuild tile membership every N iterations.",
+    )
+    parser.add_argument(
+        "--mlx-trainable-groups",
+        default=None,
+        help="Comma-separated MLX trainable groups. Static mode currently supports color,alpha.",
+    )
+    parser.add_argument(
+        "--renderer-tile-size",
+        type=int,
+        default=None,
+        help="Override renderer tile size for backend tuning.",
+    )
+    parser.add_argument(
+        "--renderer-batch-tile-count",
+        type=int,
+        default=None,
+        help="For torch-batched, render this many tiles per tensor batch.",
+    )
+    parser.add_argument(
+        "--renderer-max-active-splats-per-tile",
+        type=int,
+        default=None,
+        help="For torch-batched, cap padded active splats per tile; default is uncapped.",
+    )
+    parser.add_argument(
+        "--blend-mode",
+        default="alpha-over",
+        choices=["alpha-over", "weighted"],
+        help="Compositing blend mode",
+    )
+    parser.add_argument(
+        "--max-edge",
+        type=int,
+        default=None,
+        help="Downscale so the longest edge is at most N px",
+    )
+    parser.add_argument(
+        "--format",
+        default="svg",
+        choices=["svg", "pptx", "canvas"],
+        dest="fmt",
+        help="Output format. 'canvas' emits a self-contained HTML that renders the "
+        "splats via a JS canvas runtime with real linear-space alpha-over "
+        "compositing (breaks the SVG primitive's representational cap).",
+    )
+    parser.add_argument(
+        "--pptx-splat-style",
+        default="soft-edge",
+        choices=["soft-edge", "gradient"],
+        help="Native PPTX splat primitive style. 'soft-edge' is the LibreOffice-tolerant "
+        "default; 'gradient' uses PowerPoint-tuned DrawingML radial gradients "
+        "with semi-transparent stops.",
+    )
+    parser.add_argument(
+        "--training-export-target",
+        default="canvas",
+        choices=["canvas", "svg", "pptx-softedge"],
+        help="Renderer target used during optimization. 'pptx-softedge' trains directly "
+        "against a differentiable approximation of native PPTX soft-edge ellipses.",
+    )
+    parser.add_argument(
+        "--svg-recipe",
+        default=None,
+        choices=["standard", "browser-compatible", "scripted-matrix"],
+        help="SVG export recipe (default comes from quality profile). "
+        "'scripted-matrix' stores compact splat rows and expands browser-compatible "
+        "gradients at load time.",
+    )
+    parser.add_argument(
+        "--svg-proxy-postfit-iters",
+        type=int,
+        default=0,
+        help="For SVG output, run N post-fit iterations on color/alpha using a "
+        "browser-like SVG compositing proxy (default: 0).",
+    )
+    parser.add_argument(
+        "--pptx-proxy-postfit-iters",
+        type=int,
+        default=0,
+        help="For PPTX output, run N post-fit iterations on color/alpha using a "
+        "PowerPoint soft-edge proxy with contrast/saturation terms (default: 0).",
+    )
+    parser.add_argument(
+        "--region-weighting",
+        dest="region_weighting",
+        action="store_true",
+        default=None,
+        help="Enable segmentation-derived spatial loss/sampling weights.",
+    )
+    parser.add_argument(
+        "--no-region-weighting",
+        dest="region_weighting",
+        action="store_false",
+        help="Disable segmentation-derived spatial loss/sampling weights.",
+    )
+    parser.add_argument(
+        "--layered-saliency",
+        dest="layered_saliency",
+        action="store_true",
+        default=False,
+        help="Tag splats into base/mass/detail/edge layers and export nested layer groups.",
+    )
+    parser.add_argument(
+        "--no-layered-saliency",
+        dest="layered_saliency",
+        action="store_false",
+        help="Disable layered saliency tagging/export grouping.",
+    )
     parser.add_argument(
         "--apple-silicon-splat-cap",
         dest="apple_silicon_splat_cap",
         type=int,
-        default=2000,
-        help="Safety cap applied on Apple Silicon before budget selection (default: 2000).",
+        default=None,
+        help="Safety cap applied on Apple Silicon before budget selection "
+        "(default: 2000, disabled by default for exact photo presets).",
     )
     parser.add_argument(
         "--no-apple-silicon-splat-cap",
         dest="apple_silicon_splat_cap",
         action="store_const",
-        const=None,
+        const=DISABLE_APPLE_SILICON_SPLAT_CAP,
         help="Disable the conservative Apple Silicon splat cap for exploratory runs.",
     )
     parser.add_argument("--device", default="cpu", help="Torch device (cpu or cuda)")
     parser.add_argument("--seed", type=int, default=0, help="Deterministic seed")
-    parser.add_argument("--artifacts-dir", default=None, help="Optional directory for run manifest + iteration dumps")
+    parser.add_argument(
+        "--artifacts-dir",
+        default=None,
+        help="Optional directory for run manifest + iteration dumps",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
     return parser
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
-    logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING, format="%(message)s")
+    logging.basicConfig(
+        level=logging.INFO if args.verbose else logging.WARNING, format="%(message)s"
+    )
 
     input_path = args.input
     if not Path(input_path).is_file():
@@ -110,11 +313,45 @@ def main(argv: Optional[List[str]] = None) -> int:
     refinement_config = {}
     if args.svg_recipe is not None:
         refinement_config["svg_export_recipe"] = args.svg_recipe
+    if args.training_export_target != "canvas":
+        refinement_config["training_export_target"] = args.training_export_target
+    if args.svg_proxy_postfit_iters > 0:
+        refinement_config["svg_proxy_postfit_iters"] = int(args.svg_proxy_postfit_iters)
+    if args.pptx_proxy_postfit_iters > 0:
+        refinement_config["pptx_proxy_postfit_iters"] = int(
+            args.pptx_proxy_postfit_iters
+        )
     if args.region_weighting is not None:
         refinement_config["region_weighting_enabled"] = bool(args.region_weighting)
+    if args.renderer_tile_size is not None:
+        refinement_config["renderer_tile_size"] = int(args.renderer_tile_size)
+    if args.renderer_batch_tile_count is not None:
+        refinement_config["renderer_batch_tile_count"] = int(
+            args.renderer_batch_tile_count
+        )
+    if args.renderer_max_active_splats_per_tile is not None:
+        refinement_config["renderer_max_active_splats_per_tile"] = int(
+            args.renderer_max_active_splats_per_tile
+        )
+    if args.mlx_loss is not None:
+        refinement_config["mlx_loss"] = args.mlx_loss
+    if args.mlx_tile_plan is not None:
+        refinement_config["mlx_tile_plan"] = args.mlx_tile_plan
+    if args.mlx_tile_plan_rebuild_interval is not None:
+        refinement_config["mlx_tile_plan_rebuild_interval"] = int(
+            args.mlx_tile_plan_rebuild_interval
+        )
+    if args.mlx_trainable_groups is not None:
+        refinement_config["mlx_trainable_groups"] = args.mlx_trainable_groups
+
+    max_splats, apple_silicon_splat_cap = _resolve_cli_resource_limits(
+        time_budget=args.time_budget,
+        splats=args.splats,
+        apple_silicon_splat_cap=args.apple_silicon_splat_cap,
+    )
 
     converter = PNG2SVGConverter(
-        max_splats=args.splats,
+        max_splats=max_splats,
         stages=args.stages,
         target_size=_target_size(input_path, args.max_edge),
         quality_profile=args.profile,
@@ -122,8 +359,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         device=args.device,
         seed=args.seed,
         refinement_config=refinement_config or None,
+        renderer_backend=args.backend,
+        optimizer_backend=args.optimizer_backend,
         time_budget=args.time_budget,
-        apple_silicon_splat_cap=args.apple_silicon_splat_cap,
+        apple_silicon_splat_cap=apple_silicon_splat_cap,
         layered_saliency=args.layered_saliency,
         pptx_splat_style=args.pptx_splat_style,
     )

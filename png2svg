@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+"""
+PNG to SVG Gaussian Splatting CLI Tool
+
+A command-line tool for converting PNG images to SVG or DrawingML
+using anisotropic 2D Gaussian splats.
+"""
+
+import sys
+import argparse
+import logging
+from pathlib import Path
+import torch
+
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+
+from png2svg_gs import PNG2SVGConverter
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Convert PNG images to SVG or DrawingML using Gaussian splatting",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  png2svg input.png output.svg
+  png2svg input.png output.xml --output-format drawingml
+  png2svg input.png output.svg --max-splats 1000 --stages 100,50,25
+  png2svg input.png output.svg --target-size 512x512 --save-json
+        """
+    )
+
+    # Input/output
+    parser.add_argument("input", help="Input PNG file")
+    parser.add_argument("output", help="Output SVG file")
+
+    # Quality parameters
+    parser.add_argument("--max-splats", type=int, default=2000,
+                       help="Maximum number of splats (default: 2000)")
+    parser.add_argument("--k-sigma", type=float, default=2.5,
+                       help="Sigma multiplier for ellipse size (default: 2.5)")
+    parser.add_argument("--stages", type=str, default="200,100,50",
+                       help="Optimization stages as comma-separated iterations (default: 200,100,50)")
+
+    # Processing parameters
+    parser.add_argument("--target-size", type=str,
+                       help="Target size as WIDTHxHEIGHT (e.g., 512x512)")
+    parser.add_argument("--resolution-scale", type=float, default=1.0,
+                       help="Internal optimization resolution multiplier (>=1.0, e.g. 2.0)")
+    parser.add_argument("--gradient-method", choices=["sobel", "scharr", "prewitt"],
+                       default="sobel", help="Gradient computation method (default: sobel)")
+    parser.add_argument(
+        "--init-random-ratio",
+        type=float,
+        default=0.2,
+        help="Fraction of initial seeds sampled uniformly at random (0-1)",
+    )
+    parser.add_argument(
+        "--init-gradient-weight",
+        type=float,
+        default=0.7,
+        help="Gradient-map weight for adaptive seeding (0-1)",
+    )
+    parser.add_argument(
+        "--backend",
+        choices=["auto", "torch", "gsplat"],
+        default="auto",
+        help="Renderer backend (default: auto)",
+    )
+    parser.add_argument(
+        "--blend-mode",
+        choices=["weighted", "alpha-over"],
+        default="alpha-over",
+        help="CPU torch blend mode (default: alpha-over)",
+    )
+    parser.add_argument(
+        "--output-format",
+        choices=["svg", "drawingml", "pptx"],
+        default=None,
+        help="Output format (default: inferred from output extension)",
+    )
+
+    # Output options
+    parser.add_argument("--save-json", action="store_true",
+                       help="Save splats as JSON for debugging")
+    parser.add_argument("--seed", type=int, default=None,
+                       help="Random seed for deterministic initialization/refinement")
+    parser.add_argument("--artifacts-dir", type=str, default=None,
+                       help="Directory for stage artifacts and run manifest")
+    parser.add_argument("--min-psnr", type=float, default=None,
+                       help="Acceptance threshold: minimum PSNR")
+    parser.add_argument("--min-ssim", type=float, default=None,
+                       help="Acceptance threshold: minimum SSIM")
+    parser.add_argument("--max-runtime-sec", type=float, default=None,
+                       help="Acceptance threshold: maximum runtime (seconds)")
+    parser.add_argument("--max-accepted-splats", type=int, default=None,
+                       help="Acceptance threshold: maximum final splat count")
+    parser.add_argument("--quality-profile", choices=["m4-fast-loop", "fast", "balanced", "max-fidelity"],
+                       default=None, help="Phase 3 tuning profile for LR/refinement")
+    parser.add_argument("--validate-roundtrip", action="store_true",
+                       help="Validate raw->SVG/DrawingML roundtrip and record in manifest")
+    parser.add_argument("--save-validation", action="store_true",
+                       help="Save validation render as PNG")
+    parser.add_argument("--side-by-side-html", type=str, default=None,
+                       help="Optional side-by-side comparison HTML output path")
+    parser.add_argument("--preview-png", type=str, default=None,
+                       help="Optional preview PNG output path")
+
+    # Quality presets
+    parser.add_argument("--preset", choices=["fast", "balanced", "quality"],
+                       help="Quality preset (overrides other parameters)")
+
+    # Logging
+    parser.add_argument("--verbose", "-v", action="store_true",
+                       help="Verbose output")
+    parser.add_argument("--quiet", "-q", action="store_true",
+                       help="Suppress all output except errors")
+
+    args = parser.parse_args()
+
+    # Setup logging
+    if args.quiet:
+        log_level = logging.ERROR
+    elif args.verbose:
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.INFO
+
+    logging.basicConfig(
+        level=log_level,
+        format='%(levelname)s: %(message)s' if not args.verbose else '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Validate input file
+        input_path = Path(args.input)
+        if not input_path.exists():
+            logger.error(f"Input file not found: {input_path}")
+            return 1
+
+        if not input_path.suffix.lower() in ['.png', '.jpg', '.jpeg']:
+            logger.error(f"Unsupported input format: {input_path.suffix}")
+            return 1
+
+        # Parse target size
+        target_size = None
+        if args.target_size:
+            try:
+                width, height = map(int, args.target_size.split('x'))
+                target_size = (width, height)
+                if args.verbose:
+                    logger.info(f"Target size: {width}x{height}")
+            except ValueError:
+                logger.error("Invalid target size format. Use WIDTHxHEIGHT")
+                return 1
+
+        # Parse stages or apply preset
+        if args.preset:
+            presets = {
+                'fast': {'max_splats': 500, 'stages': [50, 25], 'k_sigma': 3.0},
+                'balanced': {'max_splats': 2000, 'stages': [200, 100, 50], 'k_sigma': 2.5},
+                'quality': {'max_splats': 5000, 'stages': [500, 300, 200, 100], 'k_sigma': 2.0}
+            }
+            preset_config = presets[args.preset]
+            max_splats = preset_config['max_splats']
+            stages = preset_config['stages']
+            k_sigma = preset_config['k_sigma']
+            logger.info(f"Using {args.preset} preset: {max_splats} splats, {stages} stages")
+        else:
+            max_splats = args.max_splats
+            k_sigma = args.k_sigma
+            try:
+                stages = [int(x.strip()) for x in args.stages.split(',')]
+            except ValueError:
+                logger.error("Invalid stages format. Use comma-separated integers")
+                return 1
+
+        # Resolve output format
+        if args.output_format:
+            output_format = args.output_format
+        else:
+            output_suffix = Path(args.output).suffix.lower()
+            if output_suffix in {".xml", ".dml"}:
+                output_format = "drawingml"
+            elif output_suffix == ".pptx":
+                output_format = "pptx"
+            else:
+                output_format = "svg"
+
+        # Initialize converter
+        logger.info("Initializing PNG→SVG converter...")
+        acceptance_criteria = {}
+        if args.min_psnr is not None:
+            acceptance_criteria["min_psnr"] = float(args.min_psnr)
+        if args.min_ssim is not None:
+            acceptance_criteria["min_ssim"] = float(args.min_ssim)
+        if args.max_runtime_sec is not None:
+            acceptance_criteria["max_runtime_sec"] = float(args.max_runtime_sec)
+        if args.max_accepted_splats is not None:
+            acceptance_criteria["max_splats"] = float(args.max_accepted_splats)
+
+        converter = PNG2SVGConverter(
+            max_splats=max_splats,
+            k_sigma=k_sigma,
+            stages=stages,
+            target_size=target_size,
+            resolution_scale=max(1.0, float(args.resolution_scale)),
+            gradient_method=args.gradient_method,
+            init_random_ratio=float(max(0.0, min(1.0, args.init_random_ratio))),
+            init_gradient_weight=float(max(0.0, min(1.0, args.init_gradient_weight))),
+            device=(
+                "cuda"
+                if args.backend in {"auto", "gsplat"} and torch.cuda.is_available()
+                else "cpu"
+            ),
+            renderer_backend=args.backend,
+            blend_mode=args.blend_mode,
+            seed=args.seed,
+            quality_profile=(
+                args.quality_profile
+                or ("max-fidelity" if args.preset == "quality" else (args.preset or "balanced"))
+            ),
+            acceptance_criteria=acceptance_criteria or None,
+        )
+
+        # Convert
+        logger.info(f"Converting {args.input} → {args.output} ({output_format})")
+        converter.convert(
+            input_path=str(input_path),
+            output_path=args.output,
+            save_json=args.save_json,
+            verbose=args.verbose,
+            output_format=output_format,
+            seed=args.seed,
+            artifacts_dir=args.artifacts_dir,
+            acceptance_criteria=acceptance_criteria or None,
+            validate_roundtrip=args.validate_roundtrip,
+            side_by_side_html=args.side_by_side_html,
+            preview_png_path=args.preview_png,
+        )
+
+        # Validation rendering
+        if args.save_validation:
+            logger.info("Creating validation render...")
+            # Simple validation using numpy renderer
+            from png2svg_gs.io import load_png
+            from png2svg_gs.renderer import render_splats_numpy
+            import numpy as np
+            from PIL import Image
+
+            # Load original image
+            image = load_png(str(input_path), target_size=target_size)
+
+            # Load splats from JSON (canonical + legacy supported)
+            from png2svg_gs.io import load_splats_json
+
+            json_path = str(Path(args.output).with_suffix(".json"))
+            if Path(json_path).exists():
+                splats = load_splats_json(json_path)
+
+                # Render validation
+                height, width = image.shape[:2]
+                rendered = render_splats_numpy(splats, width, height)
+
+                # Save as PNG
+                rendered_uint8 = (np.clip(rendered, 0, 1) * 255).astype(np.uint8)
+                output_base = Path(args.output)
+                validation_path = str(output_base.with_name(f"{output_base.stem}_validation.png"))
+                Image.fromarray(rendered_uint8).save(validation_path)
+                logger.info(f"Saved validation render: {validation_path}")
+
+        logger.info("Conversion completed successfully!")
+        return 0
+
+    except Exception as e:
+        logger.error(f"Conversion failed: {e}")
+        if args.verbose:
+            import traceback
+            traceback.print_exc()
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

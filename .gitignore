@@ -85,3 +85,61 @@ test_assets/
 examples/output/
 *.svg
 !docs/examples/*.svg
+
+# Local Claude Code settings
+.claude/
+
+# Cloned reference repos (kept locally, never committed)
+/external/
+/ml-sharp/
+
+# Experiment artifacts (kept locally)
+/artifacts_*/
+/fidelity_lab_*/
+/tmp_profile*
+
+# Ad-hoc scratch scripts at repo root
+# (canonical CLI lives in src/png2svg_gs/cli.py and the `png2svg` launcher)
+/chameleon_*.py
+/convert_*.py
+/debug_pipeline.py
+/demo_*.py
+/fast_*.py
+/fix_*.py
+/generate_*.py
+/optimize_*.py
+/progressive_*.py
+/scale_*.py
+/test_*.py
+
+# Scratch HTML/JS outputs at repo root
+/*.html
+/live_performance_data.js
+
+# Scratch JSON at repo root
+/cli_fast.json
+/fixed_test.json
+/hi_*.json
+/high_density_*.json
+/m3_config.json
+/output.json
+/performance_comparison.json
+/phase3_*.json
+/stable_test.json
+
+# Scratch PNG outputs at repo root (test_image.png is tracked and stays)
+/input.png
+/test_input.png
+/basic_result.png
+/complex_*.png
+/enhanced_*.png
+/fixed_test_validation.png
+/hi_*.png
+/output_validation.png
+/phase3_*.png
+/run_cli_output.png
+/side_by_side*.png
+/strategy_*.png
+/validation_*.png
+/visual_comparison.png
+/tmp_profile*.png

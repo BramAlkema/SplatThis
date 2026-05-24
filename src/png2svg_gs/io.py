@@ -23,9 +23,9 @@ from PIL import Image
 
 from .splat import (
     LAYER_BASE,
+    RAW_SPLAT_SCHEMA_VERSION,
     SPLAT_LAYER_NAMES,
     GaussianSplat,
-    RAW_SPLAT_SCHEMA_VERSION,
     RawSplat,
     render_importance_for_raw,
     render_order_key,
@@ -45,11 +45,24 @@ DEFAULT_PPTX_SPLAT_STYLE = "soft-edge"
 PPTX_SOFT_EDGE_ALPHA_SCALE = 0.25
 PPTX_SOFT_EDGE_RADIUS_FACTOR = 0.20
 PPTX_SOFT_EDGE_K_SIGMA_SCALE = 0.92
+PPTX_GRADIENT_ALPHA_SCALE = 0.40
 SVG_BROWSER_COMPAT_RECIPE = "browser-compatible"
+SVG_SCRIPTED_MATRIX_RECIPE = "scripted-matrix"
 SVG_BACKGROUND_ALPHA_CAP = 0.20
 SVG_FEATHER_EXTENT = 2.0
 SVG_PRECOMP_ALPHA_THRESHOLD = 0.90
 SVG_PRECOMP_MAX_SRGB = 160.0
+
+
+def _normalize_svg_export_recipe(export_recipe: str) -> str:
+    normalized = str(export_recipe).strip().lower().replace("_", "-")
+    if normalized in {"browser", "browser-compatible"}:
+        return SVG_BROWSER_COMPAT_RECIPE
+    if normalized in {"scripted", "scripted-standard", "scripted-matrix", "matrix"}:
+        return SVG_SCRIPTED_MATRIX_RECIPE
+    if normalized == "standard":
+        return "standard"
+    raise ValueError(f"Unsupported SVG export recipe: {export_recipe}")
 
 
 def _layer_name(layer: Optional[int]) -> str:
@@ -75,8 +88,11 @@ def _normalize_pptx_splat_style(splat_style: str) -> str:
     raise ValueError(f"Unsupported PPTX splat style: {splat_style}")
 
 
-def load_png(path: str, target_size: Optional[Tuple[int, int]] = None,
-             linearize_srgb: bool = True) -> np.ndarray:
+def load_png(
+    path: str,
+    target_size: Optional[Tuple[int, int]] = None,
+    linearize_srgb: bool = True,
+) -> np.ndarray:
     """
     Load PNG image with proper preprocessing.
 
@@ -94,14 +110,14 @@ def load_png(path: str, target_size: Optional[Tuple[int, int]] = None,
         logger.info(f"Loaded {img.size[0]}×{img.size[1]} image: {path}")
 
         # Convert to RGB(A)
-        if img.mode == 'P':  # Palette
-            img = img.convert('RGBA')
-        elif img.mode in ['L', 'LA']:  # Grayscale
-            img = img.convert('RGB')
-        elif img.mode == 'RGBA':
+        if img.mode == "P":  # Palette
+            img = img.convert("RGBA")
+        elif img.mode in ["L", "LA"]:  # Grayscale
+            img = img.convert("RGB")
+        elif img.mode == "RGBA":
             pass  # Keep alpha
         else:
-            img = img.convert('RGB')
+            img = img.convert("RGB")
 
         # Resize if requested
         if target_size is not None:
@@ -116,7 +132,9 @@ def load_png(path: str, target_size: Optional[Tuple[int, int]] = None,
             img_array[..., :3] = srgb_to_linear(img_array[..., :3])
             logger.info("Applied sRGB → linear RGB conversion")
 
-        logger.info(f"Final image shape: {img_array.shape}, range: [{img_array.min():.3f}, {img_array.max():.3f}]")
+        logger.info(
+            f"Final image shape: {img_array.shape}, range: [{img_array.min():.3f}, {img_array.max():.3f}]"
+        )
         return img_array
 
     except Exception as e:
@@ -136,9 +154,7 @@ def srgb_to_linear(srgb: np.ndarray) -> np.ndarray:
     """
     # Standard sRGB → linear conversion
     linear = np.where(
-        srgb <= 0.04045,
-        srgb / 12.92,
-        np.power((srgb + 0.055) / 1.055, 2.4)
+        srgb <= 0.04045, srgb / 12.92, np.power((srgb + 0.055) / 1.055, 2.4)
     )
     return linear
 
@@ -154,9 +170,7 @@ def linear_to_srgb(linear: np.ndarray) -> np.ndarray:
         sRGB values in [0,1]
     """
     srgb = np.where(
-        linear <= 0.0031308,
-        12.92 * linear,
-        1.055 * np.power(linear, 1.0/2.4) - 0.055
+        linear <= 0.0031308, 12.92 * linear, 1.055 * np.power(linear, 1.0 / 2.4) - 0.055
     )
     return np.clip(srgb, 0.0, 1.0)
 
@@ -185,15 +199,20 @@ def _sort_splats_for_export(
     raise ValueError(f"Unsupported export sort mode: {sort_mode}")
 
 
-def save_svg(splats: List[GaussianSplat], width: int, height: int,
-             output_path: str, k_sigma: float = 2.5,
-             sort_by_area: bool = False,
-             sort_mode: str = DEFAULT_EXPORT_ORDER,
-             background_linear_rgb: Optional[np.ndarray] = None,
-             export_recipe: str = "standard",
-             foreground_mask: Optional[np.ndarray] = None,
-             background_safe_mask: Optional[np.ndarray] = None,
-             edge_band_mask: Optional[np.ndarray] = None) -> None:
+def save_svg(
+    splats: List[GaussianSplat],
+    width: int,
+    height: int,
+    output_path: str,
+    k_sigma: float = 2.5,
+    sort_by_area: bool = False,
+    sort_mode: str = DEFAULT_EXPORT_ORDER,
+    background_linear_rgb: Optional[np.ndarray] = None,
+    export_recipe: str = "standard",
+    foreground_mask: Optional[np.ndarray] = None,
+    background_safe_mask: Optional[np.ndarray] = None,
+    edge_band_mask: Optional[np.ndarray] = None,
+) -> None:
     """
     Save splats as SVG file.
 
@@ -228,7 +247,7 @@ def save_svg(splats: List[GaussianSplat], width: int, height: int,
 
     # Write to file
     try:
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(svg_content)
         logger.info(f"Saved SVG with {len(ordered_splats)} splats to {output_path}")
     except Exception as e:
@@ -275,7 +294,9 @@ def save_drawingml(
     try:
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(drawingml_content)
-        logger.info(f"Saved DrawingML with {len(ordered_splats)} splats to {output_path}")
+        logger.info(
+            f"Saved DrawingML with {len(ordered_splats)} splats to {output_path}"
+        )
     except Exception as e:
         logger.error(f"Failed to save DrawingML {output_path}: {e}")
         raise
@@ -304,25 +325,35 @@ def generate_canvas_html(
     bg_lin = (
         [0.0, 0.0, 0.0]
         if background_linear_rgb is None
-        else [float(np.clip(c, 0.0, 1.0)) for c in np.asarray(background_linear_rgb).reshape(-1)[:3]]
+        else [
+            float(np.clip(c, 0.0, 1.0))
+            for c in np.asarray(background_linear_rgb).reshape(-1)[:3]
+        ]
     )
 
     # Compact per-splat record: x, y, sx, sy, theta, r, g, b, a, render_order, layer.
     rows: List[List[float]] = []
     for splat in splats:
         raw = splat.to_raw_splat()
-        rows.append([
-            float(raw.x), float(raw.y),
-            float(raw.sx), float(raw.sy),
-            float(raw.theta),
-            float(raw.r), float(raw.g), float(raw.b),
-            float(raw.a),
-            render_importance_for_raw(raw),
-            -1.0 if raw.layer is None else float(raw.layer),
-        ])
+        rows.append(
+            [
+                float(raw.x),
+                float(raw.y),
+                float(raw.sx),
+                float(raw.sy),
+                float(raw.theta),
+                float(raw.r),
+                float(raw.g),
+                float(raw.b),
+                float(raw.a),
+                render_importance_for_raw(raw),
+                -1.0 if raw.layer is None else float(raw.layer),
+            ]
+        )
     splats_json = json.dumps(rows, separators=(",", ":"))
 
-    js = r"""
+    js = (
+        r"""
 (function(){
   const t0 = performance.now();
   const W = __W__, H = __H__;
@@ -400,15 +431,18 @@ def generate_canvas_html(
   ctx.putImageData(img, 0, 0);
   status.textContent = 'rendered ' + SPLATS.length + ' splats at ' + W + '×' + H + ' in ' + (performance.now() - t0).toFixed(0) + 'ms (linear-space alpha-over)';
 })();
-""".replace("__W__", str(int(width))) \
-   .replace("__H__", str(int(height))) \
-   .replace("__BG__", f"[{bg_lin[0]:.6f},{bg_lin[1]:.6f},{bg_lin[2]:.6f}]") \
-   .replace("__SPLATS__", splats_json)
+""".replace(
+            "__W__", str(int(width))
+        )
+        .replace("__H__", str(int(height)))
+        .replace("__BG__", f"[{bg_lin[0]:.6f},{bg_lin[1]:.6f},{bg_lin[2]:.6f}]")
+        .replace("__SPLATS__", splats_json)
+    )
 
     safe_title = title.replace("<", "&lt;").replace(">", "&gt;")
     return (
         "<!doctype html>\n"
-        '<html><head><meta charset="utf-8"><title>' + safe_title + '</title>\n'
+        '<html><head><meta charset="utf-8"><title>' + safe_title + "</title>\n"
         "<style>\n"
         "  body{margin:0;background:#111;color:#eee;font:14px -apple-system,sans-serif;"
         "display:flex;flex-direction:column;align-items:center;padding:16px}\n"
@@ -450,11 +484,18 @@ def generate_svg_content(
     Returns:
         Complete SVG document as string
     """
-    normalized_recipe = str(export_recipe).strip().lower()
-    if normalized_recipe in {"browser", "browser_compatible", "browser-compatible"}:
-        normalized_recipe = SVG_BROWSER_COMPAT_RECIPE
-    if normalized_recipe not in {"standard", SVG_BROWSER_COMPAT_RECIPE}:
-        raise ValueError(f"Unsupported SVG export recipe: {export_recipe}")
+    normalized_recipe = _normalize_svg_export_recipe(export_recipe)
+    if normalized_recipe == SVG_SCRIPTED_MATRIX_RECIPE:
+        return generate_scripted_svg_content(
+            splats=splats,
+            width=width,
+            height=height,
+            k_sigma=k_sigma,
+            background_linear_rgb=background_linear_rgb,
+            foreground_mask=foreground_mask,
+            background_safe_mask=background_safe_mask,
+            edge_band_mask=edge_band_mask,
+        )
     use_browser_recipe = normalized_recipe == SVG_BROWSER_COMPAT_RECIPE
 
     def _valid_mask(mask: Optional[np.ndarray]) -> Optional[np.ndarray]:
@@ -533,10 +574,14 @@ def generate_svg_content(
         # Browsers blend SVG stops in display space. Solve the stop color that
         # gives the same center-over-background result as linear alpha-over.
         paint_alpha = 1.0 - math.exp(-float(np.clip(alpha, 0.0, 1.0)))
-        target_srgb = linear_to_srgb(paint_alpha * color_linear + (1.0 - paint_alpha) * bg_linear)
+        target_srgb = linear_to_srgb(
+            paint_alpha * color_linear + (1.0 - paint_alpha) * bg_linear
+        )
         if paint_alpha <= 1e-6:
             return color_srgb
-        return np.clip((target_srgb - (1.0 - paint_alpha) * bg_srgb) / paint_alpha, 0.0, 1.0)
+        return np.clip(
+            (target_srgb - (1.0 - paint_alpha) * bg_srgb) / paint_alpha, 0.0, 1.0
+        )
 
     gradient_footprint = ELLIPSE_OVERLAP_BOOST * k_sigma
     feather_extent = SVG_FEATHER_EXTENT if use_browser_recipe else 1.0
@@ -563,7 +608,9 @@ def generate_svg_content(
         stop_lines = []
         for j in range(SVG_GRADIENT_STOPS):
             t = j / (SVG_GRADIENT_STOPS - 1)
-            opacity = 1.0 - math.exp(-alpha * math.exp(-0.5 * (t * gradient_footprint) ** 2))
+            opacity = 1.0 - math.exp(
+                -alpha * math.exp(-0.5 * (t * gradient_footprint) ** 2)
+            )
             offset = t * inner_end
             stop_lines.append(
                 f'      <stop offset="{offset * 100:.1f}%" stop-color="{color}" stop-opacity="{opacity:.5f}"/>'
@@ -599,6 +646,212 @@ def generate_svg_content(
 
     svg_lines.extend(["", "</svg>"])
     return "\n".join(svg_lines)
+
+
+def generate_scripted_svg_content(
+    splats: List[GaussianSplat],
+    width: int,
+    height: int,
+    k_sigma: float = 2.5,
+    background_linear_rgb: Optional[np.ndarray] = None,
+    foreground_mask: Optional[np.ndarray] = None,
+    background_safe_mask: Optional[np.ndarray] = None,
+    edge_band_mask: Optional[np.ndarray] = None,
+) -> str:
+    """
+    Generate a compact browser SVG that stores splats as a numeric matrix.
+
+    The SVG source contains one data row per splat plus a small script. On load,
+    the script expands the rows into normal SVG radial gradients and matrix-
+    transformed unit ellipses. This keeps the source small and gzip-friendly
+    while matching the browser-compatible static SVG rendering in browsers that
+    execute inline SVG scripts.
+    """
+
+    def _valid_mask(mask: Optional[np.ndarray]) -> Optional[np.ndarray]:
+        if mask is None:
+            return None
+        arr = np.asarray(mask)
+        if arr.shape != (int(height), int(width)):
+            raise ValueError("SVG region masks must match output height/width")
+        return arr.astype(bool, copy=False)
+
+    foreground = _valid_mask(foreground_mask)
+    background_safe = _valid_mask(background_safe_mask)
+    edge_band = _valid_mask(edge_band_mask)
+
+    bg_linear = np.ones(3, dtype=np.float32)
+    if background_linear_rgb is not None:
+        bg = np.asarray(background_linear_rgb, dtype=np.float32).reshape(-1)
+        if bg.size != 3:
+            raise ValueError("background_linear_rgb must have exactly 3 components")
+        bg_linear = np.clip(bg, 0.0, 1.0)
+    bg_srgb = linear_to_srgb(bg_linear)
+    bg_rgb = tuple(int(np.clip(np.round(c * 255), 0, 255)) for c in bg_srgb)
+
+    def _splat_center(splat: GaussianSplat) -> Tuple[int, int]:
+        x = int(np.clip(round(float(splat.mu[0])), 0, max(int(width) - 1, 0)))
+        y = int(np.clip(round(float(splat.mu[1])), 0, max(int(height) - 1, 0)))
+        return x, y
+
+    def _in_safe_background(splat: GaussianSplat) -> bool:
+        if background_safe is None:
+            return False
+        x, y = _splat_center(splat)
+        if not bool(background_safe[y, x]):
+            return False
+        if foreground is not None and bool(foreground[y, x]):
+            return False
+        if edge_band is not None and bool(edge_band[y, x]):
+            return False
+        return True
+
+    def _scripted_color_and_alpha(
+        splat: GaussianSplat,
+    ) -> Tuple[Tuple[int, int, int], float]:
+        alpha = float(np.clip(splat.alpha, 0.0, 1.0))
+        if _in_safe_background(splat):
+            alpha = min(alpha, SVG_BACKGROUND_ALPHA_CAP)
+
+        color_linear = np.clip(np.array(splat.color[:3], dtype=np.float32), 0.0, 1.0)
+        color_srgb = linear_to_srgb(color_linear)
+        if (
+            float(splat.alpha) >= SVG_PRECOMP_ALPHA_THRESHOLD
+            and float(np.max(color_srgb) * 255.0) <= SVG_PRECOMP_MAX_SRGB
+        ):
+            paint_alpha = 1.0 - math.exp(-alpha)
+            if paint_alpha > 1e-6:
+                target_srgb = linear_to_srgb(
+                    paint_alpha * color_linear + (1.0 - paint_alpha) * bg_linear
+                )
+                color_srgb = np.clip(
+                    (target_srgb - (1.0 - paint_alpha) * bg_srgb) / paint_alpha,
+                    0.0,
+                    1.0,
+                )
+
+        rgb = tuple(int(np.clip(np.round(c * 255), 0, 255)) for c in color_srgb)
+        return rgb, alpha
+
+    def _matrix_row(splat: GaussianSplat) -> str:
+        eigenvals, eigenvecs = splat.eigendecomposition()
+        rx = max(
+            MIN_ELLIPSE_RADIUS_PX,
+            SVG_FEATHER_EXTENT
+            * ELLIPSE_OVERLAP_BOOST
+            * k_sigma
+            * np.sqrt(max(float(eigenvals[0]), 1e-8)),
+        )
+        ry = max(
+            MIN_ELLIPSE_RADIUS_PX,
+            SVG_FEATHER_EXTENT
+            * ELLIPSE_OVERLAP_BOOST
+            * k_sigma
+            * np.sqrt(max(float(eigenvals[1]), 1e-8)),
+        )
+        theta = float(np.arctan2(eigenvecs[1, 0], eigenvecs[0, 0]))
+        cos_t = float(np.cos(theta))
+        sin_t = float(np.sin(theta))
+        # SVG matrix(a b c d e f) maps the unit circle to the rotated ellipse.
+        a = rx * cos_t
+        b = rx * sin_t
+        c = -ry * sin_t
+        d = ry * cos_t
+        e = float(splat.mu[0])
+        f = float(splat.mu[1])
+        rgb, alpha = _scripted_color_and_alpha(splat)
+        values = [
+            f"{a:.2f}",
+            f"{b:.2f}",
+            f"{c:.2f}",
+            f"{d:.2f}",
+            f"{e:.2f}",
+            f"{f:.2f}",
+            str(rgb[0]),
+            str(rgb[1]),
+            str(rgb[2]),
+            f"{alpha:.4f}",
+        ]
+        return ",".join(values)
+
+    rows = ";".join(_matrix_row(splat) for splat in splats)
+    gradient_footprint = ELLIPSE_OVERLAP_BOOST * k_sigma
+    inner_end = 1.0 / SVG_FEATHER_EXTENT
+    script = f"""
+(function(){{
+  const NS = 'http://www.w3.org/2000/svg';
+  const data = document.getElementById('splat-data').textContent.trim();
+  const rows = data ? data.split(';') : [];
+  const defs = document.getElementById('defs');
+  const layer = document.getElementById('splats');
+  const gradFrag = document.createDocumentFragment();
+  const splatFrag = document.createDocumentFragment();
+  const stops = {SVG_GRADIENT_STOPS};
+  const footprint = {gradient_footprint:.8f};
+  const innerEnd = {inner_end:.8f};
+  function addStop(grad, offset, color, opacity) {{
+    const stop = document.createElementNS(NS, 'stop');
+    stop.setAttribute('offset', (offset * 100).toFixed(1) + '%');
+    stop.setAttribute('stop-color', color);
+    stop.setAttribute('stop-opacity', opacity.toFixed(5));
+    grad.appendChild(stop);
+  }}
+  for (let i = 0; i < rows.length; i++) {{
+    const v = rows[i].split(',');
+    const color = 'rgb(' + v[6] + ',' + v[7] + ',' + v[8] + ')';
+    const alpha = +v[9];
+    const grad = document.createElementNS(NS, 'radialGradient');
+    grad.id = 'g' + i;
+    grad.setAttribute('cx', '50%');
+    grad.setAttribute('cy', '50%');
+    grad.setAttribute('r', '50%');
+    grad.setAttribute('gradientUnits', 'objectBoundingBox');
+    for (let j = 0; j < stops; j++) {{
+      const t = j / (stops - 1);
+      const opacity = 1 - Math.exp(-alpha * Math.exp(-0.5 * Math.pow(t * footprint, 2)));
+      addStop(grad, t * innerEnd, color, opacity);
+    }}
+    addStop(grad, (innerEnd + 1) / 2, color, 0);
+    addStop(grad, 1, color, 0);
+    gradFrag.appendChild(grad);
+
+    const ellipse = document.createElementNS(NS, 'ellipse');
+    ellipse.setAttribute('cx', '0');
+    ellipse.setAttribute('cy', '0');
+    ellipse.setAttribute('rx', '1');
+    ellipse.setAttribute('ry', '1');
+    ellipse.setAttribute('transform', 'matrix(' + v[0] + ' ' + v[1] + ' ' + v[2] + ' ' + v[3] + ' ' + v[4] + ' ' + v[5] + ')');
+    ellipse.setAttribute('fill', 'url(#g' + i + ')');
+    ellipse.setAttribute('class', 'splat');
+    splatFrag.appendChild(ellipse);
+  }}
+  defs.appendChild(gradFrag);
+  layer.appendChild(splatFrag);
+  document.documentElement.setAttribute('data-rendered', String(rows.length));
+}})();
+""".strip()
+
+    return "\n".join(
+        [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            (
+                f'<svg width="{width}" height="{height}" '
+                f'viewBox="0 0 {width} {height}" '
+                'xmlns="http://www.w3.org/2000/svg">'
+            ),
+            (
+                "  <desc>Compact scripted matrix-driven Gaussian splat SVG. "
+                "The source stores one data row per splat and expands browser-compatible "
+                "SVG gradients at load time.</desc>"
+            ),
+            '  <defs id="defs"><style>.splat { mix-blend-mode: normal; }</style></defs>',
+            f'  <rect width="{width}" height="{height}" fill="rgb({bg_rgb[0]},{bg_rgb[1]},{bg_rgb[2]})" class="background"/>',
+            '  <g id="splats"></g>',
+            f'  <script id="splat-data" type="application/octet-stream">{rows}</script>',
+            f"  <script><![CDATA[{script}]]></script>",
+            "</svg>",
+        ]
+    )
 
 
 def generate_drawingml_slide_content(
@@ -660,7 +913,9 @@ def generate_drawingml_slide_content(
 
         for layer_id in layer_ids:
             layer_splats = by_layer.get(layer_id, [])
-            if not layer_splats and not (layer_id == LAYER_BASE and background_linear_rgb is not None):
+            if not layer_splats and not (
+                layer_id == LAYER_BASE and background_linear_rgb is not None
+            ):
                 continue
             lines.extend(
                 _drawingml_group_start_lines(
@@ -682,12 +937,14 @@ def generate_drawingml_slide_content(
                 )
                 shape_id += 1
             for splat in layer_splats:
-                lines.extend(_splat_to_drawingml_shape_lines(
-                    splat,
-                    shape_id,
-                    k_sigma,
-                    splat_style=normalized_splat_style,
-                ))
+                lines.extend(
+                    _splat_to_drawingml_shape_lines(
+                        splat,
+                        shape_id,
+                        k_sigma,
+                        splat_style=normalized_splat_style,
+                    )
+                )
                 shape_id += 1
             lines.append("      </p:grpSp>")
     else:
@@ -702,12 +959,14 @@ def generate_drawingml_slide_content(
             )
             shape_id += 1
         for splat in splats:
-            lines.extend(_splat_to_drawingml_shape_lines(
-                splat,
-                shape_id,
-                k_sigma,
-                splat_style=normalized_splat_style,
-            ))
+            lines.extend(
+                _splat_to_drawingml_shape_lines(
+                    splat,
+                    shape_id,
+                    k_sigma,
+                    splat_style=normalized_splat_style,
+                )
+            )
             shape_id += 1
     lines.append("      </p:grpSp>")
 
@@ -854,13 +1113,15 @@ def _splat_to_drawingml_shape_lines(
     if normalized_splat_style == "soft-edge":
         return _splat_to_drawingml_soft_edge_shape_lines(splat, shape_id, k_sigma)
 
-    x_emu, y_emu, w_emu, h_emu, rot_attr, color_hex = _splat_geometry_for_drawingml(splat, k_sigma)
+    x_emu, y_emu, w_emu, h_emu, rot_attr, color_hex = _splat_geometry_for_drawingml(
+        splat, k_sigma
+    )
 
     # Radial gradient stops mirroring the SVG path: the renderer's per-splat
-    # alpha-over opacity 1-exp(-a*exp(-0.5*(t*footprint)^2)). DrawingML pos/alpha
-    # are in thousandths of a percent (0..100000). This replaces the old flat
-    # solidFill, which gave each splat a uniform-opacity disc with no falloff.
-    alpha_clamped = float(np.clip(splat.alpha, 0.0, 1.0))
+    # alpha-over opacity 1-exp(-a*exp(-0.5*(t*footprint)^2)). PowerPoint's
+    # path="circle" profile is too broad for a canvas Gaussian; path="shape"
+    # and a lower alpha scale matched the measured PowerPoint roundtrip best.
+    alpha_clamped = float(np.clip(splat.alpha * PPTX_GRADIENT_ALPHA_SCALE, 0.0, 1.0))
     footprint = ELLIPSE_OVERLAP_BOOST * k_sigma
     gradient_stop_lines: List[str] = []
     for j in range(SVG_GRADIENT_STOPS):
@@ -868,11 +1129,13 @@ def _splat_to_drawingml_shape_lines(
         opacity = 1.0 - math.exp(-alpha_clamped * math.exp(-0.5 * (t * footprint) ** 2))
         pos = int(round(t * 100000.0))
         a_units = int(np.clip(round(opacity * 100000.0), 0, 100000))
-        gradient_stop_lines.extend([
-            f'              <a:gs pos="{pos}">',
-            f'                <a:srgbClr val="{color_hex}"><a:alpha val="{a_units}"/></a:srgbClr>',
-            "              </a:gs>",
-        ])
+        gradient_stop_lines.extend(
+            [
+                f'              <a:gs pos="{pos}">',
+                f'                <a:srgbClr val="{color_hex}"><a:alpha val="{a_units}"/></a:srgbClr>',
+                "              </a:gs>",
+            ]
+        )
 
     return [
         "      <p:sp>",
@@ -895,8 +1158,7 @@ def _splat_to_drawingml_shape_lines(
         "            <a:gsLst>",
         *gradient_stop_lines,
         "            </a:gsLst>",
-        '            <a:path path="circle">',
-        '              <a:fillToRect l="50000" t="50000" r="50000" b="50000"/>',
+        '            <a:path path="shape">',
         "            </a:path>",
         "          </a:gradFill>",
         "          <a:ln>",
@@ -926,7 +1188,11 @@ def _splat_to_drawingml_soft_edge_shape_lines(
         effective_k_sigma,
     )
     center_opacity = 1.0 - math.exp(-float(np.clip(splat.alpha, 0.0, 1.0)))
-    alpha_units = int(np.clip(round(center_opacity * PPTX_SOFT_EDGE_ALPHA_SCALE * 100000.0), 0, 100000))
+    alpha_units = int(
+        np.clip(
+            round(center_opacity * PPTX_SOFT_EDGE_ALPHA_SCALE * 100000.0), 0, 100000
+        )
+    )
     soft_radius = int(max(0, round(min(w_emu, h_emu) * PPTX_SOFT_EDGE_RADIUS_FACTOR)))
     return [
         "      <p:sp>",
@@ -991,11 +1257,17 @@ def splat_to_svg_ellipse(
     # Semi-axes lengths (k * σ where σ = sqrt(eigenvalue))
     rx = max(
         MIN_ELLIPSE_RADIUS_PX,
-        float(max(radius_scale, 0.0)) * ELLIPSE_OVERLAP_BOOST * k_sigma * np.sqrt(eigenvals[0]),
+        float(max(radius_scale, 0.0))
+        * ELLIPSE_OVERLAP_BOOST
+        * k_sigma
+        * np.sqrt(eigenvals[0]),
     )
     ry = max(
         MIN_ELLIPSE_RADIUS_PX,
-        float(max(radius_scale, 0.0)) * ELLIPSE_OVERLAP_BOOST * k_sigma * np.sqrt(eigenvals[1]),
+        float(max(radius_scale, 0.0))
+        * ELLIPSE_OVERLAP_BOOST
+        * k_sigma
+        * np.sqrt(eigenvals[1]),
     )
 
     # Rotation angle (from first eigenvector)
@@ -1012,19 +1284,27 @@ def splat_to_svg_ellipse(
     fallback_color = f"rgb({color_int[0]},{color_int[1]},{color_int[2]})"
 
     # Build ellipse element
-    id_attr = f' id="{element_id}"' if element_id else ''
-    transform_attr = f' transform="rotate({rotation_deg:.2f} {cx:.2f} {cy:.2f})"' if abs(rotation_deg) > 0.1 else ''
+    id_attr = f' id="{element_id}"' if element_id else ""
+    transform_attr = (
+        f' transform="rotate({rotation_deg:.2f} {cx:.2f} {cy:.2f})"'
+        if abs(rotation_deg) > 0.1
+        else ""
+    )
 
-    fill_attr = f'url(#{gradient_id})' if gradient_id else fallback_color
-    alpha_attr = "" if gradient_id else f' fill-opacity="{float(np.clip(splat.alpha, 0.0, 1.0)):.3f}"'
+    fill_attr = f"url(#{gradient_id})" if gradient_id else fallback_color
+    alpha_attr = (
+        ""
+        if gradient_id
+        else f' fill-opacity="{float(np.clip(splat.alpha, 0.0, 1.0)):.3f}"'
+    )
     ellipse = (
-        f'<ellipse{id_attr} '
+        f"<ellipse{id_attr} "
         f'cx="{cx:.2f}" cy="{cy:.2f}" '
         f'rx="{rx:.2f}" ry="{ry:.2f}" '
         f'fill="{fill_attr}" '
         f'data-fallback-fill="{fallback_color}"'
-        f'{alpha_attr}'
-        f'{transform_attr} '
+        f"{alpha_attr}"
+        f"{transform_attr} "
         f'class="splat"/>'
     )
 
@@ -1151,7 +1431,9 @@ def _image_ssim(x: np.ndarray, y: np.ndarray) -> float:
         from skimage.metrics import structural_similarity
 
         channel_axis = 2 if (x.ndim == 3 and x.shape[2] > 1) else None
-        return float(structural_similarity(x, y, channel_axis=channel_axis, data_range=1.0))
+        return float(
+            structural_similarity(x, y, channel_axis=channel_axis, data_range=1.0)
+        )
     except Exception:
         logger.warning("skimage unavailable; falling back to inflated global SSIM")
         return _global_ssim_np(x, y)
@@ -1161,8 +1443,8 @@ def _global_ssim_np(x: np.ndarray, y: np.ndarray) -> float:
     """Global single-window SSIM (legacy fallback; over-reports vs windowed SSIM)."""
     x = np.asarray(x, dtype=np.float64)
     y = np.asarray(y, dtype=np.float64)
-    c1 = 0.01 ** 2
-    c2 = 0.03 ** 2
+    c1 = 0.01**2
+    c2 = 0.03**2
 
     mu_x = np.mean(x, axis=(0, 1))
     mu_y = np.mean(y, axis=(0, 1))
@@ -1256,7 +1538,9 @@ def _try_rasterize_svg_to_linear_rgb(
     try:
         import cairosvg  # type: ignore
 
-        png_bytes = cairosvg.svg2png(url=svg_path, output_width=int(width), output_height=int(height))
+        png_bytes = cairosvg.svg2png(
+            url=svg_path, output_width=int(width), output_height=int(height)
+        )
         image = Image.open(io.BytesIO(png_bytes)).convert("RGB")
         srgb = np.asarray(image, dtype=np.float32) / 255.0
         return srgb_to_linear(srgb), "cairosvg"
@@ -1269,7 +1553,16 @@ def _try_rasterize_svg_to_linear_rgb(
         try:
             with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as tmp:
                 subprocess.run(
-                    [rsvg, "-w", str(int(width)), "-h", str(int(height)), svg_path, "-o", tmp.name],
+                    [
+                        rsvg,
+                        "-w",
+                        str(int(width)),
+                        "-h",
+                        str(int(height)),
+                        svg_path,
+                        "-o",
+                        tmp.name,
+                    ],
                     check=True,
                     capture_output=True,
                 )
@@ -1294,7 +1587,9 @@ def evaluate_svg_export_quality(
     """
     target = np.asarray(target_linear_rgb, dtype=np.float32)
     h, w = target.shape[:2]
-    rendered, method = _try_rasterize_svg_to_linear_rgb(svg_path=svg_path, width=w, height=h)
+    rendered, method = _try_rasterize_svg_to_linear_rgb(
+        svg_path=svg_path, width=w, height=h
+    )
     used_fallback = False
 
     if rendered is None and fallback_linear_rgb is not None:
@@ -1690,21 +1985,38 @@ def save_pptx_with_splat_png(
 
     slide_cx = max(px_to_emu(render_width), 1)
     slide_cy = max(px_to_emu(render_height), 1)
-    now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    now_iso = (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
     with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("[Content_Types].xml", _pptx_content_types_xml())
         zf.writestr("_rels/.rels", _pptx_root_rels_xml())
         zf.writestr("docProps/core.xml", _pptx_core_props_xml(now_iso))
         zf.writestr("docProps/app.xml", _pptx_app_props_xml())
-        zf.writestr("ppt/presentation.xml", _pptx_presentation_xml(slide_cx=slide_cx, slide_cy=slide_cy))
+        zf.writestr(
+            "ppt/presentation.xml",
+            _pptx_presentation_xml(slide_cx=slide_cx, slide_cy=slide_cy),
+        )
         zf.writestr("ppt/_rels/presentation.xml.rels", _pptx_presentation_rels_xml())
-        zf.writestr("ppt/slides/slide1.xml", _pptx_slide_xml(slide_cx=slide_cx, slide_cy=slide_cy))
+        zf.writestr(
+            "ppt/slides/slide1.xml",
+            _pptx_slide_xml(slide_cx=slide_cx, slide_cy=slide_cy),
+        )
         zf.writestr("ppt/slides/_rels/slide1.xml.rels", _pptx_slide_rels_xml())
         zf.writestr("ppt/slideLayouts/slideLayout1.xml", _pptx_slide_layout_xml())
-        zf.writestr("ppt/slideLayouts/_rels/slideLayout1.xml.rels", _pptx_slide_layout_rels_xml())
+        zf.writestr(
+            "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
+            _pptx_slide_layout_rels_xml(),
+        )
         zf.writestr("ppt/slideMasters/slideMaster1.xml", _pptx_slide_master_xml())
-        zf.writestr("ppt/slideMasters/_rels/slideMaster1.xml.rels", _pptx_slide_master_rels_xml())
+        zf.writestr(
+            "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+            _pptx_slide_master_rels_xml(),
+        )
         zf.writestr("ppt/theme/theme1.xml", _pptx_theme_xml())
         zf.writestr("ppt/presProps.xml", _pptx_pres_props_xml())
         zf.writestr("ppt/viewProps.xml", _pptx_view_props_xml())
@@ -1745,26 +2057,42 @@ def save_pptx_with_splats(
         background_linear_rgb=background_linear_rgb,
         splat_style=splat_style,
     )
-    now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    now_iso = (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
     with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("[Content_Types].xml", _pptx_content_types_xml())
         zf.writestr("_rels/.rels", _pptx_root_rels_xml())
         zf.writestr("docProps/core.xml", _pptx_core_props_xml(now_iso))
         zf.writestr("docProps/app.xml", _pptx_app_props_xml())
-        zf.writestr("ppt/presentation.xml", _pptx_presentation_xml(slide_cx=slide_cx, slide_cy=slide_cy))
+        zf.writestr(
+            "ppt/presentation.xml",
+            _pptx_presentation_xml(slide_cx=slide_cx, slide_cy=slide_cy),
+        )
         zf.writestr("ppt/_rels/presentation.xml.rels", _pptx_presentation_rels_xml())
         zf.writestr("ppt/slides/slide1.xml", slide_xml)
         zf.writestr("ppt/slides/_rels/slide1.xml.rels", _pptx_vector_slide_rels_xml())
         zf.writestr("ppt/slideLayouts/slideLayout1.xml", _pptx_slide_layout_xml())
-        zf.writestr("ppt/slideLayouts/_rels/slideLayout1.xml.rels", _pptx_slide_layout_rels_xml())
+        zf.writestr(
+            "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
+            _pptx_slide_layout_rels_xml(),
+        )
         zf.writestr("ppt/slideMasters/slideMaster1.xml", _pptx_slide_master_xml())
-        zf.writestr("ppt/slideMasters/_rels/slideMaster1.xml.rels", _pptx_slide_master_rels_xml())
+        zf.writestr(
+            "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+            _pptx_slide_master_rels_xml(),
+        )
         zf.writestr("ppt/theme/theme1.xml", _pptx_theme_xml())
         zf.writestr("ppt/presProps.xml", _pptx_pres_props_xml())
         zf.writestr("ppt/viewProps.xml", _pptx_view_props_xml())
 
-    logger.info("Saved PPTX with %s native splat shapes: %s", len(ordered_splats), output_path)
+    logger.info(
+        "Saved PPTX with %s native splat shapes: %s", len(ordered_splats), output_path
+    )
 
 
 def save_side_by_side_html(
@@ -1807,13 +2135,19 @@ def save_side_by_side_html(
     if metrics:
         for key, value in metrics.items():
             if isinstance(value, dict):
-                metrics_rows.append(f"<tr><td colspan='2'><strong>{key}</strong></td></tr>")
+                metrics_rows.append(
+                    f"<tr><td colspan='2'><strong>{key}</strong></td></tr>"
+                )
                 for sub_key, sub_val in value.items():
-                    metrics_rows.append(f"<tr><td>{key}.{sub_key}</td><td>{sub_val}</td></tr>")
+                    metrics_rows.append(
+                        f"<tr><td>{key}.{sub_key}</td><td>{sub_val}</td></tr>"
+                    )
             else:
                 metrics_rows.append(f"<tr><td>{key}</td><td>{value}</td></tr>")
     metrics_table = (
-        "<table>" + "".join(metrics_rows) + "</table>" if metrics_rows else "<p>No metrics recorded.</p>"
+        "<table>" + "".join(metrics_rows) + "</table>"
+        if metrics_rows
+        else "<p>No metrics recorded.</p>"
     )
 
     html = f"""<!doctype html>
@@ -1884,11 +2218,15 @@ def validate_export_roundtrip(
     4. Compare key parameters and basic export structure counts.
     """
     raw_dicts = [s.to_raw_splat().to_dict() for s in splats]
-    reconstructed = [GaussianSplat.from_raw_splat(RawSplat.from_dict(d)) for d in raw_dicts]
+    reconstructed = [
+        GaussianSplat.from_raw_splat(RawSplat.from_dict(d)) for d in raw_dicts
+    ]
 
     if len(splats) == 0:
         svg_content = generate_svg_content(reconstructed, width, height, k_sigma)
-        dml_content = generate_drawingml_slide_content(reconstructed, width, height, k_sigma)
+        dml_content = generate_drawingml_slide_content(
+            reconstructed, width, height, k_sigma
+        )
         return {
             "pass": True,
             "num_splats": 0,
@@ -1904,12 +2242,20 @@ def validate_export_roundtrip(
     color_delta = 0.0
     alpha_delta = 0.0
     for original, restored in zip(splats, reconstructed):
-        mu_delta = max(mu_delta, float(np.max(np.abs(original.mu[:2] - restored.mu[:2]))))
-        color_delta = max(color_delta, float(np.max(np.abs(original.color[:3] - restored.color[:3]))))
-        alpha_delta = max(alpha_delta, float(abs(float(original.alpha) - float(restored.alpha))))
+        mu_delta = max(
+            mu_delta, float(np.max(np.abs(original.mu[:2] - restored.mu[:2])))
+        )
+        color_delta = max(
+            color_delta, float(np.max(np.abs(original.color[:3] - restored.color[:3])))
+        )
+        alpha_delta = max(
+            alpha_delta, float(abs(float(original.alpha) - float(restored.alpha)))
+        )
 
     svg_content = generate_svg_content(reconstructed, width, height, k_sigma)
-    dml_content = generate_drawingml_slide_content(reconstructed, width, height, k_sigma)
+    dml_content = generate_drawingml_slide_content(
+        reconstructed, width, height, k_sigma
+    )
 
     svg_count = svg_content.count("<ellipse")
     svg_gradient_count = svg_content.count("<radialGradient")

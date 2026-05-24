@@ -129,8 +129,12 @@ def test_fixed_image_regression_suite_passes_thresholds(tmp_path: Path):
             acceptance_criteria=acceptance,
         )
 
-        manifest = json.loads((artifacts_path / "run_manifest.json").read_text(encoding="utf-8"))
-        assert manifest["acceptance"]["pass"], f"acceptance failed for {name}: {manifest['acceptance']}"
+        manifest = json.loads(
+            (artifacts_path / "run_manifest.json").read_text(encoding="utf-8")
+        )
+        assert manifest["acceptance"][
+            "pass"
+        ], f"acceptance failed for {name}: {manifest['acceptance']}"
         assert (artifacts_path / "iter-1.raw.json").exists()
         assert (artifacts_path / "iter-2.raw.json").exists()
 
@@ -160,7 +164,9 @@ def test_manifest_records_coverage_and_densify_improves_it(tmp_path: Path):
         artifacts_dir=str(artifacts_path),
     )
 
-    manifest = json.loads((artifacts_path / "run_manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (artifacts_path / "run_manifest.json").read_text(encoding="utf-8")
+    )
     stage1 = manifest["stages"][0]
     stage2 = manifest["stages"][1]
     assert "coverage" in stage1
@@ -181,15 +187,37 @@ def test_incremental_coverage_update_matches_full_recompute():
     width, height = 24, 24
 
     base_splats = [
-        create_isotropic_splat(center=np.array([6.0, 8.0]), sigma=2.4, color=np.array([0.8, 0.2, 0.2]), alpha=0.45),
-        create_isotropic_splat(center=np.array([15.0, 10.0]), sigma=2.0, color=np.array([0.2, 0.7, 0.2]), alpha=0.35),
+        create_isotropic_splat(
+            center=np.array([6.0, 8.0]),
+            sigma=2.4,
+            color=np.array([0.8, 0.2, 0.2]),
+            alpha=0.45,
+        ),
+        create_isotropic_splat(
+            center=np.array([15.0, 10.0]),
+            sigma=2.0,
+            color=np.array([0.2, 0.7, 0.2]),
+            alpha=0.35,
+        ),
     ]
     new_splats = [
-        create_isotropic_splat(center=np.array([12.0, 15.0]), sigma=2.8, color=np.array([0.1, 0.1, 0.8]), alpha=0.50),
-        create_isotropic_splat(center=np.array([18.0, 5.0]), sigma=1.8, color=np.array([0.9, 0.9, 0.2]), alpha=0.40),
+        create_isotropic_splat(
+            center=np.array([12.0, 15.0]),
+            sigma=2.8,
+            color=np.array([0.1, 0.1, 0.8]),
+            alpha=0.50,
+        ),
+        create_isotropic_splat(
+            center=np.array([18.0, 5.0]),
+            sigma=1.8,
+            color=np.array([0.9, 0.9, 0.2]),
+            alpha=0.40,
+        ),
     ]
 
-    base_coverage = converter._build_alpha_coverage_map(base_splats, width=width, height=height)
+    base_coverage = converter._build_alpha_coverage_map(
+        base_splats, width=width, height=height
+    )
     transmittance = np.clip(1.0 - base_coverage, 0.0, 1.0).astype(np.float32, copy=True)
     converter._apply_splats_to_transmittance(
         transmittance=transmittance,
@@ -199,7 +227,9 @@ def test_incremental_coverage_update_matches_full_recompute():
     )
     incremental_coverage = np.clip(1.0 - transmittance, 0.0, 1.0).astype(np.float32)
 
-    full_coverage = converter._build_alpha_coverage_map(base_splats + new_splats, width=width, height=height)
+    full_coverage = converter._build_alpha_coverage_map(
+        base_splats + new_splats, width=width, height=height
+    )
     assert np.allclose(incremental_coverage, full_coverage, atol=1e-6)
 
 
@@ -220,6 +250,8 @@ def test_residual_detail_pass_runs_and_respects_budget():
             "residual_detail_fraction": 0.25,
             "residual_detail_reserve_fraction": 0.25,
             "residual_detail_percentile": 80.0,
+            "residual_detail_edge_fraction": 0.75,
+            "residual_detail_edge_percentile": 50.0,
         },
     )
 
@@ -233,6 +265,13 @@ def test_residual_detail_pass_runs_and_respects_budget():
         artifacts_dir=None,
     )
 
-    residual_metrics = [m for m in stage_metrics if m.get("stage_type") == "residual_detail"]
+    residual_metrics = [
+        m for m in stage_metrics if m.get("stage_type") == "residual_detail"
+    ]
     assert residual_metrics, "expected at least one residual_detail stage metric"
+    assert residual_metrics[0]["residual_detail_edge_candidates"] > 0
+    assert (
+        residual_metrics[0]["residual_detail_added"]
+        >= residual_metrics[0]["residual_detail_edge_candidates"]
+    )
     assert len(final_splats) <= converter.max_splats

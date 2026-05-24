@@ -2,6 +2,92 @@
 
 Based on Image-GS research: [https://github.com/NYU-ICL/image-gs](https://github.com/NYU-ICL/image-gs)
 
+## Phase 1 Issue Breakdown (ADR-002)
+
+This section converts ADR-002 Phase 1 into concrete implementation tasks.
+
+### EPIC P1: Canonical PNG to Splat Foundation
+
+#### Issue P1-1: Canonical Raw Splat Schema
+- Status: `todo`
+- Goal: Establish one authoritative in-memory and on-disk splat contract.
+- Tasks:
+  - Define schema fields: `x`, `y`, `sx`, `sy`, `theta`, `r`, `g`, `b`, `a`.
+  - Add optional metadata fields (`source`, `score`, `layer`) behind a stable version key.
+  - Document schema in API docs and example files.
+- Deliverables:
+  - Schema dataclass/type + serializer/deserializer.
+  - Versioned JSON schema fixture for tests.
+- Acceptance:
+  - Invalid payloads fail fast with actionable errors.
+  - Valid payloads round-trip with zero loss.
+
+#### Issue P1-2: Parameter Constraints and Validation
+- Status: `todo`
+- Goal: Prevent unstable/invalid gaussians entering optimization or export.
+- Tasks:
+  - Enforce `sx > 0` and `sy > 0` with lower bounds.
+  - Clamp `a` to `[0, 1]` and color channels to `[0, 1]` internally.
+  - Add central validation function used by extractor, optimizer, and exporters.
+- Deliverables:
+  - Shared validation module.
+  - Unit tests for boundary and failure cases.
+- Acceptance:
+  - No exporter accepts invalid splat parameters.
+  - Validation errors identify parameter name and value.
+
+#### Issue P1-3: Deterministic Initializer
+- Status: `todo`
+- Goal: Reproducible initialization under fixed seed.
+- Tasks:
+  - Thread `seed` through CLI and Python API.
+  - Remove implicit global RNG usage in initialization path.
+  - Persist seed/config snapshot with output artifacts.
+- Deliverables:
+  - `--seed` CLI option and matching API parameter.
+  - Determinism tests on fixed input PNG.
+- Acceptance:
+  - Same input + seed + config produces byte-identical raw splat output.
+
+#### Issue P1-4: Baseline Optimizer (`L1 + SSIM`)
+- Status: `todo`
+- Goal: Establish reliable first differentiable optimization pass.
+- Tasks:
+  - Implement combined loss: `loss = w_l1 * L1 + w_ssim * (1 - SSIM)`.
+  - Add configurable iterations and learning-rate groups.
+  - Track per-iteration metrics and stop conditions.
+- Deliverables:
+  - Optimizer module with config.
+  - Unit/integration tests for loss decrease on reference image.
+- Acceptance:
+  - Median reconstruction error improves from initialization baseline.
+
+#### Issue P1-5: Stage-Level Observability
+- Status: `todo`
+- Goal: Make failures diagnosable without manual debugging.
+- Tasks:
+  - Emit `init`, `iter-N`, and `final` artifacts.
+  - Add structured logs for key metrics (loss, PSNR/SSIM, splat count).
+  - Add run manifest that captures input hash, seed, config, and timings.
+- Deliverables:
+  - Artifact writer utilities.
+  - Log schema and minimal viewer instructions.
+- Acceptance:
+  - Any failed run is diagnosable from artifacts/logs alone.
+
+#### Issue P1-6: Regression and Determinism Test Harness
+- Status: `todo`
+- Goal: Prevent regressions while pipeline is evolving.
+- Tasks:
+  - Add fixed reference PNG set for deterministic checks.
+  - Add threshold tests for quality and runtime guardrails.
+  - Add CI target for Phase 1 checks.
+- Deliverables:
+  - `tests/` coverage for schema, determinism, and optimizer behavior.
+  - One command to run Phase 1 validation suite.
+- Acceptance:
+  - CI fails on determinism drift or metric regression.
+
 ## Current vs Target Approach
 
 ### Current Limitation (Naive)
