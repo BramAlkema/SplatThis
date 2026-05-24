@@ -645,7 +645,7 @@ class PNG2SVGConverter:
             self.refinement_config.get("training_export_target", "canvas")
         )
         self.mlx_loss = (
-            str(self.refinement_config.get("mlx_loss", "linear-l1"))
+            str(self.refinement_config.get("mlx_loss", "l1-ssim"))
             .strip()
             .lower()
             .replace("_", "-")
@@ -2921,7 +2921,10 @@ class PNG2SVGConverter:
                     )
                 ),
             ),
-            loss=MlxLossConfig(self.mlx_loss),
+            loss=MlxLossConfig(
+                name=self.mlx_loss,
+                ssim_weight=float(self.loss_weights.get("ssim_weight", 0.2)),
+            ),
             trainable_groups=self.mlx_trainable_groups,
             tile_plan_mode=self.mlx_tile_plan,
             tile_plan_rebuild_interval=self.mlx_tile_plan_rebuild_interval,
