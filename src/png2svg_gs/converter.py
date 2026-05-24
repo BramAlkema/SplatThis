@@ -2886,6 +2886,16 @@ class PNG2SVGConverter:
                 ),
             )
         )
+        # Mirror the torch path (_create_training_renderer): when the
+        # training_export_target is svg or pptx-softedge, composite in sRGB
+        # so the trained splats match what browsers/rsvg produce when the
+        # SVG is rendered. Pure linear-light training (canvas runtime) keeps
+        # compositing_space="linear".
+        mlx_compositing_space = (
+            "srgb"
+            if self.training_export_target in {"svg", "pptx-softedge"}
+            else self.compositing_space
+        )
         stage_config = MlxStageConfig(
             renderer=MlxRendererConfig(
                 tile_size=tile_size,
@@ -2895,6 +2905,7 @@ class PNG2SVGConverter:
                     float(v) for v in self._background_linear_rgb[:3]
                 ),
                 max_active_splats_per_tile=max_active_splats_per_tile,
+                compositing_space=mlx_compositing_space,
             ),
             loss=MlxLossConfig(self.mlx_loss),
             trainable_groups=self.mlx_trainable_groups,

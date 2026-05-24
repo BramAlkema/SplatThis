@@ -49,6 +49,33 @@ def _require_mlx() -> Any:
     return mx
 
 
+def mlx_linear_to_srgb(x: Any) -> Any:
+    """Differentiable linear-RGB -> sRGB (gamma encode), values in [0,1].
+
+    Mirrors `torch_linear_to_srgb` in renderer.py so MLX-trained splats see
+    the same compositing math as torch-trained ones when compositing_space="srgb".
+    """
+    mlx = _require_mlx()
+    x_clipped = mlx.clip(x, 0.0, 1.0)
+    safe = mlx.maximum(x_clipped, 1e-12)
+    return mlx.where(
+        x_clipped <= 0.0031308,
+        12.92 * x_clipped,
+        1.055 * mlx.power(safe, 1.0 / 2.4) - 0.055,
+    )
+
+
+def mlx_srgb_to_linear(x: Any) -> Any:
+    """Differentiable sRGB -> linear-RGB (gamma decode), values in [0,1]."""
+    mlx = _require_mlx()
+    x_clipped = mlx.clip(x, 0.0, 1.0)
+    return mlx.where(
+        x_clipped <= 0.04045,
+        x_clipped / 12.92,
+        mlx.power((x_clipped + 0.055) / 1.055, 2.4),
+    )
+
+
 def splats_to_numpy_table(splats: Sequence[GaussianSplat]) -> np.ndarray:
     """Convert splats to the canonical float32 table [N, 11]."""
 
@@ -100,6 +127,7 @@ class MlxBatchedGaussianRenderer:
         background_color: Optional[Sequence[float]] = None,
         culling_sigma: float = 3.0,
         max_active_splats_per_tile: Optional[int] = None,
+        compositing_space: str = "linear",
     ):
         _require_mlx()
         self.width = int(width)
@@ -109,6 +137,9 @@ class MlxBatchedGaussianRenderer:
         self.blend_mode = str(blend_mode).strip().lower()
         if self.blend_mode not in {"alpha-over", "weighted"}:
             raise ValueError(f"Unsupported blend mode: {blend_mode}")
+        self.compositing_space = str(compositing_space).strip().lower()
+        if self.compositing_space not in {"linear", "srgb"}:
+            raise ValueError(f"Unsupported compositing space: {compositing_space}")
         self.culling_sigma = float(max(1.0, culling_sigma))
         if max_active_splats_per_tile is None:
             self.max_active_splats_per_tile = None
@@ -230,45 +261,66 @@ class MlxBatchedGaussianRenderer:
         )
 
     def render(self, table: ArrayLike, plan: Optional[MlxTilePlan] = None) -> Any:
-        """Render a canonical splat table to an MLX image [H, W, 3]."""
+        """Render a canonical splat table to an MLX image [H, W, 3].
+
+        In compositing_space="srgb" mode, colors and background are encoded
+        linear->sRGB before the alpha-over math and the output is decoded
+        sRGB->linear so external interfaces stay linear-RGB. Mirrors the
+        torch path in renderer.py:305-317.
+        """
 
         mlx = _require_mlx()
         table_mx = mlx.array(table) if isinstance(table, np.ndarray) else table
         if plan is None:
             plan = self.build_plan(table)
-        if plan.max_active == 0:
-            return mlx.broadcast_to(
-                mlx.reshape(self.background, (1, 1, 3)),
-                (self.height, self.width, 3),
+
+        srgb_mode = self.compositing_space == "srgb"
+        saved_background = self.background
+        if srgb_mode:
+            encoded_colors = mlx_linear_to_srgb(table_mx[:, 6:9])
+            table_mx = mlx.concatenate(
+                [table_mx[:, :6], encoded_colors, table_mx[:, 9:]], axis=1
             )
+            self.background = mlx_linear_to_srgb(saved_background)
 
-        sorted_table = table_mx[plan.order]
-        local_y, local_x = mlx.meshgrid(
-            mlx.arange(self.tile_size, dtype=mlx.float32),
-            mlx.arange(self.tile_size, dtype=mlx.float32),
-            indexing="ij",
-        )
-        local = mlx.stack([local_x, local_y], axis=-1)
-        num_tiles = plan.tiles_x * plan.tiles_y
-        tile_ids_all = mlx.arange(num_tiles, dtype=mlx.int32)
-        outputs = []
+        try:
+            if plan.max_active == 0:
+                rendered = mlx.broadcast_to(
+                    mlx.reshape(self.background, (1, 1, 3)),
+                    (self.height, self.width, 3),
+                )
+                return mlx_srgb_to_linear(rendered) if srgb_mode else rendered
 
-        for start in range(0, num_tiles, self.batch_tile_count):
-            end = min(start + self.batch_tile_count, num_tiles)
-            ids = tile_ids_all[start:end]
-            outputs.append(self._render_tile_batch(ids, local, sorted_table, plan))
+            sorted_table = table_mx[plan.order]
+            local_y, local_x = mlx.meshgrid(
+                mlx.arange(self.tile_size, dtype=mlx.float32),
+                mlx.arange(self.tile_size, dtype=mlx.float32),
+                indexing="ij",
+            )
+            local = mlx.stack([local_x, local_y], axis=-1)
+            num_tiles = plan.tiles_x * plan.tiles_y
+            tile_ids_all = mlx.arange(num_tiles, dtype=mlx.int32)
+            outputs = []
 
-        tiles = mlx.concatenate(outputs, axis=0)
-        padded = mlx.reshape(
-            tiles,
-            (plan.tiles_y, plan.tiles_x, self.tile_size, self.tile_size, 3),
-        )
-        padded = mlx.transpose(padded, (0, 2, 1, 3, 4))
-        image = mlx.reshape(
-            padded,
-            (plan.tiles_y * self.tile_size, plan.tiles_x * self.tile_size, 3),
-        )
-        return image[: self.height, : self.width, :]
+            for start in range(0, num_tiles, self.batch_tile_count):
+                end = min(start + self.batch_tile_count, num_tiles)
+                ids = tile_ids_all[start:end]
+                outputs.append(self._render_tile_batch(ids, local, sorted_table, plan))
+
+            tiles = mlx.concatenate(outputs, axis=0)
+            padded = mlx.reshape(
+                tiles,
+                (plan.tiles_y, plan.tiles_x, self.tile_size, self.tile_size, 3),
+            )
+            padded = mlx.transpose(padded, (0, 2, 1, 3, 4))
+            image = mlx.reshape(
+                padded,
+                (plan.tiles_y * self.tile_size, plan.tiles_x * self.tile_size, 3),
+            )
+            rendered = image[: self.height, : self.width, :]
+            return mlx_srgb_to_linear(rendered) if srgb_mode else rendered
+        finally:
+            self.background = saved_background
 
     def _render_tile_batch(
         self,

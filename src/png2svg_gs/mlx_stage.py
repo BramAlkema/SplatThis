@@ -55,6 +55,7 @@ class MlxRendererConfig:
     background_color: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     culling_sigma: float = 3.0
     max_active_splats_per_tile: Optional[int] = None
+    compositing_space: str = "linear"
 
 
 @dataclass(frozen=True)
@@ -164,6 +165,7 @@ def optimize_stage_mlx(
         background_color=stage_config.renderer.background_color,
         culling_sigma=stage_config.renderer.culling_sigma,
         max_active_splats_per_tile=stage_config.renderer.max_active_splats_per_tile,
+        compositing_space=stage_config.renderer.compositing_space,
     )
     plan: Optional[MlxTilePlan] = None
     plan_build_sec = 0.0
@@ -416,6 +418,7 @@ def optimize_stage_mlx(
         "tile_plan_max_active": int(plan.max_active),
         "renderer_tile_size": int(stage_config.renderer.tile_size),
         "renderer_batch_tile_count": int(stage_config.renderer.batch_tile_count),
+        "renderer_compositing_space": str(stage_config.renderer.compositing_space),
         "mlx_compile_enabled": True,
     }
     return MlxStageResult(
