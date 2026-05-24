@@ -149,8 +149,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--mlx-loss",
         default=None,
-        choices=["linear-l1", "oklab-l1", "weighted-oklab-l1"],
-        help="MLX optimizer loss profile when --optimizer-backend=mlx.",
+        choices=["linear-l1", "oklab-l1", "weighted-oklab-l1", "l1-ssim"],
+        help="MLX optimizer loss profile when --optimizer-backend=mlx. "
+        "Default 'l1-ssim' matches the torch path's combined L1+SSIM loss "
+        "and avoids the color-cast regression that pure linear-l1 produces "
+        "on PPTX/SVG export.",
     )
     parser.add_argument(
         "--mlx-tile-plan",
@@ -238,10 +241,13 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["auto", "canvas", "svg", "pptx-softedge"],
         help="Renderer target used during optimization. 'auto' (default) picks "
         "based on --format: svg->svg (sRGB compositing, matches browser SVG "
-        "blending), pptx->pptx-softedge (sRGB + PPTX soft-edge proxy), "
-        "canvas->canvas (linear-light compositing). 'pptx-softedge' trains "
-        "directly against a differentiable approximation of native PPTX "
-        "soft-edge ellipses.",
+        "blending), pptx->canvas (linear-light training; safer across PPTX "
+        "viewers), canvas->canvas. The 'pptx-softedge' target trains against "
+        "PowerPoint's actual brighter-than-Gaussian soft-edge rendering; it "
+        "produces the closest match in real PowerPoint but can look washed "
+        "out in soffice/LibreOffice (which renders the file more literally). "
+        "Pass --training-export-target pptx-softedge explicitly if your "
+        "deployment target is real PowerPoint.",
     )
     parser.add_argument(
         "--svg-recipe",
@@ -333,15 +339,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     refinement_config = {}
     if args.svg_recipe is not None:
         refinement_config["svg_export_recipe"] = args.svg_recipe
-    # Resolve "auto" training_export_target: derive from output format so SVG
-    # exports train under sRGB compositing (matches browser blend), PPTX uses
-    # the soft-edge proxy, and canvas keeps real linear-light compositing.
+    # Resolve "auto" training_export_target. SVG output trains under sRGB
+    # compositing (matches browser/rsvg blend). PPTX defaults to canvas
+    # (linear-light) because the pptx-softedge proxy is calibrated for
+    # PowerPoint's brighter-than-Gaussian rendering and produces washed-out
+    # output in soffice/LibreOffice viewers; users targeting real PowerPoint
+    # should pass --training-export-target pptx-softedge explicitly.
     training_export_target = args.training_export_target
     if training_export_target == "auto":
         if args.fmt == "svg":
             training_export_target = "svg"
-        elif args.fmt == "pptx":
-            training_export_target = "pptx-softedge"
         else:
             training_export_target = "canvas"
     if training_export_target != "canvas":
