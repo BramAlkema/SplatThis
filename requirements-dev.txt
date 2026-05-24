@@ -1,12 +1,15 @@
-# Development dependencies for SplatThis
+# Development dependencies for SplatThis.
+# Formatters and linters are PINNED so CI and local dev agree on the rules.
+# When you bump these, also bump pyproject.toml [project.optional-dependencies.dev]
+# and re-run `black src/ tests/` + `isort src/ tests/`.
 pytest>=7.0.0
 pytest-cov>=4.0.0
-black>=22.0.0
+black==26.5.1
 mypy>=0.991
 flake8>=5.0.0
-isort>=5.10.0
+isort==5.13.2
 
 # Additional development tools
 pre-commit>=2.20.0
 bandit>=1.7.0
-safety>=2.0.0
+safety>=3.0.0

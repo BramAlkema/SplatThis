@@ -41,10 +41,12 @@ dependencies = [
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
-    "black>=22.0.0",
+    # Formatters PINNED so CI and local devs agree on the rules.
+    # Bump in lockstep with requirements-dev.txt.
+    "black==26.5.1",
+    "isort==5.13.2",
     "mypy>=0.991",
-    "flake8>=5.0.0",
-    "isort>=5.10.0"
+    "flake8>=5.0.0"
 ]
 test = [
     "pytest>=7.0.0",

@@ -629,9 +629,7 @@ def generate_parallax_canvas_html(
     for (const el of layerEls) el.style.transform = 'translate3d(0,0,0)';
   });
 })();
-""".replace(
-            "__W__", str(int(width))
-        )
+""".replace("__W__", str(int(width)))
         .replace("__H__", str(int(height)))
         .replace("__BG__", f"[{bg_lin[0]:.6f},{bg_lin[1]:.6f},{bg_lin[2]:.6f}]")
         .replace("__STRENGTH__", f"{float(parallax_strength):.3f}")
@@ -791,9 +789,7 @@ def generate_canvas_html(
   ctx.putImageData(img, 0, 0);
   status.textContent = 'rendered ' + SPLATS.length + ' splats at ' + W + '×' + H + ' in ' + (performance.now() - t0).toFixed(0) + 'ms (linear-space alpha-over)';
 })();
-""".replace(
-            "__W__", str(int(width))
-        )
+""".replace("__W__", str(int(width)))
         .replace("__H__", str(int(height)))
         .replace("__BG__", f"[{bg_lin[0]:.6f},{bg_lin[1]:.6f},{bg_lin[2]:.6f}]")
         .replace("__SPLATS__", splats_json)
