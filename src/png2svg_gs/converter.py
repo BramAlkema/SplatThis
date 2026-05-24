@@ -2862,8 +2862,12 @@ class PNG2SVGConverter:
         tile_size = int(
             np.clip(self.refinement_config.get("renderer_tile_size", 16), 4, 128)
         )
+        # MLX renderer prefers a larger tile batch than the torch renderer because
+        # mx.compile fuses fewer-but-bigger batches more effectively. Sweet spot
+        # on a 400px M-series run was ~128 (40% faster vs 16); above ~256 memory
+        # pressure dominates.
         batch_tile_count = int(
-            max(1, self.refinement_config.get("renderer_batch_tile_count", 16))
+            max(1, self.refinement_config.get("renderer_batch_tile_count", 128))
         )
         max_active_raw = self.refinement_config.get(
             "renderer_max_active_splats_per_tile"

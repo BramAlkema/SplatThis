@@ -19,7 +19,8 @@ from .mlx_optimizer import (
     table_to_splats,
     tree_to_numpy_table,
 )
-from .mlx_renderer import MlxBatchedGaussianRenderer, splats_to_numpy_table
+from .mlx_renderer import MlxBatchedGaussianRenderer, MlxTilePlan, splats_to_numpy_table
+from .optimizer import DEFAULT_LEARNING_RATES
 from .splat import GaussianSplat
 
 try:  # pragma: no cover - exercised in MLX-enabled environments.
@@ -164,14 +165,17 @@ def optimize_stage_mlx(
         culling_sigma=stage_config.renderer.culling_sigma,
         max_active_splats_per_tile=stage_config.renderer.max_active_splats_per_tile,
     )
-    plan = None
+    plan: Optional[MlxTilePlan] = None
     plan_build_sec = 0.0
-    plan_rebuilds = 0
+    plan_builds_total = 0
+    plan_rebuilds_in_loop = 0
     plan_rebuild_sec = 0.0
     plan_rebuild_interval = int(max(1, stage_config.tile_plan_rebuild_interval))
 
-    def rebuild_plan(tree: Mapping[str, Any]) -> None:
-        nonlocal plan, plan_build_sec, plan_rebuilds, plan_rebuild_sec
+    def rebuild_plan(
+        tree: Mapping[str, Any], *, count_as_training_rebuild: bool
+    ) -> None:
+        nonlocal plan, plan_build_sec, plan_builds_total, plan_rebuilds_in_loop, plan_rebuild_sec
         table = params.as_table(tree)
         mlx.eval(table)
         current_table_np = np.asarray(table, dtype=np.float32)
@@ -179,36 +183,114 @@ def optimize_stage_mlx(
         plan = renderer.build_plan(current_table_np)
         elapsed = time.perf_counter() - plan_t0
         plan_build_sec += elapsed
-        if plan_rebuilds > 0:
+        plan_builds_total += 1
+        if count_as_training_rebuild:
+            plan_rebuilds_in_loop += 1
             plan_rebuild_sec += elapsed
-        plan_rebuilds += 1
 
-    rebuild_plan(trainable)
+    rebuild_plan(trainable, count_as_training_rebuild=False)
     loss_fn = make_loss_fn(stage_config.loss)
-    adam = MlxAdam(
-        trainable,
-        learning_rates=learning_rates,
-        grad_clip_norm=stage_config.grad_clip_norm,
-    )
+    lr_dict: Dict[str, float] = {
+        **{k: float(v) for k, v in DEFAULT_LEARNING_RATES.items()},
+        **{k: float(v) for k, v in (learning_rates or {}).items()},
+    }
 
-    def loss_for_tree(tree: Dict[str, Any]) -> Any:
-        if plan is None:
-            raise RuntimeError("MLX tile plan has not been built")
-        rendered = renderer.render(params.as_table(tree), plan=plan)
+    tile_size_const = int(renderer.tile_size)
+    tiles_x_const = (int(width) + tile_size_const - 1) // tile_size_const
+    tiles_y_const = (int(height) + tile_size_const - 1) // tile_size_const
+    image_width_const = int(width)
+    image_height_const = int(height)
+    beta1 = 0.9
+    beta2 = 0.999
+    eps = 1e-8
+    grad_clip_norm = stage_config.grad_clip_norm
+
+    # Compiled train_step: render + loss + grad + Adam + constrain, fused.
+    # The compile cache keys on (plan.indices.shape[1] == max_active); pin
+    # `max_active_splats_per_tile` if you want zero recompiles across rebuilds.
+    def _loss_with_plan(
+        tree: Dict[str, Any],
+        plan_indices: Any,
+        plan_mask: Any,
+        plan_order: Any,
+    ) -> Any:
+        max_active = int(plan_indices.shape[1])
+        plan_inner = MlxTilePlan(
+            indices=plan_indices,
+            mask=plan_mask,
+            order=plan_order,
+            tiles_x=tiles_x_const,
+            tiles_y=tiles_y_const,
+            max_active=max_active,
+            tile_size=tile_size_const,
+        )
+        rendered = renderer.render(params.as_table(tree), plan=plan_inner)
         return loss_fn(rendered, target, weights)
 
-    start_loss_arr = loss_for_tree(trainable)
+    _value_and_grad = mlx.value_and_grad(_loss_with_plan)
+
+    def _train_step(
+        tree: Dict[str, Any],
+        m: Dict[str, Any],
+        v: Dict[str, Any],
+        step_count: Any,
+        plan_indices: Any,
+        plan_mask: Any,
+        plan_order: Any,
+    ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], Any, Any, Any, Any]:
+        loss, grads = _value_and_grad(tree, plan_indices, plan_mask, plan_order)
+        total_sq = mlx.array(0.0, dtype=mlx.float32)
+        for grad in grads.values():
+            total_sq = total_sq + mlx.sum(grad * grad)
+        grad_norm = mlx.sqrt(total_sq)
+        if grad_clip_norm is None:
+            clip_factor = mlx.array(1.0, dtype=mlx.float32)
+        else:
+            clip_factor = mlx.minimum(
+                mlx.array(1.0, dtype=mlx.float32),
+                float(grad_clip_norm) / (grad_norm + 1e-6),
+            )
+        step_next = step_count + 1
+        step_f = step_next.astype(mlx.float32)
+        bias1 = 1.0 - mlx.power(mlx.array(beta1, dtype=mlx.float32), step_f)
+        bias2 = 1.0 - mlx.power(mlx.array(beta2, dtype=mlx.float32), step_f)
+        new_m: Dict[str, Any] = {}
+        new_v: Dict[str, Any] = {}
+        new_tree: Dict[str, Any] = {}
+        for key, value in tree.items():
+            grad_clipped = grads[key] * clip_factor
+            new_m[key] = beta1 * m[key] + (1.0 - beta1) * grad_clipped
+            new_v[key] = beta2 * v[key] + (1.0 - beta2) * (grad_clipped * grad_clipped)
+            m_hat = new_m[key] / bias1
+            v_hat = new_v[key] / bias2
+            lr = lr_dict.get(key, 0.0)
+            new_tree[key] = value - lr * m_hat / (mlx.sqrt(v_hat) + eps)
+        new_tree = constrain_trainable_tree(
+            new_tree,
+            image_width=image_width_const,
+            image_height=image_height_const,
+        )
+        return new_tree, new_m, new_v, step_next, loss, grad_norm, clip_factor
+
+    compiled_train_step = mlx.compile(_train_step)
+
+    start_loss_arr = _loss_with_plan(trainable, plan.indices, plan.mask, plan.order)
     mlx.eval(start_loss_arr)
     start_loss = _array_scalar(start_loss_arr)
-    best_loss = start_loss
-    end_loss = start_loss
+    best_loss_arr = start_loss_arr
     best_tree = clone_tree(trainable)
+    m_state: Dict[str, Any] = {k: mlx.zeros_like(v) for k, v in trainable.items()}
+    v_state: Dict[str, Any] = {k: mlx.zeros_like(v) for k, v in trainable.items()}
+    step_count_arr = mlx.array(0, dtype=mlx.int32)
+    loss_arr = start_loss_arr
+    grad_norm_arr = mlx.array(0.0, dtype=mlx.float32)
+    clip_factor_arr = mlx.array(1.0, dtype=mlx.float32)
     iter_times: List[float] = []
-    grad_norm = 0.0
-    clip_factor = 1.0
+    last_logged_loss = start_loss
+    last_logged_grad_norm = 0.0
+    last_logged_clip_factor = 1.0
     stopped_for_time_budget = False
 
-    value_and_grad = mlx.value_and_grad(loss_for_tree)
     stage_t0 = time.perf_counter()
     iterations_run = 0
     progress_interval = int(max(0, stage_config.progress_interval))
@@ -223,31 +305,37 @@ def optimize_stage_mlx(
                 )
             break
         iter_t0 = time.perf_counter()
-        loss, grads = value_and_grad(trainable)
-        trainable, opt_stats = adam.step(trainable, grads)
-        trainable = constrain_trainable_tree(
+        (
             trainable,
-            image_width=width,
-            image_height=height,
+            m_state,
+            v_state,
+            step_count_arr,
+            loss_arr,
+            grad_norm_arr,
+            clip_factor_arr,
+        ) = compiled_train_step(
+            trainable,
+            m_state,
+            v_state,
+            step_count_arr,
+            plan.indices,
+            plan.mask,
+            plan.order,
         )
+        # Track best entirely MLX-side; no host sync per iter.
+        is_better = loss_arr < best_loss_arr
+        best_loss_arr = mlx.where(is_better, loss_arr, best_loss_arr)
+        best_tree = {
+            key: mlx.where(is_better, trainable[key], best_tree[key])
+            for key in trainable
+        }
         if plan_mode == "periodic" and (iteration + 1) % plan_rebuild_interval == 0:
-            rebuild_plan(trainable)
-        mlx.eval(
-            loss, opt_stats["grad_norm"], opt_stats["clip_factor"], *trainable.values()
-        )
+            rebuild_plan(trainable, count_as_training_rebuild=True)
         iter_elapsed = time.perf_counter() - iter_t0
         iter_times.append(iter_elapsed)
         iterations_run = iteration + 1
 
-        end_loss = _array_scalar(loss)
-        grad_norm = _array_scalar(opt_stats["grad_norm"])
-        clip_factor = _array_scalar(opt_stats["clip_factor"])
-        if end_loss < best_loss:
-            best_loss = end_loss
-            best_tree = clone_tree(trainable)
-            mlx.eval(*best_tree.values())
-
-        if (
+        should_log = bool(
             verbose
             and progress_interval
             and (
@@ -255,22 +343,47 @@ def optimize_stage_mlx(
                 or (iteration + 1) % progress_interval == 0
                 or iteration + 1 == num_iters
             )
-        ):
+        )
+        if should_log:
+            mlx.eval(loss_arr, grad_norm_arr, clip_factor_arr, best_loss_arr)
+            last_logged_loss = _array_scalar(loss_arr)
+            last_logged_grad_norm = _array_scalar(grad_norm_arr)
+            last_logged_clip_factor = _array_scalar(clip_factor_arr)
             avg_iter = statistics.mean(iter_times)
             logger.info(
                 "  MLX iteration %s/%s: loss=%.6f best=%.6f iter=%.3fs avg=%.3fs",
                 iteration + 1,
                 num_iters,
-                end_loss,
-                best_loss,
+                last_logged_loss,
+                _array_scalar(best_loss_arr),
                 iter_elapsed,
                 avg_iter,
             )
 
+    # Single final sync for end-of-stage scalars + best_tree materialization.
+    # Must precede elapsed_sec capture: in static/deferred-eval modes the loop
+    # body queues lazy ops and the real GPU work happens here.
+    mlx.eval(
+        loss_arr,
+        grad_norm_arr,
+        clip_factor_arr,
+        best_loss_arr,
+        *best_tree.values(),
+    )
     elapsed_sec = time.perf_counter() - stage_t0
+    end_loss = _array_scalar(loss_arr)
+    best_loss = _array_scalar(best_loss_arr)
+    grad_norm = (
+        _array_scalar(grad_norm_arr) if iterations_run > 0 else last_logged_grad_norm
+    )
+    clip_factor = (
+        _array_scalar(clip_factor_arr)
+        if iterations_run > 0
+        else last_logged_clip_factor
+    )
     best_table_np = tree_to_numpy_table(params, best_tree)
     if plan_mode == "periodic":
-        rebuild_plan(best_tree)
+        rebuild_plan(best_tree, count_as_training_rebuild=False)
     if plan is None:
         raise RuntimeError("MLX tile plan has not been built")
     best_rendered = renderer.render(params.as_table(best_tree), plan=plan)
@@ -296,12 +409,14 @@ def optimize_stage_mlx(
         "tile_plan_mode": plan_mode,
         "tile_plan_build_sec": float(plan_build_sec),
         "tile_plan_rebuild_interval": int(plan_rebuild_interval),
-        "tile_plan_rebuilds": int(plan_rebuilds),
+        "tile_plan_rebuilds": int(plan_rebuilds_in_loop),
+        "tile_plan_builds_total": int(plan_builds_total),
         "tile_plan_rebuild_sec": float(plan_rebuild_sec),
         "tile_plan_tiles": int(plan.tiles_x * plan.tiles_y),
         "tile_plan_max_active": int(plan.max_active),
         "renderer_tile_size": int(stage_config.renderer.tile_size),
         "renderer_batch_tile_count": int(stage_config.renderer.batch_tile_count),
+        "mlx_compile_enabled": True,
     }
     return MlxStageResult(
         splats=table_to_splats(best_table_np, templates=splats),

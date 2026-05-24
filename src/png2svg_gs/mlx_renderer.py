@@ -146,7 +146,6 @@ class MlxBatchedGaussianRenderer:
 
         order_np = np.argsort(table_np[:, 10], kind="stable").astype(np.int32)
         sorted_table = table_np[order_np]
-        bins: List[List[int]] = [[] for _ in range(num_tiles)]
 
         radius = self.culling_sigma * np.maximum(sorted_table[:, 2], sorted_table[:, 3])
         x_min = np.clip(
@@ -170,27 +169,55 @@ class MlxBatchedGaussianRenderer:
             tiles_y - 1,
         )
 
-        for splat_idx in range(sorted_table.shape[0]):
-            for ty in range(int(y_min[splat_idx]), int(y_max[splat_idx]) + 1):
-                base = ty * tiles_x
-                for tx in range(int(x_min[splat_idx]), int(x_max[splat_idx]) + 1):
-                    bins[base + tx].append(splat_idx)
+        # Vectorized tile assignment: build (splat_idx, tile_idx) pairs via a
+        # repeat-and-broadcast over each splat's bounding tile-range, then
+        # group by tile via stable argsort.
+        widths = (x_max - x_min + 1).astype(np.int64)
+        heights = (y_max - y_min + 1).astype(np.int64)
+        counts = widths * heights
+        total_pairs = int(counts.sum())
+        if total_pairs == 0:
+            max_active = 0
+        else:
+            splat_ids = np.repeat(
+                np.arange(sorted_table.shape[0], dtype=np.int64), counts
+            )
+            # Per-pair local offset within each splat's [width*height] bbox grid.
+            within = np.arange(total_pairs, dtype=np.int64) - np.repeat(
+                np.concatenate(([0], np.cumsum(counts[:-1]))), counts
+            )
+            widths_per_pair = np.repeat(widths, counts)
+            ty_offsets = within // widths_per_pair
+            tx_offsets = within - ty_offsets * widths_per_pair
+            ty = np.repeat(y_min, counts) + ty_offsets
+            tx = np.repeat(x_min, counts) + tx_offsets
+            tile_ids = ty * tiles_x + tx
+            # Group pairs by tile_id, stable to preserve importance order.
+            sort_idx = np.argsort(tile_ids, kind="stable")
+            tile_ids_sorted = tile_ids[sort_idx]
+            splat_ids_sorted = splat_ids[sort_idx]
+            tile_counts = np.bincount(tile_ids_sorted, minlength=num_tiles)
+            max_active = int(tile_counts.max())
+            if self.max_active_splats_per_tile is not None:
+                max_active = min(max_active, self.max_active_splats_per_tile)
 
-        max_active = max((len(indices) for indices in bins), default=0)
-        if self.max_active_splats_per_tile is not None:
-            max_active = min(max_active, self.max_active_splats_per_tile)
         if max_active <= 0:
             indices_np = np.zeros((num_tiles, 0), dtype=np.int32)
             mask_np = np.zeros((num_tiles, 0), dtype=np.float32)
         else:
             indices_np = np.zeros((num_tiles, max_active), dtype=np.int32)
             mask_np = np.zeros((num_tiles, max_active), dtype=np.float32)
-            for tile_ix, indices in enumerate(bins):
-                selected = indices[:max_active]
-                count = len(selected)
-                if count:
-                    indices_np[tile_ix, :count] = selected
-                    mask_np[tile_ix, :count] = 1.0
+            # Per-pair "slot index" within each tile (0..count-1), capped at max_active.
+            tile_starts = np.concatenate(([0], np.cumsum(tile_counts[:-1])))
+            slot_idx = np.arange(total_pairs, dtype=np.int64) - np.repeat(
+                tile_starts, tile_counts
+            )
+            keep = slot_idx < max_active
+            kept_tiles = tile_ids_sorted[keep]
+            kept_splats = splat_ids_sorted[keep]
+            kept_slots = slot_idx[keep]
+            indices_np[kept_tiles, kept_slots] = kept_splats.astype(np.int32)
+            mask_np[kept_tiles, kept_slots] = 1.0
 
         return MlxTilePlan(
             indices=mlx.array(indices_np),
