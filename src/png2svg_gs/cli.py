@@ -231,9 +231,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--pptx-splat-style",
         default="soft-edge",
         choices=["soft-edge", "gradient"],
-        help="Native PPTX splat primitive style. 'soft-edge' is the LibreOffice-tolerant "
-        "default; 'gradient' uses PowerPoint-tuned DrawingML radial gradients "
-        "with semi-transparent stops.",
+        help="Native PPTX splat primitive style. 'soft-edge' (default) is the "
+        "LibreOffice-tolerant style; 'gradient' uses DrawingML radial gradients "
+        "with semi-transparent stops and produces noticeably better fidelity "
+        "in PowerPoint, especially when combined with --pptx-proxy-postfit-iters "
+        "(e.g. 40 or 120) for a post-fit color/alpha refinement against the "
+        "gradient compositor.",
     )
     parser.add_argument(
         "--training-export-target",
