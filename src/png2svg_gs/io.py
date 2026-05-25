@@ -1848,226 +1848,170 @@ def _splat_geometry_for_drawingml(
     return x_emu, y_emu, w_emu, h_emu, rot_attr, color_hex
 
 
+def _drawingml_shape_lines(
+    shape_id: int,
+    x_emu: int,
+    y_emu: int,
+    w_emu: int,
+    h_emu: int,
+    rot_attr: str,
+    fill_lines: List[str],
+    effect_lines: List[str] = (),
+) -> List[str]:
+    """Wrap a per-splat fill + effect body in the standard DrawingML
+    ellipse-shape scaffold. All three splat styles (gradient / soft-edge /
+    blur) share this 30-line boilerplate; only the inner fill / effect
+    differs."""
+    return [
+        "      <p:sp>",
+        "        <p:nvSpPr>",
+        f'          <p:cNvPr id="{shape_id}" name="Splat {shape_id}"/>',
+        "          <p:cNvSpPr>",
+        '            <a:spLocks noGrp="1"/>',
+        "          </p:cNvSpPr>",
+        "          <p:nvPr/>",
+        "        </p:nvSpPr>",
+        "        <p:spPr>",
+        f"          <a:xfrm{rot_attr}>",
+        f'            <a:off x="{x_emu}" y="{y_emu}"/>',
+        f'            <a:ext cx="{w_emu}" cy="{h_emu}"/>',
+        "          </a:xfrm>",
+        '          <a:prstGeom prst="ellipse">',
+        "            <a:avLst/>",
+        "          </a:prstGeom>",
+        *fill_lines,
+        "          <a:ln>",
+        "            <a:noFill/>",
+        "          </a:ln>",
+        *(["          <a:effectLst>", *effect_lines, "          </a:effectLst>"]
+          if effect_lines else []),
+        "        </p:spPr>",
+        "        <p:txBody>",
+        "          <a:bodyPr/>",
+        "          <a:lstStyle/>",
+        "          <a:p>",
+        "            <a:endParaRPr/>",
+        "          </a:p>",
+        "        </p:txBody>",
+        "      </p:sp>",
+    ]
+
+
+def _solid_fill_lines(color_hex: str, alpha_units: int) -> List[str]:
+    return [
+        "          <a:solidFill>",
+        f'            <a:srgbClr val="{color_hex}"><a:alpha val="{alpha_units}"/></a:srgbClr>',
+        "          </a:solidFill>",
+    ]
+
+
 def _splat_to_drawingml_shape_lines(
     splat: GaussianSplat,
     shape_id: int,
     k_sigma: float,
     splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
 ) -> List[str]:
-    """Convert one Gaussian splat to a DrawingML ellipse shape."""
-    normalized_splat_style = _normalize_pptx_splat_style(splat_style)
-    if normalized_splat_style == "soft-edge":
+    """Convert one Gaussian splat to a DrawingML ellipse shape.
+
+    Three styles dispatched by splat_style: 'gradient' (radial gradient
+    stops mirroring the renderer's alpha-over Gaussian), 'soft-edge'
+    (solid fill + `<a:softEdge>`), 'blur' (solid fill + `<a:blur>` with
+    rad calibrated to σ × 3.25 EMU)."""
+    normalized = _normalize_pptx_splat_style(splat_style)
+    if normalized == "soft-edge":
         return _splat_to_drawingml_soft_edge_shape_lines(splat, shape_id, k_sigma)
-    if normalized_splat_style == "blur":
+    if normalized == "blur":
         return _splat_to_drawingml_blur_shape_lines(splat, shape_id, k_sigma)
 
     x_emu, y_emu, w_emu, h_emu, rot_attr, color_hex = _splat_geometry_for_drawingml(
         splat, k_sigma
     )
 
-    # Radial gradient stops mirroring the SVG path: the renderer's per-splat
-    # alpha-over opacity 1-exp(-a*exp(-0.5*(t*footprint)^2)). PowerPoint's
-    # path="circle" profile is too broad for a canvas Gaussian; path="shape"
-    # and a lower alpha scale matched the measured PowerPoint roundtrip best.
+    # Radial gradient stops mirroring the renderer's per-splat alpha-over
+    # opacity 1 - exp(-α · exp(-r²/2σ²)). PPTX gradient-fill renders at
+    # ~0.4× the trainer's alpha; PPTX_GRADIENT_ALPHA_SCALE compensates.
+    # path="shape" matched the PowerPoint roundtrip better than "circle".
     alpha_clamped = float(np.clip(splat.alpha * PPTX_GRADIENT_ALPHA_SCALE, 0.0, 1.0))
     footprint = ELLIPSE_OVERLAP_BOOST * k_sigma
-    gradient_stop_lines: List[str] = []
+    stop_lines: List[str] = []
     for j in range(SVG_GRADIENT_STOPS):
         t = j / (SVG_GRADIENT_STOPS - 1)
         opacity = 1.0 - math.exp(-alpha_clamped * math.exp(-0.5 * (t * footprint) ** 2))
         pos = int(round(t * 100000.0))
         a_units = int(np.clip(round(opacity * 100000.0), 0, 100000))
-        gradient_stop_lines.extend(
-            [
-                f'              <a:gs pos="{pos}">',
-                f'                <a:srgbClr val="{color_hex}"><a:alpha val="{a_units}"/></a:srgbClr>',
-                "              </a:gs>",
-            ]
-        )
-
-    return [
-        "      <p:sp>",
-        "        <p:nvSpPr>",
-        f'          <p:cNvPr id="{shape_id}" name="Splat {shape_id}"/>',
-        "          <p:cNvSpPr>",
-        '            <a:spLocks noGrp="1"/>',
-        "          </p:cNvSpPr>",
-        "          <p:nvPr/>",
-        "        </p:nvSpPr>",
-        "        <p:spPr>",
-        f"          <a:xfrm{rot_attr}>",
-        f'            <a:off x="{x_emu}" y="{y_emu}"/>',
-        f'            <a:ext cx="{w_emu}" cy="{h_emu}"/>',
-        "          </a:xfrm>",
-        '          <a:prstGeom prst="ellipse">',
-        "            <a:avLst/>",
-        "          </a:prstGeom>",
+        stop_lines.extend([
+            f'              <a:gs pos="{pos}">',
+            f'                <a:srgbClr val="{color_hex}"><a:alpha val="{a_units}"/></a:srgbClr>',
+            "              </a:gs>",
+        ])
+    fill_lines = [
         "          <a:gradFill>",
         "            <a:gsLst>",
-        *gradient_stop_lines,
+        *stop_lines,
         "            </a:gsLst>",
         '            <a:path path="shape">',
         "            </a:path>",
         "          </a:gradFill>",
-        "          <a:ln>",
-        "            <a:noFill/>",
-        "          </a:ln>",
-        "        </p:spPr>",
-        "        <p:txBody>",
-        "          <a:bodyPr/>",
-        "          <a:lstStyle/>",
-        "          <a:p>",
-        "            <a:endParaRPr/>",
-        "          </a:p>",
-        "        </p:txBody>",
-        "      </p:sp>",
     ]
+    return _drawingml_shape_lines(
+        shape_id, x_emu, y_emu, w_emu, h_emu, rot_attr, fill_lines
+    )
 
 
 def _splat_to_drawingml_soft_edge_shape_lines(
-    splat: GaussianSplat,
-    shape_id: int,
-    k_sigma: float,
+    splat: GaussianSplat, shape_id: int, k_sigma: float,
 ) -> List[str]:
-    """Convert one splat to a PowerPoint-friendly soft-edge native ellipse."""
+    """Solid-fill ellipse + `<a:softEdge>`. softEdge feathers the outer
+    `rad` ring inward — NOT a Gaussian, but cheap to render and visually
+    smoother than a hard shape."""
     effective_k_sigma = float(k_sigma) * PPTX_SOFT_EDGE_K_SIGMA_SCALE
     x_emu, y_emu, w_emu, h_emu, rot_attr, color_hex = _splat_geometry_for_drawingml(
-        splat,
-        effective_k_sigma,
+        splat, effective_k_sigma,
     )
     center_opacity = 1.0 - math.exp(-float(np.clip(splat.alpha, 0.0, 1.0)))
-    alpha_units = int(
-        np.clip(
-            round(center_opacity * PPTX_SOFT_EDGE_ALPHA_SCALE * 100000.0), 0, 100000
-        )
-    )
+    alpha_units = int(np.clip(
+        round(center_opacity * PPTX_SOFT_EDGE_ALPHA_SCALE * 100000.0), 0, 100000,
+    ))
     soft_radius = int(max(0, round(min(w_emu, h_emu) * PPTX_SOFT_EDGE_RADIUS_FACTOR)))
-    return [
-        "      <p:sp>",
-        "        <p:nvSpPr>",
-        f'          <p:cNvPr id="{shape_id}" name="Splat {shape_id}"/>',
-        "          <p:cNvSpPr>",
-        '            <a:spLocks noGrp="1"/>',
-        "          </p:cNvSpPr>",
-        "          <p:nvPr/>",
-        "        </p:nvSpPr>",
-        "        <p:spPr>",
-        f"          <a:xfrm{rot_attr}>",
-        f'            <a:off x="{x_emu}" y="{y_emu}"/>',
-        f'            <a:ext cx="{w_emu}" cy="{h_emu}"/>',
-        "          </a:xfrm>",
-        '          <a:prstGeom prst="ellipse">',
-        "            <a:avLst/>",
-        "          </a:prstGeom>",
-        "          <a:solidFill>",
-        f'            <a:srgbClr val="{color_hex}"><a:alpha val="{alpha_units}"/></a:srgbClr>',
-        "          </a:solidFill>",
-        "          <a:ln>",
-        "            <a:noFill/>",
-        "          </a:ln>",
-        "          <a:effectLst>",
-        f'            <a:softEdge rad="{soft_radius}"/>',
-        "          </a:effectLst>",
-        "        </p:spPr>",
-        "        <p:txBody>",
-        "          <a:bodyPr/>",
-        "          <a:lstStyle/>",
-        "          <a:p>",
-        "            <a:endParaRPr/>",
-        "          </a:p>",
-        "        </p:txBody>",
-        "      </p:sp>",
-    ]
+    return _drawingml_shape_lines(
+        shape_id, x_emu, y_emu, w_emu, h_emu, rot_attr,
+        fill_lines=_solid_fill_lines(color_hex, alpha_units),
+        effect_lines=[f'            <a:softEdge rad="{soft_radius}"/>'],
+    )
 
 
 def _splat_to_drawingml_blur_shape_lines(
-    splat: GaussianSplat,
-    shape_id: int,
-    k_sigma: float,
+    splat: GaussianSplat, shape_id: int, k_sigma: float,
 ) -> List[str]:
-    """Convert one splat to a small solid-fill ellipse + isotropic `<a:blur>`.
+    """Small solid-fill ellipse + isotropic `<a:blur>`. The blur produces
+    the Gaussian shape; the ellipse is the small coloured core. Mass-
+    fraction alpha compensation keeps the convolved peak ≈ α even though
+    `<a:blur>` spreads the core's mass. See
+    svg2ooxml/docs/reference/research/blur-fidelity-results.md for the
+    σ_blur = rad / 3.25 calibration."""
+    # Use a smaller core (k=1.0) than the gradient/soft-edge styles. The
+    # convolution math expects a near-point source for the output to
+    # approximate a true Gaussian.
+    x_emu, y_emu, w_emu, h_emu, rot_attr, color_hex = _splat_geometry_for_drawingml(
+        splat, float(PPTX_BLUR_CORE_K_SIGMA) / ELLIPSE_OVERLAP_BOOST,
+    )
+    # Geometric-mean sigma drives the isotropic blur radius; ellipse
+    # aspect-ratio (baked into w_emu/h_emu) absorbs the anisotropy.
+    eigenvals, _ = splat.eigendecomposition()
+    sigma_geo_px = float(np.sqrt(
+        max(float(eigenvals[0]) * float(eigenvals[1]), 1e-16)
+    )) ** 0.5
 
-    The blur kernel does the Gaussian shaping; the ellipse is a small
-    coloured core. With calibration `σ_blur = rad / 3.25` (see
-    blur-fidelity-results.md), per-splat sigma maps to rad in EMU.
-    """
-    eigenvals, eigenvecs = splat.eigendecomposition()
-    sigma_major = float(np.sqrt(max(float(eigenvals[0]), 1e-8)))
-    sigma_minor = float(np.sqrt(max(float(eigenvals[1]), 1e-8)))
-    # Geometric-mean sigma drives the isotropic blur; ellipse aspect ratio
-    # absorbs the anisotropy.
-    sigma_geo = float(np.sqrt(max(sigma_major * sigma_minor, 1e-8)))
-
-    # Small coloured core; blur produces the actual Gaussian falloff.
-    core_k = float(PPTX_BLUR_CORE_K_SIGMA)
-    rx = max(MIN_ELLIPSE_RADIUS_PX, core_k * sigma_major)
-    ry = max(MIN_ELLIPSE_RADIUS_PX, core_k * sigma_minor)
-    cx, cy = float(splat.mu[0]), float(splat.mu[1])
-    x = cx - rx
-    y = cy - ry
-    w = max(2.0 * rx, 1e-3)
-    h = max(2.0 * ry, 1e-3)
-    x_emu = px_to_emu(x)
-    y_emu = px_to_emu(y)
-    w_emu = max(px_to_emu(w), 1)
-    h_emu = max(px_to_emu(h), 1)
-
-    rotation_rad = float(np.arctan2(eigenvecs[1, 0], eigenvecs[0, 0]))
-    rotation_deg = float(np.degrees(rotation_rad))
-    rotation_units = int(round(rotation_deg * 60000.0))
-    rot_attr = f' rot="{rotation_units}"' if abs(rotation_units) > 0 else ""
-
-    rgb_srgb = linear_to_srgb(np.array(splat.color[:3], dtype=np.float32))
-    r = int(np.clip(np.round(rgb_srgb[0] * 255), 0, 255))
-    g = int(np.clip(np.round(rgb_srgb[1] * 255), 0, 255))
-    b = int(np.clip(np.round(rgb_srgb[2] * 255), 0, 255))
-    color_hex = f"{r:02X}{g:02X}{b:02X}"
-
-    # Convolution conserves total mass — peak drops by the disk's coverage
-    # fraction of the Gaussian kernel. Compensate by scaling alpha by the
-    # inverse mass-fraction, clamped at 1.
     mass_fraction = 1.0 - math.exp(-0.5 * float(PPTX_BLUR_CORE_K_SIGMA) ** 2)
     alpha_compensated = min(1.0, float(splat.alpha) / max(mass_fraction, 1e-6))
     alpha_units = int(np.clip(round(alpha_compensated * 100000.0), 0, 100000))
+    rad_emu = max(1, int(round(sigma_geo_px * EMU_PER_PX * PPTX_BLUR_RAD_PER_SIGMA)))
 
-    rad_emu = max(1, int(round(sigma_geo * EMU_PER_PX * PPTX_BLUR_RAD_PER_SIGMA)))
-
-    return [
-        "      <p:sp>",
-        "        <p:nvSpPr>",
-        f'          <p:cNvPr id="{shape_id}" name="Splat {shape_id}"/>',
-        "          <p:cNvSpPr>",
-        '            <a:spLocks noGrp="1"/>',
-        "          </p:cNvSpPr>",
-        "          <p:nvPr/>",
-        "        </p:nvSpPr>",
-        "        <p:spPr>",
-        f"          <a:xfrm{rot_attr}>",
-        f'            <a:off x="{x_emu}" y="{y_emu}"/>',
-        f'            <a:ext cx="{w_emu}" cy="{h_emu}"/>',
-        "          </a:xfrm>",
-        '          <a:prstGeom prst="ellipse">',
-        "            <a:avLst/>",
-        "          </a:prstGeom>",
-        "          <a:solidFill>",
-        f'            <a:srgbClr val="{color_hex}"><a:alpha val="{alpha_units}"/></a:srgbClr>',
-        "          </a:solidFill>",
-        "          <a:ln>",
-        "            <a:noFill/>",
-        "          </a:ln>",
-        "          <a:effectLst>",
-        f'            <a:blur rad="{rad_emu}" grow="1"/>',
-        "          </a:effectLst>",
-        "        </p:spPr>",
-        "        <p:txBody>",
-        "          <a:bodyPr/>",
-        "          <a:lstStyle/>",
-        "          <a:p>",
-        "            <a:endParaRPr/>",
-        "          </a:p>",
-        "        </p:txBody>",
-        "      </p:sp>",
-    ]
+    return _drawingml_shape_lines(
+        shape_id, x_emu, y_emu, w_emu, h_emu, rot_attr,
+        fill_lines=_solid_fill_lines(color_hex, alpha_units),
+        effect_lines=[f'            <a:blur rad="{rad_emu}" grow="1"/>'],
+    )
 
 
 def splat_to_svg_ellipse(

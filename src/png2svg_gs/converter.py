@@ -3852,7 +3852,57 @@ class PNG2SVGConverter:
 
         return current_splats, residual_metrics
 
-    def _postfit_splats_for_svg_proxy(
+    def _build_postfit_renderer(self, width: int, height: int):
+        """Standard Gaussian renderer with sRGB compositing — used by both
+        SVG-proxy and blur-proxy postfit. Matches what SVG with gradient
+        stops AND PPTX-blur output approximate at the per-splat level."""
+        cfg = self.refinement_config
+        return create_renderer(
+            backend=self.renderer_backend,
+            width=width,
+            height=height,
+            device=self.device,
+            tile_size=int(np.clip(cfg.get("renderer_tile_size", 16), 4, 128)),
+            blend_mode="alpha-over",
+            background_color=self._background_linear_rgb,
+            compositing_space="srgb",
+            tile_bin_rebuild_interval=int(
+                max(1, cfg.get("renderer_tile_bin_rebuild_interval", 1))
+            ),
+            tile_bin_padding=float(max(0.0, cfg.get("renderer_tile_bin_padding", 0.0))),
+            batch_tile_count=int(max(1, cfg.get("renderer_batch_tile_count", 32))),
+            max_active_splats_per_tile=(
+                None
+                if cfg.get("renderer_max_active_splats_per_tile") in (None, "", 0)
+                else int(cfg["renderer_max_active_splats_per_tile"])
+            ),
+        )
+
+    def _compute_safe_background_mask(
+        self, splats: List[GaussianSplat], width: int, height: int,
+    ) -> np.ndarray:
+        """Per-splat boolean: is this splat parked in a 'safe background'
+        region where we should cap its alpha? Only used by the SVG proxy
+        postfit to suppress backdrop bleed-through."""
+        mask = np.zeros(len(splats), dtype=bool)
+        if self._region_background_safe_mask is None:
+            return mask
+        for idx, splat in enumerate(splats):
+            x = int(np.clip(round(float(splat.mu[0])), 0, width - 1))
+            y = int(np.clip(round(float(splat.mu[1])), 0, height - 1))
+            is_safe = bool(self._region_background_safe_mask[y, x])
+            if self._region_foreground_mask is not None and bool(
+                self._region_foreground_mask[y, x]
+            ):
+                is_safe = False
+            if self._region_edge_band_mask is not None and bool(
+                self._region_edge_band_mask[y, x]
+            ):
+                is_safe = False
+            mask[idx] = is_safe
+        return mask
+
+    def _run_color_alpha_postfit(
         self,
         splats: List[GaussianSplat],
         image: np.ndarray,
@@ -3860,95 +3910,59 @@ class PNG2SVGConverter:
         height: int,
         num_iters: int,
         verbose: bool,
+        *,
+        stage_type: str,
+        color_lr: float,
+        alpha_lr: float,
+        color_reg_weight: float,
+        alpha_reg_weight: float,
+        mse_weight: float = 0.35,
+        safe_alpha_cap: Optional[float] = None,
+        safe_alpha_reg_weight: float = 0.0,
+        log_label: str = "post-fit",
     ) -> Tuple[List[GaussianSplat], Dict[str, Any]]:
-        """Post-fit color/alpha against a browser-like SVG compositing proxy."""
+        """Core color+alpha postfit loop. Both SVG-proxy and blur-proxy
+        postfit are thin wrappers around this.
+
+        `safe_alpha_cap` enables the SVG-style backdrop-suppression policy:
+        splats in 'safe background' regions get their effective alpha
+        clamped to (raw_alpha × safe_alpha_cap). When None, no policy is
+        applied (the blur proxy uses this — its compositor doesn't need
+        the suppression).
+        """
         if not splats or num_iters <= 0:
             return splats, {
-                "stage": -2,
-                "stage_type": "svg_proxy_postfit",
-                "iterations": 0,
-                "splat_count": len(splats),
+                "stage": -2, "stage_type": stage_type,
+                "iterations": 0, "splat_count": len(splats),
             }
 
         base = splats_to_tensor(splats, device=self.device)
         target_linear = torch.from_numpy(image[:, :, :3]).to(self.device)
         target_srgb = torch_linear_to_srgb(target_linear)
-        renderer = create_renderer(
-            backend=self.renderer_backend,
-            width=width,
-            height=height,
-            device=self.device,
-            tile_size=int(
-                np.clip(self.refinement_config.get("renderer_tile_size", 16), 4, 128)
-            ),
-            blend_mode="alpha-over",
-            background_color=self._background_linear_rgb,
-            compositing_space="srgb",
-            tile_bin_rebuild_interval=int(
-                max(
-                    1,
-                    self.refinement_config.get("renderer_tile_bin_rebuild_interval", 1),
-                )
-            ),
-            tile_bin_padding=float(
-                max(0.0, self.refinement_config.get("renderer_tile_bin_padding", 0.0))
-            ),
-            batch_tile_count=int(
-                max(1, self.refinement_config.get("renderer_batch_tile_count", 32))
-            ),
-            max_active_splats_per_tile=(
-                None
-                if self.refinement_config.get("renderer_max_active_splats_per_tile")
-                in (None, "", 0)
-                else int(
-                    self.refinement_config.get("renderer_max_active_splats_per_tile")
-                )
-            ),
-        )
+        renderer = self._build_postfit_renderer(width, height)
 
-        safe_mask_np = np.zeros(len(splats), dtype=bool)
-        if self._region_background_safe_mask is not None:
-            for idx, splat in enumerate(splats):
-                x = int(np.clip(round(float(splat.mu[0])), 0, width - 1))
-                y = int(np.clip(round(float(splat.mu[1])), 0, height - 1))
-                is_safe = bool(self._region_background_safe_mask[y, x])
-                if self._region_foreground_mask is not None and bool(
-                    self._region_foreground_mask[y, x]
-                ):
-                    is_safe = False
-                if self._region_edge_band_mask is not None and bool(
-                    self._region_edge_band_mask[y, x]
-                ):
-                    is_safe = False
-                safe_mask_np[idx] = is_safe
+        use_safe_mask = safe_alpha_cap is not None
+        if use_safe_mask:
+            safe_mask_np = self._compute_safe_background_mask(splats, width, height)
+        else:
+            safe_mask_np = np.zeros(len(splats), dtype=bool)
         safe_mask = torch.from_numpy(safe_mask_np).to(self.device)
 
         init_color = torch.clamp(base[:, 6:9], 1e-4, 1.0 - 1e-4)
         init_alpha = torch.clamp(base[:, 9], 1e-4, 1.0 - 1e-4)
         color_logits = torch.nn.Parameter(torch.logit(init_color))
         alpha_logits = torch.nn.Parameter(torch.logit(init_alpha).unsqueeze(-1))
-        optimizer = torch.optim.Adam(
-            [
-                {
-                    "params": [color_logits],
-                    "lr": float(
-                        self.refinement_config.get("svg_proxy_postfit_color_lr", 0.035)
-                    ),
-                },
-                {
-                    "params": [alpha_logits],
-                    "lr": float(
-                        self.refinement_config.get("svg_proxy_postfit_alpha_lr", 0.020)
-                    ),
-                },
-            ]
-        )
+        optimizer = torch.optim.Adam([
+            {"params": [color_logits], "lr": color_lr},
+            {"params": [alpha_logits], "lr": alpha_lr},
+        ])
 
-        init_effective_alpha = torch.where(
-            safe_mask,
-            init_alpha * float(SVG_BACKGROUND_ALPHA_CAP),
-            init_alpha,
-        )
+        def apply_safe_cap(a: torch.Tensor) -> torch.Tensor:
+            if not use_safe_mask:
+                return a
+            return torch.where(safe_mask, a * float(safe_alpha_cap), a)
+
+        init_effective_alpha = apply_safe_cap(init_alpha)
         best_loss = float("inf")
         best_color: Optional[torch.Tensor] = None
         best_alpha: Optional[torch.Tensor] = None
@@ -3964,11 +3978,7 @@ class PNG2SVGConverter:
             optimizer.zero_grad(set_to_none=True)
             color = torch.sigmoid(color_logits)
             raw_alpha = torch.sigmoid(alpha_logits).squeeze(-1)
-            effective_alpha = torch.where(
-                safe_mask,
-                raw_alpha * float(SVG_BACKGROUND_ALPHA_CAP),
-                raw_alpha,
-            )
+            effective_alpha = apply_safe_cap(raw_alpha)
 
             fitted = base.clone()
             fitted[:, 6:9] = color
@@ -3978,31 +3988,17 @@ class PNG2SVGConverter:
             mse = torch.mean((rendered_srgb - target_srgb) ** 2)
             color_reg = torch.mean(torch.abs(color - init_color))
             alpha_reg = torch.mean(torch.abs(effective_alpha - init_effective_alpha))
-            safe_alpha_mean = (
-                torch.mean(effective_alpha[safe_mask])
-                if bool(torch.any(safe_mask))
-                else torch.tensor(0.0, device=self.device)
-            )
             loss = (
-                l1
-                + 0.35 * mse
-                + float(
-                    self.refinement_config.get("svg_proxy_postfit_color_reg", 0.012)
-                )
-                * color_reg
-                + float(
-                    self.refinement_config.get("svg_proxy_postfit_alpha_reg", 0.008)
-                )
-                * alpha_reg
-                + float(
-                    self.refinement_config.get(
-                        "svg_proxy_postfit_safe_alpha_reg", 0.005
-                    )
-                )
-                * safe_alpha_mean
+                l1 + mse_weight * mse
+                + color_reg_weight * color_reg
+                + alpha_reg_weight * alpha_reg
             )
+            if use_safe_mask and safe_alpha_reg_weight > 0.0 and bool(torch.any(safe_mask)):
+                loss = loss + safe_alpha_reg_weight * torch.mean(effective_alpha[safe_mask])
             loss.backward()
-            torch.nn.utils.clip_grad_norm_([color_logits, alpha_logits], max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(
+                [color_logits, alpha_logits], max_norm=1.0,
+            )
             optimizer.step()
 
             loss_value = float(loss.item())
@@ -4014,41 +4010,64 @@ class PNG2SVGConverter:
                 best_alpha = effective_alpha.detach().clone()
             if verbose and (iteration + 1) % 20 == 0:
                 logger.info(
-                    "  SVG proxy post-fit %s/%s: loss=%.6f l1=%.6f",
-                    iteration + 1,
-                    num_iters,
-                    loss_value,
-                    final_l1,
+                    "  %s %s/%s: loss=%.6f l1=%.6f",
+                    log_label, iteration + 1, num_iters, loss_value, final_l1,
                 )
 
+        result_meta = {
+            "stage": -2,
+            "stage_type": stage_type,
+            "iterations": int(iterations_run),
+            "splat_count": len(splats),
+            "best_loss": float(best_loss),
+            "runtime_sec": float(time.time() - start_time),
+        }
         if best_color is None or best_alpha is None:
-            return splats, {
-                "stage": -2,
-                "stage_type": "svg_proxy_postfit",
-                "iterations": int(iterations_run),
-                "splat_count": len(splats),
-                "best_loss": float(best_loss),
-                "runtime_sec": float(time.time() - start_time),
-            }
+            return splats, result_meta
 
         output_tensor = base.clone()
         output_tensor[:, 6:9] = best_color
         output_tensor[:, 9] = best_alpha
         fitted_splats = self._copy_splat_layers(
-            splats,
-            tensor_to_splats(output_tensor.detach()),
+            splats, tensor_to_splats(output_tensor.detach()),
         )
-        return fitted_splats, {
-            "stage": -2,
-            "stage_type": "svg_proxy_postfit",
-            "iterations": int(iterations_run),
+        result_meta.update({
             "splat_count": len(fitted_splats),
-            "best_loss": float(best_loss),
             "final_l1_srgb": float(final_l1),
             "final_mse_srgb": float(final_mse),
-            "safe_background_splats": int(np.count_nonzero(safe_mask_np)),
-            "runtime_sec": float(time.time() - start_time),
-        }
+        })
+        if use_safe_mask:
+            result_meta["safe_background_splats"] = int(np.count_nonzero(safe_mask_np))
+        return fitted_splats, result_meta
+
+    def _postfit_splats_for_svg_proxy(
+        self,
+        splats: List[GaussianSplat],
+        image: np.ndarray,
+        width: int,
+        height: int,
+        num_iters: int,
+        verbose: bool,
+    ) -> Tuple[List[GaussianSplat], Dict[str, Any]]:
+        """Post-fit color/alpha against a browser-like SVG compositing proxy.
+
+        Includes safe-background alpha suppression (SVG_BACKGROUND_ALPHA_CAP)
+        to keep background-region splats from bleeding through the gradient
+        primitive's "stained-glass" rendering."""
+        cfg = self.refinement_config
+        return self._run_color_alpha_postfit(
+            splats, image, width, height, num_iters, verbose,
+            stage_type="svg_proxy_postfit",
+            color_lr=float(cfg.get("svg_proxy_postfit_color_lr", 0.035)),
+            alpha_lr=float(cfg.get("svg_proxy_postfit_alpha_lr", 0.020)),
+            color_reg_weight=float(cfg.get("svg_proxy_postfit_color_reg", 0.012)),
+            alpha_reg_weight=float(cfg.get("svg_proxy_postfit_alpha_reg", 0.008)),
+            safe_alpha_cap=float(SVG_BACKGROUND_ALPHA_CAP),
+            safe_alpha_reg_weight=float(
+                cfg.get("svg_proxy_postfit_safe_alpha_reg", 0.005)
+            ),
+            log_label="SVG proxy post-fit",
+        )
 
     def _postfit_splats_for_blur_proxy(
         self,
@@ -4061,156 +4080,23 @@ class PNG2SVGConverter:
     ) -> Tuple[List[GaussianSplat], Dict[str, Any]]:
         """Post-fit color/alpha against a Gaussian-convolution proxy.
 
-        The blur recipe emits each splat as conv(small_disk, Gaussian σ) ≈
-        Gaussian σ, which is exactly what the standard Gaussian renderer
-        produces. No safe-mask alpha suppression — the gradient-stop recipes
-        need that for the "stained-glass" backdrop suppression in safe
-        background regions, but the blur recipe doesn't have the same
-        compositor bias.
-        """
-        if not splats or num_iters <= 0:
-            return splats, {
-                "stage": -2,
-                "stage_type": "blur_proxy_postfit",
-                "iterations": 0,
-                "splat_count": len(splats),
-            }
-
-        base = splats_to_tensor(splats, device=self.device)
-        target_linear = torch.from_numpy(image[:, :, :3]).to(self.device)
-        target_srgb = torch_linear_to_srgb(target_linear)
-        renderer = create_renderer(
-            backend=self.renderer_backend,
-            width=width,
-            height=height,
-            device=self.device,
-            tile_size=int(
-                np.clip(self.refinement_config.get("renderer_tile_size", 16), 4, 128)
-            ),
-            blend_mode="alpha-over",
-            background_color=self._background_linear_rgb,
-            compositing_space="srgb",
-            tile_bin_rebuild_interval=int(
-                max(
-                    1,
-                    self.refinement_config.get("renderer_tile_bin_rebuild_interval", 1),
-                )
-            ),
-            tile_bin_padding=float(
-                max(0.0, self.refinement_config.get("renderer_tile_bin_padding", 0.0))
-            ),
-            batch_tile_count=int(
-                max(1, self.refinement_config.get("renderer_batch_tile_count", 32))
-            ),
-            max_active_splats_per_tile=(
-                None
-                if self.refinement_config.get("renderer_max_active_splats_per_tile")
-                in (None, "", 0)
-                else int(
-                    self.refinement_config.get("renderer_max_active_splats_per_tile")
-                )
-            ),
+        The blur recipe emits each splat as conv(small_disk, Gaussian σ),
+        which the standard Gaussian renderer already models exactly. No
+        safe-mask alpha suppression — the blur compositor doesn't show the
+        stained-glass backdrop bleed-through that the gradient recipe does.
+        Lighter regularization than SVG postfit since there's no aggressive
+        backdrop-cap policy to balance against."""
+        cfg = self.refinement_config
+        return self._run_color_alpha_postfit(
+            splats, image, width, height, num_iters, verbose,
+            stage_type="blur_proxy_postfit",
+            color_lr=float(cfg.get("blur_proxy_postfit_color_lr", 0.030)),
+            alpha_lr=float(cfg.get("blur_proxy_postfit_alpha_lr", 0.015)),
+            color_reg_weight=float(cfg.get("blur_proxy_postfit_color_reg", 0.004)),
+            alpha_reg_weight=float(cfg.get("blur_proxy_postfit_alpha_reg", 0.002)),
+            mse_weight=0.30,
+            log_label="blur proxy post-fit",
         )
-
-        init_color = torch.clamp(base[:, 6:9], 1e-4, 1.0 - 1e-4)
-        init_alpha = torch.clamp(base[:, 9], 1e-4, 1.0 - 1e-4)
-        color_logits = torch.nn.Parameter(torch.logit(init_color))
-        alpha_logits = torch.nn.Parameter(torch.logit(init_alpha).unsqueeze(-1))
-        optimizer = torch.optim.Adam(
-            [
-                {
-                    "params": [color_logits],
-                    "lr": float(
-                        self.refinement_config.get("blur_proxy_postfit_color_lr", 0.030)
-                    ),
-                },
-                {
-                    "params": [alpha_logits],
-                    "lr": float(
-                        self.refinement_config.get("blur_proxy_postfit_alpha_lr", 0.015)
-                    ),
-                },
-            ]
-        )
-
-        best_loss = float("inf")
-        best_color: Optional[torch.Tensor] = None
-        best_alpha: Optional[torch.Tensor] = None
-        start_time = time.time()
-        iterations_run = 0
-        final_l1 = 0.0
-        final_mse = 0.0
-
-        for iteration in range(int(num_iters)):
-            if self._time_budget_exhausted():
-                break
-            iterations_run = iteration + 1
-            optimizer.zero_grad(set_to_none=True)
-            color = torch.sigmoid(color_logits)
-            alpha = torch.sigmoid(alpha_logits).squeeze(-1)
-
-            fitted = base.clone()
-            fitted[:, 6:9] = color
-            fitted[:, 9] = alpha
-            rendered_srgb = torch_linear_to_srgb(renderer(fitted))
-            l1 = torch.mean(torch.abs(rendered_srgb - target_srgb))
-            mse = torch.mean((rendered_srgb - target_srgb) ** 2)
-            # Very light regularization toward init to prevent runaway.
-            color_reg = torch.mean(torch.abs(color - init_color))
-            alpha_reg = torch.mean(torch.abs(alpha - init_alpha))
-            loss = (
-                l1
-                + 0.30 * mse
-                + 0.004 * color_reg
-                + 0.002 * alpha_reg
-            )
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_([color_logits, alpha_logits], max_norm=1.0)
-            optimizer.step()
-
-            loss_value = float(loss.item())
-            final_l1 = float(l1.item())
-            final_mse = float(mse.item())
-            if loss_value < best_loss:
-                best_loss = loss_value
-                best_color = color.detach().clone()
-                best_alpha = alpha.detach().clone()
-            if verbose and (iteration + 1) % 20 == 0:
-                logger.info(
-                    "  blur proxy post-fit %s/%s: loss=%.6f l1=%.6f",
-                    iteration + 1,
-                    num_iters,
-                    loss_value,
-                    final_l1,
-                )
-
-        if best_color is None or best_alpha is None:
-            return splats, {
-                "stage": -2,
-                "stage_type": "blur_proxy_postfit",
-                "iterations": int(iterations_run),
-                "splat_count": len(splats),
-                "best_loss": float(best_loss),
-                "runtime_sec": float(time.time() - start_time),
-            }
-
-        output_tensor = base.clone()
-        output_tensor[:, 6:9] = best_color
-        output_tensor[:, 9] = best_alpha
-        fitted_splats = self._copy_splat_layers(
-            splats,
-            tensor_to_splats(output_tensor.detach()),
-        )
-        return fitted_splats, {
-            "stage": -2,
-            "stage_type": "blur_proxy_postfit",
-            "iterations": int(iterations_run),
-            "splat_count": len(fitted_splats),
-            "best_loss": float(best_loss),
-            "final_l1_srgb": float(final_l1),
-            "final_mse_srgb": float(final_mse),
-            "runtime_sec": float(time.time() - start_time),
-        }
 
     def _postfit_splats_for_pptx_proxy(
         self,
