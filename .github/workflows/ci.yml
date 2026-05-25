@@ -10,11 +10,12 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
-      # Python 3.8 is EOL; MLX/mlx-stage modules require 3.9+. The matrix
-      # covers our supported Python versions across the three major OSes.
+      # Single Python version (3.13), three OSes. We don't gain coverage
+      # from older Pythons — MLX and the venv are 3.13. Cross-OS still
+      # catches pathlib / line-ending / shell quirks.
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.13"]
 
     steps:
     - uses: actions/checkout@v4

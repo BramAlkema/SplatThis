@@ -148,7 +148,7 @@ flake8 src/ tests/
 mypy src/
 ```
 
-Requires Python ≥ 3.10. On Apple Silicon, MLX 0.31+ is the default optimizer
+Requires Python ≥ 3.13. On Apple Silicon, MLX 0.31+ is the default optimizer
 backend; pass `--optimizer-backend torch` for CUDA/CPU runs.
 
 ## Useful flags
