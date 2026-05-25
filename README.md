@@ -8,6 +8,18 @@ Takes a PNG, fits a few thousand 2D Gaussian splats to it, and emits one of:
 - **PPTX** — drop-in PowerPoint slide with native DrawingML shapes
 - **Canvas HTML** — JS runtime that does linear-light alpha-over (near-photorealistic)
 
+## Gallery
+
+| Source | Canvas (HTML) | SVG |
+|---|---|---|
+| ![source](docs/demo/source.png) | ![canvas](docs/demo/canvas_render.png) | ![svg](docs/demo/svg_render.png) |
+| input.png · 476×502 | LPIPS **0.11** · PSNR 29 dB | LPIPS **0.32** · 1 MB editable |
+
+Same 2 000-splat set, ~8 min training on Apple Silicon. Files:
+[chameleon.svg](docs/demo/chameleon.svg) (1 MB, opens in any vector editor),
+[canvas.html](docs/demo/canvas.html) (interactive, 350 KB self-contained
+JS runtime — opens in any browser).
+
 Most other Gaussian-splatting projects optimize for 3D scenes or training-throughput on
 CUDA GPUs. This one optimizes for **deployable vector documents**: SVG you can put
 in a webpage, PPTX you can paste into a deck.

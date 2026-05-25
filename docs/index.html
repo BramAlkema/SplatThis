@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SplatThis — Photo → SVG / PPTX / HTML via 2D Gaussian splatting</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #0e0e10; color: #eaeaea; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: #6fa8ff; }
+  a:hover { color: #9cc3ff; }
+  main { max-width: 980px; margin: 0 auto; padding: 56px 24px 80px; }
+  h1 { font-size: 36px; font-weight: 700; margin: 0 0 8px; letter-spacing: -0.02em; }
+  .tagline { font-size: 18px; color: #b6b6c0; margin: 0 0 36px; }
+  h2 { font-size: 22px; margin: 48px 0 16px; letter-spacing: -0.01em; }
+  p { line-height: 1.55; color: #d5d5dd; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 24px 0; }
+  .grid figure { background: #1a1a1d; border-radius: 8px; padding: 12px; margin: 0; border: 1px solid #2a2a2e; }
+  .grid img { width: 100%; height: auto; display: block; border-radius: 4px; }
+  .grid figcaption { color: #9c9ca5; font-size: 13px; margin-top: 10px; font-family: ui-monospace, monospace; }
+  .grid figcaption strong { color: #eaeaea; }
+  .demo-frame { width: 100%; border: 1px solid #2a2a2e; border-radius: 8px; background: #000; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid #2a2a2e; }
+  th { color: #9c9ca5; font-weight: 500; }
+  code { background: #1a1a1d; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+  .links { display: flex; gap: 16px; margin: 32px 0 0; flex-wrap: wrap; }
+  .links a { background: #1a1a1d; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #2a2a2e; }
+  .links a:hover { background: #24242a; border-color: #6fa8ff; }
+  .note { color: #9c9ca5; font-size: 13px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>SplatThis</h1>
+<p class="tagline">Photo → SVG / PPTX / HTML via 2D Gaussian splatting. Apple-Silicon native.</p>
+
+<h2>Three deploy targets, one splat set</h2>
+<p>Same chameleon source. 2 000 splats, ~8 min training on M-series. The
+canvas renders in linear-light alpha-over (matches the optimizer exactly).
+The SVG hits a perceptual ceiling around LPIPS 0.30 from gradient-stop
+quantization; canvas keeps improving with splat count.</p>
+
+<div class="grid">
+  <figure>
+    <img src="demo/source.png" alt="Source photo">
+    <figcaption><strong>Source</strong> · input.png · 476×502</figcaption>
+  </figure>
+  <figure>
+    <img src="demo/canvas_render.png" alt="Canvas render">
+    <figcaption><strong>Canvas</strong> · LPIPS 0.11 · PSNR 29 dB</figcaption>
+  </figure>
+  <figure>
+    <img src="demo/svg_render.png" alt="SVG render">
+    <figcaption><strong>SVG</strong> · LPIPS 0.32 · 1.0 MB · editable</figcaption>
+  </figure>
+</div>
+
+<h2>Live canvas demo</h2>
+<p>The HTML below is a self-contained 350 KB file: 2 000 Gaussian splats
+plus a JS runtime doing linear-light alpha-over. Renders in ~300 ms in any
+modern browser.</p>
+<iframe class="demo-frame" src="demo/canvas.html" width="476" height="540" loading="lazy"></iframe>
+
+<p class="note">Open <a href="demo/canvas.html">canvas.html</a> standalone, or
+download <a href="demo/chameleon.svg">chameleon.svg</a> (1 MB, opens in any vector editor).</p>
+
+<h2>Format ranking on photo content</h2>
+<table>
+  <thead><tr><th>Format</th><th>SSIM</th><th>LPIPS↓</th><th>PSNR</th><th>File</th></tr></thead>
+  <tbody>
+    <tr><td>Canvas (HTML)</td><td>0.92</td><td>0.11</td><td>29 dB</td><td>~700 KB</td></tr>
+    <tr><td>SVG standard</td><td>0.76</td><td>0.32</td><td>22 dB</td><td>~1.0 MB</td></tr>
+    <tr><td>PPTX blur</td><td>0.55</td><td>~0.40</td><td>14 dB</td><td>~100 KB</td></tr>
+  </tbody>
+</table>
+<p class="note">LPIPS scale: ~0.10 excellent · ~0.20 acceptable · ~0.30 visibly different · ~0.50 clearly different.</p>
+
+<div class="links">
+  <a href="https://github.com/BramAlkema/SplatThis">View on GitHub</a>
+  <a href="SVG_PPTX_GAUSSIAN_TRICKS.md">Format catalog</a>
+  <a href="https://github.com/BramAlkema/SplatThis#quick-start">Quick start</a>
+</div>
+
+</main>
+</body>
+</html>
