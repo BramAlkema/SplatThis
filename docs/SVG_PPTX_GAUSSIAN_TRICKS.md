@@ -224,3 +224,69 @@ The order below reflects "cheapest experiment per expected quality gain":
   bugs; always validate in real PowerPoint.
 - [[feedback-train-in-deployment-color-space]] — sRGB training already
   helps; the catalog above is the next layer of fidelity work.
+
+---
+
+## Addendum (2026-05-25): blur recipes shipped, perceptual reality check
+
+Both blur recipes from this catalog are now wired up:
+
+- `--svg-recipe blur` → `<feGaussianBlur>` with 32 quantized sigma
+  buckets and `color-interpolation-filters="linearRGB"`.
+- `--pptx-splat-style blur` → solid-fill ellipse + `<a:blur rad=...>`
+  with calibrated `rad = σ × EMU_PER_PX × 3.25` (empirically fit via
+  erf edge-response on real PowerPoint at rad 5/15/30/60 px;
+  see `svg2ooxml/docs/reference/research/blur-fidelity-results.md`).
+- `--blur-postfit-iters N` runs color/alpha gradient descent against
+  the standard Gaussian renderer (which exactly models the blur
+  recipe's output). The PPTX gradient postfit is auto-skipped for
+  blur targets — its alpha-boost over-saturates true Gaussian splats.
+
+### SSIM ≠ perceptual quality for splat recipes
+
+LPIPS measurement on chameleon (input.png) revealed that SSIM
+systematically mis-ranks recipes. Highlights:
+
+| splat count | recipe   | SSIM_gau | LPIPS |
+|-------------|----------|----------|-------|
+| 4k SVG      | standard | 0.685    | 0.487 |
+| 4k SVG      | blur     | 0.659    | 0.497 |
+| 40k SVG     | standard | 0.570    | 0.516 |
+| 40k SVG     | blur     | 0.502    | 0.547 |
+| 2k PPTX     | gradient | 0.422    | 0.522 |
+| 2k PPTX     | blur     | 0.542    | 0.586 |
+
+The PPTX 2k row is the headline: SSIM said blur wins by **+0.12**;
+LPIPS says blur **loses by 0.064**. Same data, opposite ranking.
+
+What SSIM was rewarding: the blur recipe's Gaussian smoothness, which
+reads as detail-loss to a perceptual metric. The gradient-stop fan
+artifacts that LOOK like flaws actually carry high-frequency
+information LPIPS counts as useful.
+
+### Implication: SVG/PPTX have a perceptual ceiling
+
+Going chameleon 4k → 40k splats moves canvas LPIPS **0.367 → 0.149**
+(huge). But SVG LPIPS moves **0.487 → 0.516** (slightly worse) and
+PPTX stays around **0.55** regardless of splat count.
+
+**Above ~4–8k splats, throwing more splats at SVG/PPTX is wasted
+compute.** The format primitives (gradient stops, even `feGaussianBlur`
+in our blur recipe) are the floor. Canvas (linear-light alpha-over,
+matches the optimizer's renderer) keeps improving with splat count and
+should be the deploy target whenever HTML is acceptable.
+
+### When the blur recipe still earns its keep
+
+LPIPS says blur is a wash or slight loss perceptually, but it's still
+worth shipping for non-perceptual reasons:
+
+- File size: PPTX blur **−53%** (102 KB vs 190 KB at 4k chameleon).
+- L1 / PSNR: blur is locally more color-accurate (PSNR +3 dB on PPTX).
+- Aesthetic: "painterly" instead of "stained-glass" mosaic.
+- No fan/web visible artifacts at low splat density — cleaner-looking
+  for human review even when LPIPS doesn't care.
+
+So `--pptx-splat-style blur` and `--svg-recipe blur` are still
+defensible defaults for production output; just don't claim they're a
+perceptual breakthrough.
