@@ -1483,17 +1483,19 @@ def generate_blur_svg_content(
             f'fill="rgb({r},{g},{b})"/>'
         )
 
-    # Build sigma buckets (geometric quantization).
-    sigmas: List[Tuple[float, float]] = []
+    # Build sigma buckets (geometric quantization). Cache the per-splat
+    # eigendecomposition so the emit loop below doesn't redo it.
+    decomps: List[Tuple[float, float, np.ndarray]] = []
     for s in splats:
-        eigenvals, _ = s.eigendecomposition()
-        sigmas.append(
-            (
-                float(np.sqrt(max(float(eigenvals[0]), 1e-8))),
-                float(np.sqrt(max(float(eigenvals[1]), 1e-8))),
-            )
-        )
-    all_sigma = np.array([sx for sx, sy in sigmas] + [sy for sx, sy in sigmas])
+        eigenvals, eigenvecs = s.eigendecomposition()
+        decomps.append((
+            float(np.sqrt(max(float(eigenvals[0]), 1e-8))),
+            float(np.sqrt(max(float(eigenvals[1]), 1e-8))),
+            eigenvecs,
+        ))
+    all_sigma = np.array(
+        [sx for sx, _, _ in decomps] + [sy for _, sy, _ in decomps]
+    )
     sigma_min = float(max(all_sigma.min(), 0.25))
     sigma_max = float(max(all_sigma.max(), sigma_min * 1.001))
     n_buckets = int(SVG_BLUR_SIGMA_BUCKETS)
@@ -1542,10 +1544,9 @@ def generate_blur_svg_content(
         svg_lines.append(bg_rect_line)
 
     # Per-splat small ellipse referencing the bucketed filter.
-    for splat, (sigma_x, sigma_y) in zip(splats, sigmas):
+    for splat, (sigma_x, sigma_y, eigenvecs) in zip(splats, decomps):
         sigma_geo = float(np.sqrt(max(sigma_x * sigma_y, 1e-8)))
         idx = _bucket(sigma_geo)
-        eigenvals, eigenvecs = splat.eigendecomposition()
         cx, cy = float(splat.mu[0]), float(splat.mu[1])
         rx = max(MIN_ELLIPSE_RADIUS_PX, SVG_BLUR_CORE_K_SIGMA * sigma_x)
         ry = max(MIN_ELLIPSE_RADIUS_PX, SVG_BLUR_CORE_K_SIGMA * sigma_y)
@@ -1856,7 +1857,7 @@ def _drawingml_shape_lines(
     h_emu: int,
     rot_attr: str,
     fill_lines: List[str],
-    effect_lines: List[str] = (),
+    effect_lines: Optional[List[str]] = None,
 ) -> List[str]:
     """Wrap a per-splat fill + effect body in the standard DrawingML
     ellipse-shape scaffold. All three splat styles (gradient / soft-edge /
@@ -1998,9 +1999,9 @@ def _splat_to_drawingml_blur_shape_lines(
     # Geometric-mean sigma drives the isotropic blur radius; ellipse
     # aspect-ratio (baked into w_emu/h_emu) absorbs the anisotropy.
     eigenvals, _ = splat.eigendecomposition()
-    sigma_geo_px = float(np.sqrt(
-        max(float(eigenvals[0]) * float(eigenvals[1]), 1e-16)
-    )) ** 0.5
+    sigma_major = float(np.sqrt(max(float(eigenvals[0]), 1e-8)))
+    sigma_minor = float(np.sqrt(max(float(eigenvals[1]), 1e-8)))
+    sigma_geo_px = float(np.sqrt(sigma_major * sigma_minor))
 
     mass_fraction = 1.0 - math.exp(-0.5 * float(PPTX_BLUR_CORE_K_SIGMA) ** 2)
     alpha_compensated = min(1.0, float(splat.alpha) / max(mass_fraction, 1e-6))
