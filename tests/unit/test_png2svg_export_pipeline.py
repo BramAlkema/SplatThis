@@ -112,7 +112,9 @@ def test_browser_compatible_svg_recipe_feathers_and_clamps_background_alpha():
     assert 'rx="11.50" ry="11.50"' in svg
     assert 'offset="50.0%"' in svg
     assert 'offset="75.0%" stop-color=' in svg
-    assert 'stop-opacity="0.18127"' in svg
+    # opacity emitted at 2-decimal precision; LPIPS-confirmed visually identical
+    # at this precision (see commit 3fba7e2).
+    assert 'stop-opacity="0.18"' in svg
 
 
 def test_scripted_matrix_svg_recipe_stores_compact_splat_rows():
