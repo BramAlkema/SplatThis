@@ -1011,7 +1011,7 @@ def generate_svg_content(
             alpha, gradient_footprint, inner_end, max_error=stop_error
         )
         stop_lines = [
-            f'      <stop offset="{offset * 100:.1f}%" stop-color="{color}" stop-opacity="{opacity:.5f}"/>'
+            f'      <stop offset="{offset * 100:.1f}%" stop-color="{color}" stop-opacity="{opacity:.2f}"/>'
             for offset, opacity in adaptive_stops
         ]
         if use_browser_recipe:
