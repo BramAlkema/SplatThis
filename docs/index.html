@@ -64,13 +64,27 @@ gradient defs. For an editable file usable in any vector editor, download
 <a href="demo/chameleon.svg">chameleon.svg</a> (1 MB raw, ~93 KB gzipped, pure
 declarative SVG).</p>
 
-<h2>Live canvas demo</h2>
-<p>The HTML below is a self-contained 350 KB file: 2 000 Gaussian splats
-plus a JS runtime doing linear-light alpha-over. Renders in ~300 ms in any
-modern browser.</p>
-<iframe class="demo-frame" src="demo/canvas.html" width="476" height="540" loading="lazy"></iframe>
+<h2>Splat count is an aesthetic dial, not a quality knob</h2>
+<p>Fewer splats trade detail for a painterly, abstracted feel. More splats
+approach photorealism. Both are valid endpoints — pick what your use case
+calls for.</p>
 
-<p class="note">Open <a href="demo/canvas.html">canvas.html</a> standalone.</p>
+<div class="grid" style="grid-template-columns: repeat(2, 1fr);">
+  <figure>
+    <iframe class="demo-frame" src="demo/canvas_500.html" style="width:100%;aspect-ratio:476/540;border:0;background:#000" loading="lazy"></iframe>
+    <figcaption><strong>500 splats</strong> · painterly · 87 KB · 94 s train</figcaption>
+  </figure>
+  <figure>
+    <iframe class="demo-frame" src="demo/canvas.html" style="width:100%;aspect-ratio:476/540;border:0;background:#000" loading="lazy"></iframe>
+    <figcaption><strong>2 000 splats</strong> · near-photorealistic · 347 KB · 8 min train</figcaption>
+  </figure>
+</div>
+
+<p class="note">Both are self-contained HTML files: splat data + a JS runtime
+doing linear-light alpha-over (matches the optimizer's renderer exactly).
+Render in ~50 ms (500) / ~300 ms (2 000) in any modern browser. Standalone:
+<a href="demo/canvas_500.html">canvas_500.html</a>,
+<a href="demo/canvas.html">canvas.html</a>.</p>
 
 <h2>Format ranking on photo content</h2>
 <table>
