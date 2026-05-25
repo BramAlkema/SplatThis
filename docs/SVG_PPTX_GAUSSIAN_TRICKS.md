@@ -276,6 +276,34 @@ in our blur recipe) are the floor. Canvas (linear-light alpha-over,
 matches the optimizer's renderer) keeps improving with splat count and
 should be the deploy target whenever HTML is acceptable.
 
+### Correction: that "ceiling" was under-training, not format limit
+
+Both LPIPS measurements above used the default `photo-native-10k`
+budget (175 total iterations across 3 stages) — fine for quick
+iteration but nowhere near convergence. Re-running the 4k chameleon
+with **5× more iterations** (--stages 500,250,125, ~6 min wall vs ~2.5 min):
+
+| Variant         | Iters | Canvas LPIPS | SVG std LPIPS |
+|-----------------|------:|-------------:|--------------:|
+| Short (default) |   175 |        0.661 |         0.670 |
+| Long (5× iter)  |   875 |    **0.245** |     **0.484** |
+| Δ               |  +500%|     −0.42    |    −0.19      |
+
+So neither format is at a representational ceiling at 4k splats —
+they're at a training-time ceiling. SVG **does** cost ~0.24 LPIPS vs
+canvas at converged training, but the absolute number is much lower
+than the under-trained "floor" suggested.
+
+What this means in practice:
+- If quality matters, train longer. Same splat budget + more iters
+  beats more splats + same iters perceptually.
+- The MLX optimizer makes longer training cheap (--stages 500,250,125
+  is ~6 min on M-series for 4k splats).
+- The SVG-blur perceptual loss vs standard gradient stops survives the
+  long-train correction (long-trained: 0.584 vs 0.484). Don't ship
+  blur if perceptual quality is the goal — ship it for file size or
+  aesthetic preference.
+
 ### When the blur recipe still earns its keep
 
 LPIPS says blur is a wash or slight loss perceptually, but it's still
