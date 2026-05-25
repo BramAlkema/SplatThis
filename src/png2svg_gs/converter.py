@@ -3879,7 +3879,10 @@ class PNG2SVGConverter:
         )
 
     def _compute_safe_background_mask(
-        self, splats: List[GaussianSplat], width: int, height: int,
+        self,
+        splats: List[GaussianSplat],
+        width: int,
+        height: int,
     ) -> np.ndarray:
         """Per-splat boolean: is this splat parked in a 'safe background'
         region where we should cap its alpha? Only used by the SVG proxy
@@ -3932,8 +3935,10 @@ class PNG2SVGConverter:
         """
         if not splats or num_iters <= 0:
             return splats, {
-                "stage": -2, "stage_type": stage_type,
-                "iterations": 0, "splat_count": len(splats),
+                "stage": -2,
+                "stage_type": stage_type,
+                "iterations": 0,
+                "splat_count": len(splats),
             }
 
         base = splats_to_tensor(splats, device=self.device)
@@ -3952,10 +3957,12 @@ class PNG2SVGConverter:
         init_alpha = torch.clamp(base[:, 9], 1e-4, 1.0 - 1e-4)
         color_logits = torch.nn.Parameter(torch.logit(init_color))
         alpha_logits = torch.nn.Parameter(torch.logit(init_alpha).unsqueeze(-1))
-        optimizer = torch.optim.Adam([
-            {"params": [color_logits], "lr": color_lr},
-            {"params": [alpha_logits], "lr": alpha_lr},
-        ])
+        optimizer = torch.optim.Adam(
+            [
+                {"params": [color_logits], "lr": color_lr},
+                {"params": [alpha_logits], "lr": alpha_lr},
+            ]
+        )
 
         def apply_safe_cap(a: torch.Tensor) -> torch.Tensor:
             if not use_safe_mask:
@@ -3989,15 +3996,23 @@ class PNG2SVGConverter:
             color_reg = torch.mean(torch.abs(color - init_color))
             alpha_reg = torch.mean(torch.abs(effective_alpha - init_effective_alpha))
             loss = (
-                l1 + mse_weight * mse
+                l1
+                + mse_weight * mse
                 + color_reg_weight * color_reg
                 + alpha_reg_weight * alpha_reg
             )
-            if use_safe_mask and safe_alpha_reg_weight > 0.0 and bool(torch.any(safe_mask)):
-                loss = loss + safe_alpha_reg_weight * torch.mean(effective_alpha[safe_mask])
+            if (
+                use_safe_mask
+                and safe_alpha_reg_weight > 0.0
+                and bool(torch.any(safe_mask))
+            ):
+                loss = loss + safe_alpha_reg_weight * torch.mean(
+                    effective_alpha[safe_mask]
+                )
             loss.backward()
             torch.nn.utils.clip_grad_norm_(
-                [color_logits, alpha_logits], max_norm=1.0,
+                [color_logits, alpha_logits],
+                max_norm=1.0,
             )
             optimizer.step()
 
@@ -4011,7 +4026,11 @@ class PNG2SVGConverter:
             if verbose and (iteration + 1) % 20 == 0:
                 logger.info(
                     "  %s %s/%s: loss=%.6f l1=%.6f",
-                    log_label, iteration + 1, num_iters, loss_value, final_l1,
+                    log_label,
+                    iteration + 1,
+                    num_iters,
+                    loss_value,
+                    final_l1,
                 )
 
         result_meta = {
@@ -4029,13 +4048,16 @@ class PNG2SVGConverter:
         output_tensor[:, 6:9] = best_color
         output_tensor[:, 9] = best_alpha
         fitted_splats = self._copy_splat_layers(
-            splats, tensor_to_splats(output_tensor.detach()),
+            splats,
+            tensor_to_splats(output_tensor.detach()),
         )
-        result_meta.update({
-            "splat_count": len(fitted_splats),
-            "final_l1_srgb": float(final_l1),
-            "final_mse_srgb": float(final_mse),
-        })
+        result_meta.update(
+            {
+                "splat_count": len(fitted_splats),
+                "final_l1_srgb": float(final_l1),
+                "final_mse_srgb": float(final_mse),
+            }
+        )
         if use_safe_mask:
             result_meta["safe_background_splats"] = int(np.count_nonzero(safe_mask_np))
         return fitted_splats, result_meta
@@ -4056,7 +4078,12 @@ class PNG2SVGConverter:
         primitive's "stained-glass" rendering."""
         cfg = self.refinement_config
         return self._run_color_alpha_postfit(
-            splats, image, width, height, num_iters, verbose,
+            splats,
+            image,
+            width,
+            height,
+            num_iters,
+            verbose,
             stage_type="svg_proxy_postfit",
             color_lr=float(cfg.get("svg_proxy_postfit_color_lr", 0.035)),
             alpha_lr=float(cfg.get("svg_proxy_postfit_alpha_lr", 0.020)),
@@ -4088,7 +4115,12 @@ class PNG2SVGConverter:
         backdrop-cap policy to balance against."""
         cfg = self.refinement_config
         return self._run_color_alpha_postfit(
-            splats, image, width, height, num_iters, verbose,
+            splats,
+            image,
+            width,
+            height,
+            num_iters,
+            verbose,
             stage_type="blur_proxy_postfit",
             color_lr=float(cfg.get("blur_proxy_postfit_color_lr", 0.030)),
             alpha_lr=float(cfg.get("blur_proxy_postfit_alpha_lr", 0.015)),

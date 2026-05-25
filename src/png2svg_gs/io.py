@@ -1488,14 +1488,14 @@ def generate_blur_svg_content(
     decomps: List[Tuple[float, float, np.ndarray]] = []
     for s in splats:
         eigenvals, eigenvecs = s.eigendecomposition()
-        decomps.append((
-            float(np.sqrt(max(float(eigenvals[0]), 1e-8))),
-            float(np.sqrt(max(float(eigenvals[1]), 1e-8))),
-            eigenvecs,
-        ))
-    all_sigma = np.array(
-        [sx for sx, _, _ in decomps] + [sy for _, sy, _ in decomps]
-    )
+        decomps.append(
+            (
+                float(np.sqrt(max(float(eigenvals[0]), 1e-8))),
+                float(np.sqrt(max(float(eigenvals[1]), 1e-8))),
+                eigenvecs,
+            )
+        )
+    all_sigma = np.array([sx for sx, _, _ in decomps] + [sy for _, sy, _ in decomps])
     sigma_min = float(max(all_sigma.min(), 0.25))
     sigma_max = float(max(all_sigma.max(), sigma_min * 1.001))
     n_buckets = int(SVG_BLUR_SIGMA_BUCKETS)
@@ -1563,11 +1563,11 @@ def generate_blur_svg_content(
         bi = int(np.clip(np.round(rgb_srgb[2] * 255), 0, 255))
         # Mass-fraction compensation: a uniform disk of radius k·σ convolved
         # with Gaussian σ has peak α·(1 − e^(−k²/2)). Compensate by 1/mf.
-        mass_fraction = 1.0 - np.exp(-0.5 * SVG_BLUR_CORE_K_SIGMA ** 2)
+        mass_fraction = 1.0 - np.exp(-0.5 * SVG_BLUR_CORE_K_SIGMA**2)
         alpha = float(np.clip(splat.alpha / max(mass_fraction, 1e-6), 0.0, 1.0))
         svg_lines.append(
             f'  <ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{rx:.2f}" ry="{ry:.2f}"'
-            f'{transform_attr}'
+            f"{transform_attr}"
             f' fill="rgb({ri},{gi},{bi})" opacity="{alpha:.4f}"'
             f' filter="url(#b{idx})"/>'
         )
@@ -1884,8 +1884,11 @@ def _drawingml_shape_lines(
         "          <a:ln>",
         "            <a:noFill/>",
         "          </a:ln>",
-        *(["          <a:effectLst>", *effect_lines, "          </a:effectLst>"]
-          if effect_lines else []),
+        *(
+            ["          <a:effectLst>", *effect_lines, "          </a:effectLst>"]
+            if effect_lines
+            else []
+        ),
         "        </p:spPr>",
         "        <p:txBody>",
         "          <a:bodyPr/>",
@@ -1940,11 +1943,13 @@ def _splat_to_drawingml_shape_lines(
         opacity = 1.0 - math.exp(-alpha_clamped * math.exp(-0.5 * (t * footprint) ** 2))
         pos = int(round(t * 100000.0))
         a_units = int(np.clip(round(opacity * 100000.0), 0, 100000))
-        stop_lines.extend([
-            f'              <a:gs pos="{pos}">',
-            f'                <a:srgbClr val="{color_hex}"><a:alpha val="{a_units}"/></a:srgbClr>',
-            "              </a:gs>",
-        ])
+        stop_lines.extend(
+            [
+                f'              <a:gs pos="{pos}">',
+                f'                <a:srgbClr val="{color_hex}"><a:alpha val="{a_units}"/></a:srgbClr>',
+                "              </a:gs>",
+            ]
+        )
     fill_lines = [
         "          <a:gradFill>",
         "            <a:gsLst>",
@@ -1960,29 +1965,43 @@ def _splat_to_drawingml_shape_lines(
 
 
 def _splat_to_drawingml_soft_edge_shape_lines(
-    splat: GaussianSplat, shape_id: int, k_sigma: float,
+    splat: GaussianSplat,
+    shape_id: int,
+    k_sigma: float,
 ) -> List[str]:
     """Solid-fill ellipse + `<a:softEdge>`. softEdge feathers the outer
     `rad` ring inward — NOT a Gaussian, but cheap to render and visually
     smoother than a hard shape."""
     effective_k_sigma = float(k_sigma) * PPTX_SOFT_EDGE_K_SIGMA_SCALE
     x_emu, y_emu, w_emu, h_emu, rot_attr, color_hex = _splat_geometry_for_drawingml(
-        splat, effective_k_sigma,
+        splat,
+        effective_k_sigma,
     )
     center_opacity = 1.0 - math.exp(-float(np.clip(splat.alpha, 0.0, 1.0)))
-    alpha_units = int(np.clip(
-        round(center_opacity * PPTX_SOFT_EDGE_ALPHA_SCALE * 100000.0), 0, 100000,
-    ))
+    alpha_units = int(
+        np.clip(
+            round(center_opacity * PPTX_SOFT_EDGE_ALPHA_SCALE * 100000.0),
+            0,
+            100000,
+        )
+    )
     soft_radius = int(max(0, round(min(w_emu, h_emu) * PPTX_SOFT_EDGE_RADIUS_FACTOR)))
     return _drawingml_shape_lines(
-        shape_id, x_emu, y_emu, w_emu, h_emu, rot_attr,
+        shape_id,
+        x_emu,
+        y_emu,
+        w_emu,
+        h_emu,
+        rot_attr,
         fill_lines=_solid_fill_lines(color_hex, alpha_units),
         effect_lines=[f'            <a:softEdge rad="{soft_radius}"/>'],
     )
 
 
 def _splat_to_drawingml_blur_shape_lines(
-    splat: GaussianSplat, shape_id: int, k_sigma: float,
+    splat: GaussianSplat,
+    shape_id: int,
+    k_sigma: float,
 ) -> List[str]:
     """Small solid-fill ellipse + isotropic `<a:blur>`. The blur produces
     the Gaussian shape; the ellipse is the small coloured core. Mass-
@@ -1994,7 +2013,8 @@ def _splat_to_drawingml_blur_shape_lines(
     # convolution math expects a near-point source for the output to
     # approximate a true Gaussian.
     x_emu, y_emu, w_emu, h_emu, rot_attr, color_hex = _splat_geometry_for_drawingml(
-        splat, float(PPTX_BLUR_CORE_K_SIGMA) / ELLIPSE_OVERLAP_BOOST,
+        splat,
+        float(PPTX_BLUR_CORE_K_SIGMA) / ELLIPSE_OVERLAP_BOOST,
     )
     # Geometric-mean sigma drives the isotropic blur radius; ellipse
     # aspect-ratio (baked into w_emu/h_emu) absorbs the anisotropy.
@@ -2009,7 +2029,12 @@ def _splat_to_drawingml_blur_shape_lines(
     rad_emu = max(1, int(round(sigma_geo_px * EMU_PER_PX * PPTX_BLUR_RAD_PER_SIGMA)))
 
     return _drawingml_shape_lines(
-        shape_id, x_emu, y_emu, w_emu, h_emu, rot_attr,
+        shape_id,
+        x_emu,
+        y_emu,
+        w_emu,
+        h_emu,
+        rot_attr,
         fill_lines=_solid_fill_lines(color_hex, alpha_units),
         effect_lines=[f'            <a:blur rad="{rad_emu}" grow="1"/>'],
     )
