@@ -1602,7 +1602,19 @@ class PNG2SVGConverter:
         pptx_postfit_iters = int(
             max(0, self.refinement_config.get("pptx_proxy_postfit_iters", 0))
         )
-        if output_format == "pptx" and pptx_postfit_iters > 0:
+        # The PPTX gradient compositor's <a:gradFill> stops have a known
+        # ~0.4 alpha-attenuation vs Gaussian — pptx_proxy_postfit boosts
+        # alpha to match. For the blur recipe that emits true Gaussians via
+        # <a:blur>, that boost is wrong: it makes splats over-paint each
+        # other. Skip the gradient postfit when the PPTX target is blur.
+        pptx_target_is_blur = (
+            output_format == "pptx" and self.pptx_splat_style == "blur"
+        )
+        if (
+            output_format == "pptx"
+            and pptx_postfit_iters > 0
+            and not pptx_target_is_blur
+        ):
             if verbose:
                 logger.info(
                     "Post-fitting splats for PPTX proxy (%s iterations)...",
@@ -1626,6 +1638,42 @@ class PNG2SVGConverter:
                 logger.info(
                     "PPTX proxy post-fit completed in %.2fs",
                     timings["pptx_proxy_postfit"],
+                )
+
+        # Blur-aware postfit. The blur recipe's output ≈ Gaussian-conv,
+        # which the existing _postfit_splats_for_svg_proxy already models
+        # (vanilla Gaussian renderer + alpha-over sRGB compositing). Fires
+        # for either SVG blur or PPTX blur targets.
+        blur_postfit_iters = int(
+            max(0, self.refinement_config.get("blur_proxy_postfit_iters", 0))
+        )
+        is_blur_target = (
+            output_format == "svg" and self.svg_export_recipe == "blur"
+        ) or (output_format == "pptx" and self.pptx_splat_style == "blur")
+        if is_blur_target and blur_postfit_iters > 0:
+            if verbose:
+                logger.info(
+                    "Post-fitting splats for blur proxy (%s iterations)...",
+                    blur_postfit_iters,
+                )
+            phase_t0 = time.perf_counter()
+            splats, blur_postfit_metric = self._postfit_splats_for_blur_proxy(
+                splats=splats,
+                image=image,
+                width=width,
+                height=height,
+                num_iters=blur_postfit_iters,
+                verbose=verbose,
+            )
+            timings["blur_proxy_postfit"] = float(time.perf_counter() - phase_t0)
+            manifest["stages"].append(blur_postfit_metric)
+            self._write_stage_artifact(
+                artifacts_path, "blur-postfit", splats, blur_postfit_metric
+            )
+            if verbose:
+                logger.info(
+                    "Blur proxy post-fit completed in %.2fs",
+                    timings["blur_proxy_postfit"],
                 )
         self._write_stage_artifact(
             artifacts_path, "final", splats, {"count": len(splats)}
@@ -3999,6 +4047,168 @@ class PNG2SVGConverter:
             "final_l1_srgb": float(final_l1),
             "final_mse_srgb": float(final_mse),
             "safe_background_splats": int(np.count_nonzero(safe_mask_np)),
+            "runtime_sec": float(time.time() - start_time),
+        }
+
+    def _postfit_splats_for_blur_proxy(
+        self,
+        splats: List[GaussianSplat],
+        image: np.ndarray,
+        width: int,
+        height: int,
+        num_iters: int,
+        verbose: bool,
+    ) -> Tuple[List[GaussianSplat], Dict[str, Any]]:
+        """Post-fit color/alpha against a Gaussian-convolution proxy.
+
+        The blur recipe emits each splat as conv(small_disk, Gaussian σ) ≈
+        Gaussian σ, which is exactly what the standard Gaussian renderer
+        produces. No safe-mask alpha suppression — the gradient-stop recipes
+        need that for the "stained-glass" backdrop suppression in safe
+        background regions, but the blur recipe doesn't have the same
+        compositor bias.
+        """
+        if not splats or num_iters <= 0:
+            return splats, {
+                "stage": -2,
+                "stage_type": "blur_proxy_postfit",
+                "iterations": 0,
+                "splat_count": len(splats),
+            }
+
+        base = splats_to_tensor(splats, device=self.device)
+        target_linear = torch.from_numpy(image[:, :, :3]).to(self.device)
+        target_srgb = torch_linear_to_srgb(target_linear)
+        renderer = create_renderer(
+            backend=self.renderer_backend,
+            width=width,
+            height=height,
+            device=self.device,
+            tile_size=int(
+                np.clip(self.refinement_config.get("renderer_tile_size", 16), 4, 128)
+            ),
+            blend_mode="alpha-over",
+            background_color=self._background_linear_rgb,
+            compositing_space="srgb",
+            tile_bin_rebuild_interval=int(
+                max(
+                    1,
+                    self.refinement_config.get("renderer_tile_bin_rebuild_interval", 1),
+                )
+            ),
+            tile_bin_padding=float(
+                max(0.0, self.refinement_config.get("renderer_tile_bin_padding", 0.0))
+            ),
+            batch_tile_count=int(
+                max(1, self.refinement_config.get("renderer_batch_tile_count", 32))
+            ),
+            max_active_splats_per_tile=(
+                None
+                if self.refinement_config.get("renderer_max_active_splats_per_tile")
+                in (None, "", 0)
+                else int(
+                    self.refinement_config.get("renderer_max_active_splats_per_tile")
+                )
+            ),
+        )
+
+        init_color = torch.clamp(base[:, 6:9], 1e-4, 1.0 - 1e-4)
+        init_alpha = torch.clamp(base[:, 9], 1e-4, 1.0 - 1e-4)
+        color_logits = torch.nn.Parameter(torch.logit(init_color))
+        alpha_logits = torch.nn.Parameter(torch.logit(init_alpha).unsqueeze(-1))
+        optimizer = torch.optim.Adam(
+            [
+                {
+                    "params": [color_logits],
+                    "lr": float(
+                        self.refinement_config.get("blur_proxy_postfit_color_lr", 0.030)
+                    ),
+                },
+                {
+                    "params": [alpha_logits],
+                    "lr": float(
+                        self.refinement_config.get("blur_proxy_postfit_alpha_lr", 0.015)
+                    ),
+                },
+            ]
+        )
+
+        best_loss = float("inf")
+        best_color: Optional[torch.Tensor] = None
+        best_alpha: Optional[torch.Tensor] = None
+        start_time = time.time()
+        iterations_run = 0
+        final_l1 = 0.0
+        final_mse = 0.0
+
+        for iteration in range(int(num_iters)):
+            if self._time_budget_exhausted():
+                break
+            iterations_run = iteration + 1
+            optimizer.zero_grad(set_to_none=True)
+            color = torch.sigmoid(color_logits)
+            alpha = torch.sigmoid(alpha_logits).squeeze(-1)
+
+            fitted = base.clone()
+            fitted[:, 6:9] = color
+            fitted[:, 9] = alpha
+            rendered_srgb = torch_linear_to_srgb(renderer(fitted))
+            l1 = torch.mean(torch.abs(rendered_srgb - target_srgb))
+            mse = torch.mean((rendered_srgb - target_srgb) ** 2)
+            # Very light regularization toward init to prevent runaway.
+            color_reg = torch.mean(torch.abs(color - init_color))
+            alpha_reg = torch.mean(torch.abs(alpha - init_alpha))
+            loss = (
+                l1
+                + 0.30 * mse
+                + 0.004 * color_reg
+                + 0.002 * alpha_reg
+            )
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_([color_logits, alpha_logits], max_norm=1.0)
+            optimizer.step()
+
+            loss_value = float(loss.item())
+            final_l1 = float(l1.item())
+            final_mse = float(mse.item())
+            if loss_value < best_loss:
+                best_loss = loss_value
+                best_color = color.detach().clone()
+                best_alpha = alpha.detach().clone()
+            if verbose and (iteration + 1) % 20 == 0:
+                logger.info(
+                    "  blur proxy post-fit %s/%s: loss=%.6f l1=%.6f",
+                    iteration + 1,
+                    num_iters,
+                    loss_value,
+                    final_l1,
+                )
+
+        if best_color is None or best_alpha is None:
+            return splats, {
+                "stage": -2,
+                "stage_type": "blur_proxy_postfit",
+                "iterations": int(iterations_run),
+                "splat_count": len(splats),
+                "best_loss": float(best_loss),
+                "runtime_sec": float(time.time() - start_time),
+            }
+
+        output_tensor = base.clone()
+        output_tensor[:, 6:9] = best_color
+        output_tensor[:, 9] = best_alpha
+        fitted_splats = self._copy_splat_layers(
+            splats,
+            tensor_to_splats(output_tensor.detach()),
+        )
+        return fitted_splats, {
+            "stage": -2,
+            "stage_type": "blur_proxy_postfit",
+            "iterations": int(iterations_run),
+            "splat_count": len(fitted_splats),
+            "best_loss": float(best_loss),
+            "final_l1_srgb": float(final_l1),
+            "final_mse_srgb": float(final_mse),
             "runtime_sec": float(time.time() - start_time),
         }
 

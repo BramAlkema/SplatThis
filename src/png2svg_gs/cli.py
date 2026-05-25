@@ -142,9 +142,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--optimizer-backend",
-        default="torch",
+        default="mlx",
         choices=["torch", "mlx"],
-        help="Optimizer backend. 'mlx' is experimental.",
+        help="Optimizer backend. 'mlx' (default) is Apple-Silicon-native and "
+        "~5x faster than torch on M-series hardware; pass 'torch' for "
+        "cross-platform CUDA / CPU runs.",
     )
     parser.add_argument(
         "--mlx-loss",
@@ -242,7 +244,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--pptx-splat-style",
         default="gradient",
-        choices=["soft-edge", "gradient"],
+        choices=["soft-edge", "gradient", "blur"],
         help="Native PPTX splat primitive style. 'gradient' (default) uses "
         "DrawingML radial gradients with per-stop alpha falloff -- each splat's "
         "color stays radially confined and there is no inter-splat color "
@@ -274,6 +276,7 @@ def build_parser() -> argparse.ArgumentParser:
             "browser-compatible",
             "scripted-matrix",
             "palette-quantized",
+            "blur",
         ],
         help="SVG export recipe (default comes from quality profile). "
         "'scripted-matrix' stores compact splat rows and expands "
@@ -298,7 +301,19 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=0,
         help="For PPTX output, run N post-fit iterations on color/alpha using a "
-        "PowerPoint soft-edge proxy with contrast/saturation terms (default: 0).",
+        "PowerPoint soft-edge proxy with contrast/saturation terms (default: 0). "
+        "Skipped automatically when --pptx-splat-style=blur (the blur recipe "
+        "uses --blur-postfit-iters instead, since the gradient compositor's "
+        "alpha-attenuation boost over-saturates true Gaussian splats).",
+    )
+    parser.add_argument(
+        "--blur-postfit-iters",
+        type=int,
+        default=0,
+        help="For blur-recipe output (--svg-recipe blur or --pptx-splat-style "
+        "blur), run N post-fit iterations on color/alpha against a Gaussian-"
+        "convolution proxy. Closes the train→deploy gap for the blur recipe; "
+        "ignored when neither output target is blur. Recommended: 40-120.",
     )
     parser.add_argument(
         "--region-weighting",
@@ -388,6 +403,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         refinement_config["pptx_proxy_postfit_iters"] = int(
             args.pptx_proxy_postfit_iters
         )
+    if args.blur_postfit_iters > 0:
+        refinement_config["blur_proxy_postfit_iters"] = int(args.blur_postfit_iters)
     if args.region_weighting is not None:
         refinement_config["region_weighting_enabled"] = bool(args.region_weighting)
     if args.renderer_tile_size is not None:

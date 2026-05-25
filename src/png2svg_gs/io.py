@@ -89,9 +89,23 @@ PPTX_SOFT_EDGE_ALPHA_SCALE = 0.25
 PPTX_SOFT_EDGE_RADIUS_FACTOR = 0.20
 PPTX_SOFT_EDGE_K_SIGMA_SCALE = 0.92
 PPTX_GRADIENT_ALPHA_SCALE = 0.40
+# `<a:blur>` calibration: σ_blur (px) = rad (px) / 3.25, empirical
+# erf-fit measurement on macOS desktop PowerPoint. See
+# svg2ooxml/docs/reference/research/blur-fidelity-results.md.
+PPTX_BLUR_RAD_PER_SIGMA = 3.25
+# Core shape extent as fraction of σ. Convolution of uniform-disk(R=k·σ)
+# with Gaussian(σ) gives peak α·(1 − e^(−k²/2)) at center; k=1.0 → 0.39α,
+# k=1.5 → 0.68α. Larger k means more peak intensity but more top-hat
+# character in the result. 1.0 is a balanced compromise.
+PPTX_BLUR_CORE_K_SIGMA = 1.0
 SVG_BROWSER_COMPAT_RECIPE = "browser-compatible"
 SVG_SCRIPTED_MATRIX_RECIPE = "scripted-matrix"
 SVG_PALETTE_QUANTIZED_RECIPE = "palette-quantized"
+SVG_BLUR_RECIPE = "blur"
+# Quantized sigma buckets for shared feGaussianBlur filters.
+SVG_BLUR_SIGMA_BUCKETS = 32
+# See PPTX_BLUR_CORE_K_SIGMA — same trade-off.
+SVG_BLUR_CORE_K_SIGMA = 1.0
 # Default palette size when the palette-quantized recipe is selected without an
 # explicit override. 128 colors visually covers photographic input without
 # bloating <defs>; raise via refinement_config['svg_palette_size'] if needed.
@@ -116,6 +130,8 @@ def _normalize_svg_export_recipe(export_recipe: str) -> str:
         "shared-currentcolor",
     }:
         return SVG_PALETTE_QUANTIZED_RECIPE
+    if normalized in {"blur", "gaussian-blur", "feblur"}:
+        return SVG_BLUR_RECIPE
     if normalized == "standard":
         return "standard"
     raise ValueError(f"Unsupported SVG export recipe: {export_recipe}")
@@ -192,6 +208,8 @@ def _normalize_pptx_splat_style(splat_style: str) -> str:
         return "soft-edge"
     if normalized in {"gradient", "grad"}:
         return "gradient"
+    if normalized in {"blur", "gaussian-blur"}:
+        return "blur"
     raise ValueError(f"Unsupported PPTX splat style: {splat_style}")
 
 
@@ -867,6 +885,14 @@ def generate_svg_content(
             background_safe_mask=background_safe_mask,
             edge_band_mask=edge_band_mask,
         )
+    if normalized_recipe == SVG_BLUR_RECIPE:
+        return generate_blur_svg_content(
+            splats=splats,
+            width=width,
+            height=height,
+            k_sigma=k_sigma,
+            background_linear_rgb=background_linear_rgb,
+        )
     use_browser_recipe = normalized_recipe == SVG_BROWSER_COMPAT_RECIPE
 
     def _valid_mask(mask: Optional[np.ndarray]) -> Optional[np.ndarray]:
@@ -1430,6 +1456,150 @@ def generate_palette_quantized_svg_content(
     return "\n".join(svg_lines)
 
 
+def generate_blur_svg_content(
+    splats: List[GaussianSplat],
+    width: int,
+    height: int,
+    k_sigma: float = 2.5,
+    background_linear_rgb: Optional[np.ndarray] = None,
+) -> str:
+    """Generate SVG using `<feGaussianBlur>` per splat instead of gradient stops.
+
+    Each splat becomes a small flat-fill ellipse passed through a shared
+    Gaussian blur filter keyed on quantized sigma. The blur produces a true
+    Gaussian falloff, which the gradient-stop recipes can only approximate.
+    """
+    if not splats:
+        return _empty_svg_document(width, height, background_linear_rgb)
+
+    bg_rect_line: Optional[str] = None
+    if background_linear_rgb is not None:
+        bg_srgb = linear_to_srgb(np.array(background_linear_rgb[:3], dtype=np.float32))
+        r = int(np.clip(np.round(bg_srgb[0] * 255), 0, 255))
+        g = int(np.clip(np.round(bg_srgb[1] * 255), 0, 255))
+        b = int(np.clip(np.round(bg_srgb[2] * 255), 0, 255))
+        bg_rect_line = (
+            f'  <rect x="0" y="0" width="{int(width)}" height="{int(height)}" '
+            f'fill="rgb({r},{g},{b})"/>'
+        )
+
+    # Build sigma buckets (geometric quantization).
+    sigmas: List[Tuple[float, float]] = []
+    for s in splats:
+        eigenvals, _ = s.eigendecomposition()
+        sigmas.append(
+            (
+                float(np.sqrt(max(float(eigenvals[0]), 1e-8))),
+                float(np.sqrt(max(float(eigenvals[1]), 1e-8))),
+            )
+        )
+    all_sigma = np.array([sx for sx, sy in sigmas] + [sy for sx, sy in sigmas])
+    sigma_min = float(max(all_sigma.min(), 0.25))
+    sigma_max = float(max(all_sigma.max(), sigma_min * 1.001))
+    n_buckets = int(SVG_BLUR_SIGMA_BUCKETS)
+    bucket_edges = np.geomspace(sigma_min, sigma_max, n_buckets + 1)
+    bucket_centers = np.sqrt(bucket_edges[:-1] * bucket_edges[1:])
+
+    def _bucket(sigma_val: float) -> int:
+        return int(
+            np.clip(
+                np.searchsorted(bucket_edges, sigma_val, side="right") - 1,
+                0,
+                n_buckets - 1,
+            )
+        )
+
+    # Header.
+    svg_lines: List[str] = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" '
+        '"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">',
+        (
+            f'<svg width="{int(width)}" height="{int(height)}" '
+            f'viewBox="0 0 {int(width)} {int(height)}" '
+            'xmlns="http://www.w3.org/2000/svg">'
+        ),
+    ]
+
+    # Shared filters. Each filter is anisotropic-capable (stdDeviation = "sx sy")
+    # but we use a single bucket per (sx, sy) pair; the actual stdDeviation
+    # carries both components from the bucket center pair. The simpler choice:
+    # one filter per sigma bucket, used isotropically for that bucket, and
+    # absorb minor anisotropy in the ellipse aspect ratio.
+    svg_lines.append("  <defs>")
+    for i, center in enumerate(bucket_centers):
+        svg_lines.extend(
+            [
+                f'    <filter id="b{i}" x="-50%" y="-50%" width="200%" height="200%" '
+                'color-interpolation-filters="linearRGB">',
+                f'      <feGaussianBlur stdDeviation="{center:.3f}"/>',
+                "    </filter>",
+            ]
+        )
+    svg_lines.append("  </defs>")
+
+    if bg_rect_line is not None:
+        svg_lines.append(bg_rect_line)
+
+    # Per-splat small ellipse referencing the bucketed filter.
+    for splat, (sigma_x, sigma_y) in zip(splats, sigmas):
+        sigma_geo = float(np.sqrt(max(sigma_x * sigma_y, 1e-8)))
+        idx = _bucket(sigma_geo)
+        eigenvals, eigenvecs = splat.eigendecomposition()
+        cx, cy = float(splat.mu[0]), float(splat.mu[1])
+        rx = max(MIN_ELLIPSE_RADIUS_PX, SVG_BLUR_CORE_K_SIGMA * sigma_x)
+        ry = max(MIN_ELLIPSE_RADIUS_PX, SVG_BLUR_CORE_K_SIGMA * sigma_y)
+        rotation_rad = float(np.arctan2(eigenvecs[1, 0], eigenvecs[0, 0]))
+        rotation_deg = float(np.degrees(rotation_rad))
+        transform_attr = (
+            f' transform="rotate({rotation_deg:.2f} {cx:.2f} {cy:.2f})"'
+            if abs(rotation_deg) > 0.05
+            else ""
+        )
+        rgb_srgb = linear_to_srgb(np.array(splat.color[:3], dtype=np.float32))
+        ri = int(np.clip(np.round(rgb_srgb[0] * 255), 0, 255))
+        gi = int(np.clip(np.round(rgb_srgb[1] * 255), 0, 255))
+        bi = int(np.clip(np.round(rgb_srgb[2] * 255), 0, 255))
+        # Mass-fraction compensation: a uniform disk of radius k·σ convolved
+        # with Gaussian σ has peak α·(1 − e^(−k²/2)). Compensate by 1/mf.
+        mass_fraction = 1.0 - np.exp(-0.5 * SVG_BLUR_CORE_K_SIGMA ** 2)
+        alpha = float(np.clip(splat.alpha / max(mass_fraction, 1e-6), 0.0, 1.0))
+        svg_lines.append(
+            f'  <ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{rx:.2f}" ry="{ry:.2f}"'
+            f'{transform_attr}'
+            f' fill="rgb({ri},{gi},{bi})" opacity="{alpha:.4f}"'
+            f' filter="url(#b{idx})"/>'
+        )
+
+    svg_lines.append("</svg>")
+    return "\n".join(svg_lines)
+
+
+def _empty_svg_document(
+    width: int,
+    height: int,
+    background_linear_rgb: Optional[np.ndarray],
+) -> str:
+    bg_line = ""
+    if background_linear_rgb is not None:
+        bg_srgb = linear_to_srgb(np.array(background_linear_rgb[:3], dtype=np.float32))
+        r = int(np.clip(np.round(bg_srgb[0] * 255), 0, 255))
+        g = int(np.clip(np.round(bg_srgb[1] * 255), 0, 255))
+        b = int(np.clip(np.round(bg_srgb[2] * 255), 0, 255))
+        bg_line = (
+            f'  <rect x="0" y="0" width="{int(width)}" height="{int(height)}" '
+            f'fill="rgb({r},{g},{b})"/>\n'
+        )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        f'<svg width="{int(width)}" height="{int(height)}" '
+        f'viewBox="0 0 {int(width)} {int(height)}" '
+        'xmlns="http://www.w3.org/2000/svg">\n'
+        f"{bg_line}"
+        "</svg>"
+    )
+
+
 def generate_drawingml_slide_content(
     splats: List[GaussianSplat],
     width: int,
@@ -1688,6 +1858,8 @@ def _splat_to_drawingml_shape_lines(
     normalized_splat_style = _normalize_pptx_splat_style(splat_style)
     if normalized_splat_style == "soft-edge":
         return _splat_to_drawingml_soft_edge_shape_lines(splat, shape_id, k_sigma)
+    if normalized_splat_style == "blur":
+        return _splat_to_drawingml_blur_shape_lines(splat, shape_id, k_sigma)
 
     x_emu, y_emu, w_emu, h_emu, rot_attr, color_hex = _splat_geometry_for_drawingml(
         splat, k_sigma
@@ -1795,6 +1967,96 @@ def _splat_to_drawingml_soft_edge_shape_lines(
         "          </a:ln>",
         "          <a:effectLst>",
         f'            <a:softEdge rad="{soft_radius}"/>',
+        "          </a:effectLst>",
+        "        </p:spPr>",
+        "        <p:txBody>",
+        "          <a:bodyPr/>",
+        "          <a:lstStyle/>",
+        "          <a:p>",
+        "            <a:endParaRPr/>",
+        "          </a:p>",
+        "        </p:txBody>",
+        "      </p:sp>",
+    ]
+
+
+def _splat_to_drawingml_blur_shape_lines(
+    splat: GaussianSplat,
+    shape_id: int,
+    k_sigma: float,
+) -> List[str]:
+    """Convert one splat to a small solid-fill ellipse + isotropic `<a:blur>`.
+
+    The blur kernel does the Gaussian shaping; the ellipse is a small
+    coloured core. With calibration `σ_blur = rad / 3.25` (see
+    blur-fidelity-results.md), per-splat sigma maps to rad in EMU.
+    """
+    eigenvals, eigenvecs = splat.eigendecomposition()
+    sigma_major = float(np.sqrt(max(float(eigenvals[0]), 1e-8)))
+    sigma_minor = float(np.sqrt(max(float(eigenvals[1]), 1e-8)))
+    # Geometric-mean sigma drives the isotropic blur; ellipse aspect ratio
+    # absorbs the anisotropy.
+    sigma_geo = float(np.sqrt(max(sigma_major * sigma_minor, 1e-8)))
+
+    # Small coloured core; blur produces the actual Gaussian falloff.
+    core_k = float(PPTX_BLUR_CORE_K_SIGMA)
+    rx = max(MIN_ELLIPSE_RADIUS_PX, core_k * sigma_major)
+    ry = max(MIN_ELLIPSE_RADIUS_PX, core_k * sigma_minor)
+    cx, cy = float(splat.mu[0]), float(splat.mu[1])
+    x = cx - rx
+    y = cy - ry
+    w = max(2.0 * rx, 1e-3)
+    h = max(2.0 * ry, 1e-3)
+    x_emu = px_to_emu(x)
+    y_emu = px_to_emu(y)
+    w_emu = max(px_to_emu(w), 1)
+    h_emu = max(px_to_emu(h), 1)
+
+    rotation_rad = float(np.arctan2(eigenvecs[1, 0], eigenvecs[0, 0]))
+    rotation_deg = float(np.degrees(rotation_rad))
+    rotation_units = int(round(rotation_deg * 60000.0))
+    rot_attr = f' rot="{rotation_units}"' if abs(rotation_units) > 0 else ""
+
+    rgb_srgb = linear_to_srgb(np.array(splat.color[:3], dtype=np.float32))
+    r = int(np.clip(np.round(rgb_srgb[0] * 255), 0, 255))
+    g = int(np.clip(np.round(rgb_srgb[1] * 255), 0, 255))
+    b = int(np.clip(np.round(rgb_srgb[2] * 255), 0, 255))
+    color_hex = f"{r:02X}{g:02X}{b:02X}"
+
+    # Convolution conserves total mass — peak drops by the disk's coverage
+    # fraction of the Gaussian kernel. Compensate by scaling alpha by the
+    # inverse mass-fraction, clamped at 1.
+    mass_fraction = 1.0 - math.exp(-0.5 * float(PPTX_BLUR_CORE_K_SIGMA) ** 2)
+    alpha_compensated = min(1.0, float(splat.alpha) / max(mass_fraction, 1e-6))
+    alpha_units = int(np.clip(round(alpha_compensated * 100000.0), 0, 100000))
+
+    rad_emu = max(1, int(round(sigma_geo * EMU_PER_PX * PPTX_BLUR_RAD_PER_SIGMA)))
+
+    return [
+        "      <p:sp>",
+        "        <p:nvSpPr>",
+        f'          <p:cNvPr id="{shape_id}" name="Splat {shape_id}"/>',
+        "          <p:cNvSpPr>",
+        '            <a:spLocks noGrp="1"/>',
+        "          </p:cNvSpPr>",
+        "          <p:nvPr/>",
+        "        </p:nvSpPr>",
+        "        <p:spPr>",
+        f"          <a:xfrm{rot_attr}>",
+        f'            <a:off x="{x_emu}" y="{y_emu}"/>',
+        f'            <a:ext cx="{w_emu}" cy="{h_emu}"/>',
+        "          </a:xfrm>",
+        '          <a:prstGeom prst="ellipse">',
+        "            <a:avLst/>",
+        "          </a:prstGeom>",
+        "          <a:solidFill>",
+        f'            <a:srgbClr val="{color_hex}"><a:alpha val="{alpha_units}"/></a:srgbClr>',
+        "          </a:solidFill>",
+        "          <a:ln>",
+        "            <a:noFill/>",
+        "          </a:ln>",
+        "          <a:effectLst>",
+        f'            <a:blur rad="{rad_emu}" grow="1"/>',
         "          </a:effectLst>",
         "        </p:spPr>",
         "        <p:txBody>",
