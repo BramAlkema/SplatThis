@@ -1,289 +1,171 @@
-# SplatThis 🎨✨
+# SplatThis
 
-Transform any image into stunning parallax-animated SVG graphics with dynamic Gaussian splats.
+**Photo → SVG / PPTX / HTML via 2D Gaussian splatting. Apple-Silicon native.**
 
-![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)
-![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
-![Coverage](https://img.shields.io/badge/coverage-79%25-brightgreen.svg)
-![Tests](https://img.shields.io/badge/tests-242%20passing-brightgreen.svg)
+Takes a PNG, fits a few thousand 2D Gaussian splats to it, and emits one of:
 
-## 🚀 Features
+- **SVG** — editable, scalable, browser-friendly
+- **PPTX** — drop-in PowerPoint slide with native DrawingML shapes
+- **Canvas HTML** — JS runtime that does linear-light alpha-over (near-photorealistic)
 
-- **Parallax Animation**: Creates depth-based motion effects on mouse interaction
-- **Gaussian Splat Technology**: Advanced image decomposition into smooth circular gradients
-- **Performance Optimized**: Up to 1.85x faster processing with memory-efficient algorithms
-- **Cross-Browser Compatible**: SVG 1.1 compliant output works everywhere
-- **Mobile Ready**: Gyroscope support for device motion parallax
-- **Accessibility First**: Respects user motion preferences and screen readers
-- **Batch Processing**: Process multiple images efficiently
-- **High Quality Output**: Maintains visual fidelity with optimized splat extraction
+Most other Gaussian-splatting projects optimize for 3D scenes or training-throughput on
+CUDA GPUs. This one optimizes for **deployable vector documents**: SVG you can put
+in a webpage, PPTX you can paste into a deck.
 
-## 📦 Installation
+## What it's good at
+
+- Photo backgrounds in slide decks that don't look mosaic-like.
+- Painterly / abstracted photo representations in editable vector form.
+- HTML5 canvas renders that match the optimizer's linear-light math exactly.
+- Running on Apple Silicon — MLX optimizer is ~5× faster than torch on M-series.
+
+## What it's not for
+
+- Photorealistic SVG at arbitrary scale — there's a perceptual ceiling around
+  LPIPS 0.30 on photo content (see `docs/SVG_PPTX_GAUSSIAN_TRICKS.md`).
+- Crisp text or icons — use real vectors, not splats.
+- Real-time 3D scenes — use [gsplat](https://github.com/nerfstudio-project/gsplat).
+- Highest training throughput — CUDA-native splatters (gsplat, original 3DGS) are faster.
+
+## Quick start
 
 ```bash
-# Clone the repository
 git clone https://github.com/BramAlkema/SplatThis.git
 cd SplatThis
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install with development dependencies
+python -m venv venv && source venv/bin/activate
 pip install -e ".[dev]"
+
+# Canvas (HTML, near-photorealistic, large file)
+splatlify input.png -o out.html --format canvas \
+  --splats 4000 --stages 500,250,125
+
+# SVG (small file, editable, perceptual cap ~LPIPS 0.30)
+splatlify input.png -o out.svg --format svg --training-export-target svg \
+  --splats 2000 --stages 1000,500,250
+
+# PPTX (PowerPoint native shapes)
+splatlify input.png -o out.pptx --format pptx --pptx-splat-style blur \
+  --splats 2000 --blur-postfit-iters 120
 ```
 
-### Quick Install (Coming Soon)
-```bash
-pip install splat-this
-```
+## Recommended recipe per deploy target
 
-## 🎯 Quick Start
+The dominant lever is **training time, not splat count**. Both formats hit a
+perceptual ceiling, but with format-specific training you get there cleanly.
 
-### Basic Usage
-```bash
-# Convert an image to SVG (2D Gaussian splatting)
-splatlify photo.jpg -o output.svg
+| Target | Splats | Stages | Notes |
+|---|---|---|---|
+| Canvas (HTML) | 2 k – 4 k | `--stages 500,250,125` | Best perceptual quality (LPIPS ≈ 0.10). |
+| SVG | 500 – 2 k | `--stages 1000,500,250` | Fewer splats with more iters wins — fewer gradient-stop fan artifacts. |
+| PPTX | 2 k – 4 k | `--stages 500,250,125 --blur-postfit-iters 120` | Use `--pptx-splat-style blur` and the blur-aware postfit. |
 
-# More splats + a longer training schedule for higher fidelity
-splatlify landscape.png --splats 3000 --stages 400,300,200,150 -o detailed.svg
+For both SVG and PPTX, pass `--training-export-target <format>` so the optimizer
+trains against the deploy compositor, not a generic loss. ~17% perceptual lift on
+SVG vs naive train-once-emit-anywhere.
 
-# Downscale large inputs for faster runs
-splatlify portrait.jpg --max-edge 512 --splats 2000 -o portrait.svg
+## Three things this project actually does that others don't
 
-# Export PowerPoint (DrawingML) instead of SVG
-splatlify logo.png --format pptx -o logo.pptx
-```
+1. **PPTX export from splats, calibrated against real PowerPoint.** DrawingML's
+   `<a:blur>` calibration constant (σ = rad / 3.25) was measured via erf-fit
+   edge-response in real PowerPoint. See `docs/SVG_PPTX_GAUSSIAN_TRICKS.md` and
+   the writeup in [svg2ooxml's research notes](../svg2ooxml/docs/reference/research/blur-fidelity-results.md).
 
-## 📖 Documentation
+2. **Format-aware training pipeline.** `--training-export-target {canvas, svg,
+   pptx-softedge}` — the trainer optimizes against the deploy format's compositor
+   during training, not as a postfit afterthought. Closes ~0.07 LPIPS on SVG.
 
-### Command Line Options
+3. **Documented perceptual ceilings.** SVG caps around LPIPS 0.30, PPTX around
+   0.40, canvas keeps improving with splat count. The catalog
+   (`docs/SVG_PPTX_GAUSSIAN_TRICKS.md`) shows the LPIPS-vs-SSIM table that
+   surfaced these ceilings — SSIM systematically over-ranks the blur recipe;
+   LPIPS reverses several findings.
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `INPUT` | Source image (PNG/JPG) | Required |
-| `--output, -o` | Output path | `<input>.svg` |
-| `--splats` | Max number of Gaussian splats | 2000 |
-| `--stages` | Per-stage iteration schedule (comma-separated) | 200,150,100,50 |
-| `--profile` | Quality profile | max-fidelity |
-| `--blend-mode` | Compositing mode (`alpha-over` / `weighted`) | alpha-over |
-| `--max-edge` | Downscale so the longest edge is at most N px | none |
-| `--format` | Output format (`svg` / `pptx`) | svg |
-| `--device` | Torch device (`cpu` / `cuda`) | cpu |
-| `--seed` | Deterministic seed | 0 |
-| `--artifacts-dir` | Directory for run manifest + iteration dumps | none |
-| `--verbose, -v` | Detailed logging | False |
+## Honest quality numbers
 
-### Python API
+Measured against the chameleon test image (`input.png`, 476×502) at 2 k splats
+with `--stages 1000,500,250` and `--training-export-target` matching the format:
 
-```python
-from png2svg_gs.converter import PNG2SVGConverter
+| Format | SSIM | LPIPS↓ | PSNR | File size |
+|---|---|---|---|---|
+| Canvas (HTML JS runtime) | 0.92 | **0.09** | 30 dB | 700 KB |
+| SVG (standard recipe) | 0.76 | **0.32** | 22 dB | 1.0 MB |
+| PPTX (blur recipe) | 0.55 | ~0.40 | 14 dB | 100 KB |
 
-converter = PNG2SVGConverter(
-    max_splats=2000,
-    stages=[200, 150, 100, 50],
-    quality_profile="max-fidelity",
-)
-converter.convert(input_path="input.jpg", output_path="output.svg")
-```
+LPIPS: ~0.10 excellent, ~0.20 acceptable, ~0.30 visibly different, ~0.50 clearly
+different. SSIM in isolation mis-ranks splat-rendered output — always cross-check
+with LPIPS or visual judgment.
 
-## 🎨 How It Works
+## How it works
 
-1. **Content-adaptive initialization**: places 2D Gaussians guided by image gradients (more where there's detail).
-2. **Differentiable optimization**: a torch renderer + L1/SSIM loss (in perceptual OKLab space) refines each splat's position, anisotropic covariance, color, and opacity via SGD.
-3. **Progressive densification/pruning**: stages add splats in high-error regions and prune low-impact ones, up to the splat budget.
-4. **SVG export**: each splat becomes an SVG ellipse with a true-Gaussian radial-gradient falloff (also exportable to PowerPoint DrawingML).
-5. **Honest quality gating**: the exported SVG is rasterized and scored (windowed SSIM, perceptual sRGB) against the source.
+1. **Content-adaptive initialization** — 2D Gaussians seeded where image
+   gradients say there's detail.
+2. **Differentiable optimization** (MLX on Apple Silicon, torch elsewhere) —
+   refines position, anisotropic covariance, color, alpha against L1+SSIM loss.
+3. **Progressive densification & pruning** — staged loop adds splats in
+   high-error regions and prunes low-impact ones, up to the splat budget.
+4. **Format-specific postfit** — color/alpha refinement against the deploy
+   format's compositor proxy. `--svg-proxy-postfit-iters`,
+   `--pptx-proxy-postfit-iters`, `--blur-postfit-iters`.
+5. **Emit** — SVG with quantized-sigma `<feGaussianBlur>` filters, PPTX with
+   calibrated `<a:blur>`, or HTML with a JS canvas runtime doing real
+   linear-light alpha-over.
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 src/png2svg_gs/
-├── converter.py   # PNG2SVGConverter: orchestration, stages, acceptance
-├── renderer.py    # differentiable torch renderer + L1SSIMLoss + color transforms
-├── optimizer.py   # Adam wrapper with per-group learning rates
-├── losses.py      # optional perceptual/edge losses
-├── splat.py       # Gaussian splat model + raw schema
-├── features.py    # gradient/feature maps for initialization
-├── io.py          # SVG + DrawingML/PPTX export, rasterization, quality metrics
-└── cli.py         # `splatlify` command-line entry point
+├── cli.py         # `splatlify` entry point
+├── converter.py   # orchestration, training stages, postfit dispatch
+├── renderer.py    # differentiable renderer + L1+SSIM loss
+├── splat.py       # GaussianSplat model + raw schema
+├── io.py          # SVG / PPTX / Canvas emit + quality metrics
+├── mlx_stage.py   # MLX-native optimizer (Apple Silicon)
+├── mlx_renderer.py
+├── mlx_losses.py
+└── ...
 ```
 
-## ⚡ Performance
+## Development
 
-### Optimization Results
-| Image Size | Standard Time | Optimized Time | Improvement |
-|------------|---------------|----------------|-------------|
-| Small (256×256) | 0.24s | 0.15s | **1.53x faster** |
-| Medium (512×512) | 0.84s | 0.50s | **1.66x faster** |
-| Large (1024×1024) | 2.54s | 1.46s | **1.74x faster** |
-| HD (1920×1080) | 9.79s | 5.28s | **1.85x faster** |
-
-### Memory Efficiency
-- **Peak Usage**: <500MB for large images
-- **Automatic Downsampling**: Memory-constrained optimization
-- **Garbage Collection**: Proactive cleanup
-
-## 🧪 Quality Assurance
-
-- **242 Unit Tests** with 79% coverage
-- **Integration Tests** for complete pipeline validation
-- **Performance Benchmarks** ensuring optimization targets
-- **Browser Compatibility** testing across modern browsers
-- **Visual Regression** testing for output consistency
-- **Accessibility Compliance** with WCAG guidelines
-
-## 🌐 Browser Support
-
-| Feature | Chrome | Firefox | Safari | Edge | Mobile |
-|---------|--------|---------|--------|------|--------|
-| SVG Animation | ✅ | ✅ | ✅ | ✅ | ✅ |
-| CSS Transforms | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Mouse Parallax | ✅ | ✅ | ✅ | ✅ | - |
-| Gyroscope | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Accessibility | ✅ | ✅ | ✅ | ✅ | ✅ |
-
-## 🔧 Development
-
-### Setup Development Environment
 ```bash
-# Install development dependencies
-pip install -e ".[dev]"
+PYTHONPATH=. pytest tests/unit/ --cov=src --cov-report=term-missing --tb=short
 
-# Run tests
-pytest tests/ -v
-
-# Code formatting
+# Lint
 black src/ tests/
-
-# Type checking
-mypy src/
-
-# Style checking
 flake8 src/ tests/
-
-# Run with coverage
-pytest tests/ --cov=src --cov-report=term-missing
+mypy src/
 ```
 
-### Running Tests
-```bash
-# All tests
-pytest tests/
+Requires Python ≥ 3.10. On Apple Silicon, MLX 0.31+ is the default optimizer
+backend; pass `--optimizer-backend torch` for CUDA/CPU runs.
 
-# Unit tests only
-pytest tests/unit/
+## Useful flags
 
-# Integration tests
-pytest tests/integration/
+| Flag | What it does |
+|---|---|
+| `--format {svg,pptx,canvas}` | Output format. |
+| `--training-export-target {auto,canvas,svg,pptx-softedge}` | Loss-target compositor. |
+| `--pptx-splat-style {gradient,soft-edge,blur}` | DrawingML primitive (`blur` recommended). |
+| `--svg-recipe {standard,blur,palette-quantized,…}` | SVG emit recipe (`standard` is best perceptual). |
+| `--splats N` | Splat budget. |
+| `--stages a,b,c` | Per-stage iteration counts. |
+| `--blur-postfit-iters N` | Color/alpha refinement against Gaussian-conv proxy. |
+| `--optimizer-backend {mlx,torch}` | MLX is default on Apple Silicon. |
+| `--max-edge N` | Downscale long edge to N px. |
+| `--artifacts-dir DIR` | Save per-stage splat snapshots + run manifest. |
 
-# Performance benchmarks
-pytest tests/integration/test_performance_benchmarks.py
+## Related work
 
-# Specific test
-pytest tests/unit/test_extract.py::TestSplatExtractor::test_basic_extraction -v
-```
+- **[gsplat](https://github.com/nerfstudio-project/gsplat)** — CUDA-native
+  Gaussian rasterizer; vendored under `external/gsplat/`. Faster training, no
+  vector export.
+- **[Image-GS](https://github.com/<...>)** — academic 2D splat work; reference
+  under `external/image-gs/`.
+- **[3D Gaussian Splatting](https://github.com/graphdeco-inria/gaussian-splatting)**
+  — Kerbl et al. 2023, the reference 3DGS implementation.
+- **[svg2ooxml](https://github.com/BramAlkema/svg2ooxml)** — sibling project for
+  SVG → OOXML conversion; the `<a:blur>` calibration research lives there.
 
-## 🚀 Deployment
+## License
 
-### GitHub Actions
-Automated CI/CD pipeline includes:
-- Code quality checks (black, flake8, mypy)
-- Comprehensive test suite
-- Performance benchmarks
-- Coverage reporting
-- Cross-platform testing
-
-### Production Build
-```bash
-# Build distribution
-python -m build
-
-# Install from wheel
-pip install dist/splat_this-0.1.0-py3-none-any.whl
-```
-
-## 📝 Examples
-
-### Quick conversion
-```bash
-splatlify sunset.jpg -o sunset.svg
-```
-
-### High-quality portrait
-```bash
-splatlify portrait.png --splats 3000 --stages 400,300,200,150 -o portrait_hq.svg
-```
-
-### Fast preview of a large image
-```bash
-splatlify landscape.jpg --max-edge 512 --splats 1500 --stages 100,80 -o landscape.svg
-```
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**Memory Error with Large Images**
-```bash
-# Use automatic downsampling
-splatlify large_image.jpg --splats 1000 -o output.svg
-```
-
-**SVG Not Displaying**
-- Ensure output file has `.svg` extension
-- Check browser console for JavaScript errors
-- Verify SVG syntax with online validators
-
-**Poor Quality Output**
-```bash
-# Increase splat count and train longer
-splatlify image.jpg --splats 3000 --stages 400,300,200,150 -o high_quality.svg
-```
-
-**Performance Issues**
-```bash
-# Use optimized components automatically with verbose output
-splatlify image.jpg -v -o output.svg
-```
-
-## 🤝 Contributing
-
-1. **Fork the repository**
-2. **Create feature branch**: `git checkout -b feature/amazing-feature`
-3. **Run quality checks**: `black src/ tests/ && flake8 src/ tests/ && pytest`
-4. **Commit changes**: `git commit -m 'Add amazing feature'`
-5. **Push to branch**: `git push origin feature/amazing-feature`
-6. **Open Pull Request**
-
-### Development Guidelines
-- Follow PEP 8 style guidelines
-- Write tests for new features
-- Update documentation
-- Ensure all tests pass
-- Maintain >75% test coverage
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- Built with [scikit-image](https://scikit-image.org/) for image processing
-- [Pillow](https://pillow.readthedocs.io/) for image I/O
-- [Click](https://click.palletsprojects.com/) for CLI framework
-- Inspired by modern web animation techniques
-
-## 📊 Project Status
-
-- ✅ **Core Functionality**: Complete splat extraction and SVG generation
-- ✅ **Performance Optimization**: 1.85x speedup achieved
-- ✅ **Testing & QA**: 79% coverage, 242 passing tests
-- ✅ **Documentation**: Comprehensive guides and examples
-- 🚧 **Distribution**: PyPI package preparation
-- 🔮 **Future**: Web interface, batch processing UI
-
----
-
-**Ready to transform your images? Start with `splatlify --help`** 🎨✨
+MIT.
