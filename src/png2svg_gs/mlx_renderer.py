@@ -190,7 +190,17 @@ class MlxBatchedGaussianRenderer:
         order_np = np.argsort(table_np[:, 10], kind="stable").astype(np.int32)
         sorted_table = table_np[order_np]
 
-        radius = self.culling_sigma * np.maximum(sorted_table[:, 2], sorted_table[:, 3])
+        # In pptx_softedge_mode the render-time transform scales sigma by
+        # pptx_sigma_scale AFTER planning, so the culling radius must account
+        # for it here or scales > 1 under-cull and clip splat footprints.
+        sigma_plan_scale = (
+            float(self.pptx_sigma_scale) if self.pptx_softedge_mode else 1.0
+        )
+        radius = (
+            self.culling_sigma
+            * sigma_plan_scale
+            * np.maximum(sorted_table[:, 2], sorted_table[:, 3])
+        )
         x_min = np.clip(
             np.floor((sorted_table[:, 0] - radius) / self.tile_size).astype(np.int64),
             0,
@@ -255,10 +265,15 @@ class MlxBatchedGaussianRenderer:
             slot_idx = np.arange(total_pairs, dtype=np.int64) - np.repeat(
                 tile_starts, tile_counts
             )
-            keep = slot_idx < max_active
+            # Pairs are ordered back-to-front (ascending importance) within
+            # each tile; on overload keep the LAST max_active entries so the
+            # back-most splats are dropped, not the front-most ones.
+            overflow = np.repeat(np.maximum(tile_counts - max_active, 0), tile_counts)
+            new_slots = slot_idx - overflow
+            keep = new_slots >= 0
             kept_tiles = tile_ids_sorted[keep]
             kept_splats = splat_ids_sorted[keep]
-            kept_slots = slot_idx[keep]
+            kept_slots = new_slots[keep]
             indices_np[kept_tiles, kept_slots] = kept_splats.astype(np.int32)
             mask_np[kept_tiles, kept_slots] = 1.0
 

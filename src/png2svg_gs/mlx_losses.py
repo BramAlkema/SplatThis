@@ -105,12 +105,105 @@ def l1_ssim_loss(
     return float(l1_weight) * l1 + float(ssim_weight) * (1.0 - ssim)
 
 
+def _linear_to_srgb(x: Any) -> Any:
+    """Differentiable linear-RGB -> sRGB, mirroring torch_linear_to_srgb."""
+
+    mlx = _require_mlx()
+    x = mlx.clip(x, 0.0, 1.0)
+    return mlx.where(
+        x <= 0.0031308,
+        12.92 * x,
+        1.055 * mlx.power(mlx.maximum(x, 1e-12), 1.0 / 2.4) - 0.055,
+    )
+
+
+def luminance_gradient_l1(
+    rendered: Any, target: Any, weights: Optional[Any] = None
+) -> Any:
+    """MLX port of torch L1SSIMLoss._luminance_gradient_l1 (renderer.py).
+
+    Compares display-luminance finite differences so optimization preserves
+    local edges; identical math and edge-weight averaging to the torch term.
+    """
+
+    mlx = _require_mlx()
+    rendered_srgb = _linear_to_srgb(rendered)
+    target_srgb = _linear_to_srgb(target)
+
+    def luma(x):
+        return 0.2126 * x[..., 0] + 0.7152 * x[..., 1] + 0.0722 * x[..., 2]
+
+    rendered_luma = luma(rendered_srgb)
+    target_luma = luma(target_srgb)
+    losses = []
+
+    if rendered.shape[1] >= 2:
+        dx = mlx.abs(
+            (rendered_luma[:, 1:] - rendered_luma[:, :-1])
+            - (target_luma[:, 1:] - target_luma[:, :-1])
+        )
+        if weights is None:
+            losses.append(mlx.mean(dx))
+        else:
+            wx = 0.5 * (weights[:, 1:] + weights[:, :-1])
+            losses.append(mlx.sum(dx * wx) / mlx.maximum(mlx.sum(wx), 1e-8))
+
+    if rendered.shape[0] >= 2:
+        dy = mlx.abs(
+            (rendered_luma[1:, :] - rendered_luma[:-1, :])
+            - (target_luma[1:, :] - target_luma[:-1, :])
+        )
+        if weights is None:
+            losses.append(mlx.mean(dy))
+        else:
+            wy = 0.5 * (weights[1:, :] + weights[:-1, :])
+            losses.append(mlx.sum(dy * wy) / mlx.maximum(mlx.sum(wy), 1e-8))
+
+    if not losses:
+        return mlx.array(0.0)
+    total = losses[0]
+    for extra in losses[1:]:
+        total = total + extra
+    return total / float(len(losses))
+
+
+def oklab_l1_ssim_loss(
+    rendered: Any,
+    target: Any,
+    weights: Optional[Any] = None,
+    *,
+    l1_weight: float = 1.0,
+    ssim_weight: float = 0.2,
+    gradient_weight: float = 0.0,
+) -> Any:
+    """MLX mirror of the torch default objective: L1SSIMLoss(color_space="oklab").
+
+    L1 in OKLab (spatially weighted), global SSIM on the OKLab L channel only
+    (a/b are small and signed, so the c1/c2 constants tuned for [0,1] ranges
+    would make SSIM on them near-meaningless — same rationale as the torch
+    implementation), plus the optional sRGB-luminance gradient term.
+    """
+
+    r_lab = linear_rgb_to_oklab(rendered)
+    t_lab = linear_rgb_to_oklab(target)
+    l1 = linear_l1_loss(r_lab, t_lab, weights)
+    ssim = mlx_global_ssim(r_lab[..., 0:1], t_lab[..., 0:1])
+    total = float(l1_weight) * l1 + float(ssim_weight) * (1.0 - ssim)
+    if float(gradient_weight) > 0.0:
+        total = total + float(gradient_weight) * luminance_gradient_l1(
+            rendered, target, weights
+        )
+    return total
+
+
 @dataclass(frozen=True)
 class MlxLossConfig:
-    # Default is L1+SSIM to match the torch path's combined-loss behavior so
-    # MLX-trained splats stay close to torch-trained ones on the same input.
-    name: str = "l1-ssim"
+    # Default mirrors the torch default objective (L1SSIMLoss with
+    # color_space="oklab") so both backends optimize the same thing.
+    name: str = "oklab-l1-ssim"
+    l1_weight: float = 1.0
     ssim_weight: float = 0.2
+    gradient_weight: float = 0.0
 
 
 def make_loss_fn(config: MlxLossConfig):
@@ -122,10 +215,33 @@ def make_loss_fn(config: MlxLossConfig):
     if normalized in {"oklab-l1", "weighted-oklab-l1"}:
         return oklab_l1_loss
     if normalized in {"l1-ssim", "linear-l1-ssim"}:
+        l1_weight = float(config.l1_weight)
         ssim_weight = float(config.ssim_weight)
 
         def _fn(rendered, target, weights=None):
-            return l1_ssim_loss(rendered, target, weights, ssim_weight=ssim_weight)
+            return l1_ssim_loss(
+                rendered,
+                target,
+                weights,
+                l1_weight=l1_weight,
+                ssim_weight=ssim_weight,
+            )
+
+        return _fn
+    if normalized == "oklab-l1-ssim":
+        l1_weight = float(config.l1_weight)
+        ssim_weight = float(config.ssim_weight)
+        gradient_weight = float(config.gradient_weight)
+
+        def _fn(rendered, target, weights=None):
+            return oklab_l1_ssim_loss(
+                rendered,
+                target,
+                weights,
+                l1_weight=l1_weight,
+                ssim_weight=ssim_weight,
+                gradient_weight=gradient_weight,
+            )
 
         return _fn
     raise ValueError(f"Unsupported MLX loss profile: {config.name}")
@@ -137,7 +253,9 @@ __all__ = [
     "l1_ssim_loss",
     "linear_l1_loss",
     "linear_rgb_to_oklab",
+    "luminance_gradient_l1",
     "make_loss_fn",
     "mlx_global_ssim",
     "oklab_l1_loss",
+    "oklab_l1_ssim_loss",
 ]

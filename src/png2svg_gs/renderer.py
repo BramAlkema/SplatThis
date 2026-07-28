@@ -335,7 +335,7 @@ class GaussianRenderer(nn.Module):
         output = background_tile.expand(self.height, self.width, 3).clone()
 
         # Higher-importance splats are composited later (front-most).
-        order = torch.argsort(importance, descending=False)
+        order = torch.argsort(importance, descending=False, stable=True)
         mu = mu[order]
         sx = sx[order]
         sy = sy[order]
@@ -666,7 +666,7 @@ class TorchBatchedGaussianRenderer(GaussianRenderer):
         dtype = mu.dtype
 
         # Higher-importance splats are composited later (front-most).
-        order = torch.argsort(importance, descending=False)
+        order = torch.argsort(importance, descending=False, stable=True)
         mu = mu[order]
         sx = sx[order]
         sy = sy[order]
@@ -783,7 +783,10 @@ class TorchBatchedGaussianRenderer(GaussianRenderer):
         for tile_ix, indices in enumerate(bins):
             if not indices:
                 continue
-            selected = indices[:max_active]
+            # Bins are filled back-to-front (ascending importance); keep the
+            # LAST max_active entries so overload drops back-most splats, not
+            # the front-most ones the viewer actually sees.
+            selected = indices[max(0, len(indices) - max_active) :]
             count = len(selected)
             indices_np[tile_ix, :count] = selected
             mask_np[tile_ix, :count] = True

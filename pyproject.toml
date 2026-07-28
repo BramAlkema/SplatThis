@@ -61,6 +61,11 @@ rasterize = [
 perceptual = [
     "torchvision>=0.15.0"
 ]
+# Apple-Silicon-native optimizer backend (the CLI default when available;
+# PNG2SVGConverter falls back to torch with a warning when mlx is missing).
+mlx = [
+    "mlx>=0.15; platform_machine == 'arm64' and sys_platform == 'darwin'"
+]
 
 [project.scripts]
 splatlify = "png2svg_gs.cli:main"

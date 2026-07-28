@@ -4,6 +4,7 @@ Main PNG→SVG converter class.
 Orchestrates the full pipeline from PNG input to SVG/DrawingML output.
 """
 
+import copy
 import hashlib
 import json
 import logging
@@ -21,6 +22,7 @@ from .features import (
     analyze_local_structure,
     compute_gradient_magnitude,
     compute_structure_field,
+    edge_tangent_angle,
     estimate_local_color,
     init_seeds_content_adaptive,
     poisson_disk_sampling,
@@ -31,6 +33,10 @@ from .io import (
     PPTX_SOFT_EDGE_ALPHA_SCALE,
     PPTX_SOFT_EDGE_K_SIGMA_SCALE,
     SVG_BACKGROUND_ALPHA_CAP,
+    SVG_BROWSER_COMPAT_RECIPE,
+    SVG_PALETTE_QUANTIZED_RECIPE,
+    SVG_SCRIPTED_MATRIX_RECIPE,
+    _normalize_svg_export_recipe,
     compute_quality_metrics,
     evaluate_svg_export_quality,
     generate_canvas_html,
@@ -591,6 +597,19 @@ class PNG2SVGConverter:
         self.device = torch.device(device)
         self.renderer_backend = renderer_backend
         self.optimizer_backend = self._normalize_optimizer_backend(optimizer_backend)
+        if self.optimizer_backend == "mlx":
+            from .mlx_stage import is_mlx_available
+
+            if not is_mlx_available():
+                # Fail at construction, not mid-run: fresh installs (or any
+                # non-Apple-Silicon host) don't ship mlx, and the CLI default
+                # backend is mlx. Torch is always a declared dependency.
+                logger.warning(
+                    "Optimizer backend 'mlx' requested but the mlx package is "
+                    "not installed; falling back to 'torch'. Install it with "
+                    "`pip install splat-this[mlx]` on Apple Silicon."
+                )
+                self.optimizer_backend = "torch"
         self.resolved_renderer_backend = resolve_renderer_backend(
             renderer_backend,
             self.device,
@@ -638,16 +657,17 @@ class PNG2SVGConverter:
         self.region_weighting_enabled = bool(
             self.refinement_config.get("region_weighting_enabled", False)
         )
-        self.svg_export_recipe = (
-            str(self.refinement_config.get("svg_export_recipe", "standard"))
-            .strip()
-            .lower()
+        # Canonicalize aliases up front ("browser" -> "browser-compatible",
+        # "palette" -> "palette-quantized", ...) and fail fast on invalid
+        # recipes here instead of erroring after training at save time.
+        self.svg_export_recipe = _normalize_svg_export_recipe(
+            self.refinement_config.get("svg_export_recipe", "standard")
         )
         self.training_export_target = self._normalize_training_export_target(
             self.refinement_config.get("training_export_target", "canvas")
         )
         self.mlx_loss = (
-            str(self.refinement_config.get("mlx_loss", "l1-ssim"))
+            str(self.refinement_config.get("mlx_loss", "oklab-l1-ssim"))
             .strip()
             .lower()
             .replace("_", "-")
@@ -675,9 +695,7 @@ class PNG2SVGConverter:
                     "optimizer_backend='mlx' currently supports only color/alpha with static tile plans; "
                     f"got moving group(s): {', '.join(sorted(moving))}"
                 )
-        self.mlx_spatial_weighting_enabled = bool(
-            self.optimizer_backend == "mlx" and self.mlx_loss.startswith("weighted")
-        )
+        self.mlx_spatial_weighting_enabled = self._use_mlx_spatial_weights()
         self.schedule_config = profile_defaults["schedule"].copy()
         if schedule_config:
             self.schedule_config.update(schedule_config)
@@ -716,9 +734,21 @@ class PNG2SVGConverter:
                 "requested_max_splats": int(before_cap),
                 "applied": bool(before_cap != self.max_splats),
             }
-            logger.info(
-                "Apple Silicon detected - limiting max_splats to %s", self.max_splats
-            )
+            if before_cap != self.max_splats:
+                # WARNING, not INFO: the default CLI log level would hide an
+                # actual clamp of a user-requested count.
+                logger.warning(
+                    "Apple Silicon splat cap: limiting max_splats from %s to %s "
+                    "(pass --no-apple-silicon-splat-cap or a higher "
+                    "--apple-silicon-splat-cap to override)",
+                    before_cap,
+                    self.max_splats,
+                )
+            else:
+                logger.info(
+                    "Apple Silicon detected - max_splats %s within cap",
+                    self.max_splats,
+                )
 
         logger.info(
             "Initialized PNG2SVG converter: max_splats=%s, stages=%s, device=%s, backend=%s->%s, optimizer=%s, blend=%s, seed=%s, profile=%s, resolution_scale=%.2f, init_random_ratio=%.2f, time_budget=%s, layered_saliency=%s",
@@ -764,8 +794,37 @@ class PNG2SVGConverter:
         return groups or ("color", "alpha")
 
     def _use_mlx_spatial_weights(self) -> bool:
+        # Every MLX loss profile applies spatial weights to its L1 term when
+        # given, so honor the profile's region_weighting_enabled switch
+        # instead of gating on the "weighted-" loss-name prefix (which
+        # silently dropped the region map for the default l1-ssim losses).
+        return self.optimizer_backend == "mlx" and (
+            self.region_weighting_enabled or self.mlx_loss.startswith("weighted")
+        )
+
+    # SVG recipes whose emitters consume region-guidance masks (safe-background
+    # tests, alpha caps, precompensation). Recipe names here are canonical —
+    # svg_export_recipe is normalized in __init__.
+    _GUIDANCE_SVG_RECIPES = frozenset(
+        {
+            SVG_BROWSER_COMPAT_RECIPE,
+            SVG_SCRIPTED_MATRIX_RECIPE,
+            SVG_PALETTE_QUANTIZED_RECIPE,
+        }
+    )
+
+    def _needs_region_guidance(self) -> bool:
+        """Single source of truth for whether a run computes region guidance."""
         return bool(
-            self.optimizer_backend == "mlx" and self.mlx_loss.startswith("weighted")
+            self.time_budget is not None
+            or self.region_weighting_enabled
+            or self.layered_saliency
+            or self._use_pptx_proxy_training()
+            or self._use_mlx_spatial_weights()
+            or int(max(0, self.refinement_config.get("svg_proxy_postfit_iters", 0))) > 0
+            or int(max(0, self.refinement_config.get("pptx_proxy_postfit_iters", 0)))
+            > 0
+            or self.svg_export_recipe in self._GUIDANCE_SVG_RECIPES
         )
 
     def _normalize_time_budget(self, time_budget: Optional[str]) -> Optional[str]:
@@ -1104,6 +1163,22 @@ class PNG2SVGConverter:
             if self.training_export_target in {"svg", "pptx-softedge"}
             else self.compositing_space
         )
+        blend_mode = self.blend_mode
+        if (
+            self.training_export_target in {"svg", "pptx-softedge"}
+            and blend_mode != "alpha-over"
+        ):
+            # The SVG/PPTX emitters model per-splat source-over opacity
+            # (1 - exp(-a*G)); training a "weighted" forward model against
+            # them optimizes an objective no exporter can reproduce. Force
+            # alpha-over exactly as compositing_space is forced above.
+            logger.info(
+                "training_export_target=%s: forcing blend_mode='alpha-over' "
+                "(was %r) to match export compositing semantics.",
+                self.training_export_target,
+                blend_mode,
+            )
+            blend_mode = "alpha-over"
         tile_size = int(
             np.clip(self.refinement_config.get("renderer_tile_size", 16), 4, 128)
         )
@@ -1128,7 +1203,7 @@ class PNG2SVGConverter:
             height=height,
             device=self.device,
             tile_size=tile_size,
-            blend_mode=self.blend_mode,
+            blend_mode=blend_mode,
             background_color=self._background_linear_rgb,
             compositing_space=compositing_space,
             tile_bin_rebuild_interval=tile_bin_rebuild_interval,
@@ -1224,6 +1299,57 @@ class PNG2SVGConverter:
         }
 
     def convert(
+        self,
+        input_path: str,
+        output_path: Optional[str] = None,
+        save_json: bool = False,
+        verbose: bool = True,
+        output_format: str = "svg",
+        seed: Optional[int] = None,
+        artifacts_dir: Optional[str] = None,
+        acceptance_criteria: Optional[Dict[str, float]] = None,
+        validate_roundtrip: bool = False,
+        side_by_side_html: Optional[str] = None,
+        preview_png_path: Optional[str] = None,
+    ) -> str:
+        """Convert with per-run config isolation.
+
+        The run body (time-budget planning in particular) resolves config by
+        mutating instance state; snapshot and restore it here so a second
+        convert() on the same instance starts from the constructed config
+        instead of the previous run's degraded/ratcheted values.
+        """
+        state_snapshot = (
+            self.max_splats,
+            list(self.stages),
+            copy.deepcopy(self.refinement_config),
+            copy.deepcopy(self.acceptance_criteria),
+            self._time_budget_deadline,
+        )
+        try:
+            return self._convert_impl(
+                input_path=input_path,
+                output_path=output_path,
+                save_json=save_json,
+                verbose=verbose,
+                output_format=output_format,
+                seed=seed,
+                artifacts_dir=artifacts_dir,
+                acceptance_criteria=acceptance_criteria,
+                validate_roundtrip=validate_roundtrip,
+                side_by_side_html=side_by_side_html,
+                preview_png_path=preview_png_path,
+            )
+        finally:
+            (
+                self.max_splats,
+                self.stages,
+                self.refinement_config,
+                self.acceptance_criteria,
+                self._time_budget_deadline,
+            ) = state_snapshot
+
+    def _convert_impl(
         self,
         input_path: str,
         output_path: Optional[str] = None,
@@ -1373,26 +1499,7 @@ class PNG2SVGConverter:
         self._region_background_safe_mask = None
         self._region_edge_band_mask = None
         guidance: Optional[Dict[str, Any]] = None
-        needs_region_guidance = (
-            self.time_budget is not None
-            or self.region_weighting_enabled
-            or self.layered_saliency
-            or self._use_pptx_proxy_training()
-            or self._use_mlx_spatial_weights()
-            or int(max(0, self.refinement_config.get("svg_proxy_postfit_iters", 0))) > 0
-            or int(max(0, self.refinement_config.get("pptx_proxy_postfit_iters", 0)))
-            > 0
-            or self.svg_export_recipe
-            in {
-                "browser",
-                "browser_compatible",
-                "browser-compatible",
-                "scripted",
-                "scripted-matrix",
-                "scripted-standard",
-            }
-        )
-        if needs_region_guidance:
+        if self._needs_region_guidance():
             phase_t0 = time.perf_counter()
             guidance = self._compute_region_guidance(image)
             timings["region_guidance"] = float(time.perf_counter() - phase_t0)
@@ -1453,25 +1560,9 @@ class PNG2SVGConverter:
         else:
             self._time_budget_deadline = None
             manifest["config"]["time_budget_deadline_enabled"] = False
-        if guidance is not None and (
-            self.time_budget is not None
-            or self.region_weighting_enabled
-            or self.layered_saliency
-            or self._use_pptx_proxy_training()
-            or self._use_mlx_spatial_weights()
-            or int(max(0, self.refinement_config.get("svg_proxy_postfit_iters", 0))) > 0
-            or int(max(0, self.refinement_config.get("pptx_proxy_postfit_iters", 0)))
-            > 0
-            or self.svg_export_recipe
-            in {
-                "browser",
-                "browser_compatible",
-                "browser-compatible",
-                "scripted",
-                "scripted-matrix",
-                "scripted-standard",
-            }
-        ):
+        # guidance is only ever computed when _needs_region_guidance() held,
+        # so its presence alone gates map installation.
+        if guidance is not None:
             self._region_weight_map = guidance["weight_map"]
             self._region_saliency_map = guidance.get("saliency_map")
             self._region_detail_priority_map = guidance.get("detail_priority_map")
@@ -2267,10 +2358,7 @@ class PNG2SVGConverter:
                 )
             )
             if is_edge_init and anisotropy >= edge_init_anisotropy_threshold:
-                angle = float(
-                    np.arctan2(primary_direction[1], primary_direction[0])
-                    + (0.5 * np.pi)
-                )
+                angle = edge_tangent_angle(primary_direction)
                 cos_a, sin_a = float(np.cos(angle)), float(np.sin(angle))
                 rotation_matrix = np.array(
                     [[cos_a, -sin_a], [sin_a, cos_a]], dtype=np.float32
@@ -2301,7 +2389,7 @@ class PNG2SVGConverter:
                     alpha=alpha,
                 )
             elif (not is_base) and anisotropy >= init_anisotropy_threshold:
-                angle = float(np.arctan2(primary_direction[1], primary_direction[0]))
+                angle = edge_tangent_angle(primary_direction)
                 cos_a, sin_a = float(np.cos(angle)), float(np.sin(angle))
                 rotation_matrix = np.array(
                     [[cos_a, -sin_a], [sin_a, cos_a]], dtype=np.float32
@@ -2786,6 +2874,12 @@ class PNG2SVGConverter:
             rendered = renderer(params.as_tensor())
             loss = loss_fn(rendered, target)
             loss.backward()
+            loss_value = float(loss.item())
+            # Snapshot BEFORE optimizer.step(): `loss` was measured on the
+            # current params, so the best snapshot must capture them pre-step.
+            if loss_value < best_loss:
+                best_loss = loss_value
+                best_snapshot = params.snapshot()
             # Clip gradient norm across all trainable splat params.
             torch.nn.utils.clip_grad_norm_(
                 [
@@ -2800,12 +2894,8 @@ class PNG2SVGConverter:
             optimizer.step()
             params.apply_constraints(image_width, image_height)
 
-            loss_value = float(loss.item())
             iter_elapsed = time.perf_counter() - iter_t0
             end_loss = loss_value
-            if loss_value < best_loss:
-                best_loss = loss_value
-                best_snapshot = params.snapshot()
 
             should_log_progress = verbose and (
                 iteration == 0
@@ -2868,6 +2958,17 @@ class PNG2SVGConverter:
                                 num_iters,
                                 decay_ratio,
                             )
+
+        # The loop's best-tracking only ever measures pre-step params, so the
+        # final post-step params are unmeasured; on a still-descending loss
+        # tail they are the true best. One extra forward closes that gap.
+        if iterations_run > 0:
+            with torch.no_grad():
+                final_loss = float(loss_fn(renderer(params.as_tensor()), target).item())
+            end_loss = final_loss
+            if final_loss < best_loss:
+                best_loss = final_loss
+                best_snapshot = params.snapshot()
 
         # Restore the best-loss snapshot.
         params.restore(best_snapshot)
@@ -2968,11 +3069,18 @@ class PNG2SVGConverter:
             else self.compositing_space
         )
         pptx_softedge_mode = self._use_pptx_proxy_training()
+        # Mirror the torch training renderer: SVG/PPTX targets deploy via
+        # source-over, so force alpha-over alongside the sRGB compositing.
+        mlx_blend_mode = (
+            "alpha-over"
+            if self.training_export_target in {"svg", "pptx-softedge"}
+            else self.blend_mode
+        )
         stage_config = MlxStageConfig(
             renderer=MlxRendererConfig(
                 tile_size=tile_size,
                 batch_tile_count=batch_tile_count,
-                blend_mode=self.blend_mode,
+                blend_mode=mlx_blend_mode,
                 background_color=tuple(
                     float(v) for v in self._background_linear_rgb[:3]
                 ),
@@ -2992,7 +3100,9 @@ class PNG2SVGConverter:
             ),
             loss=MlxLossConfig(
                 name=self.mlx_loss,
+                l1_weight=float(self.loss_weights.get("l1_weight", 1.0)),
                 ssim_weight=float(self.loss_weights.get("ssim_weight", 0.2)),
+                gradient_weight=float(self.loss_weights.get("gradient_weight", 0.0)),
             ),
             trainable_groups=self.mlx_trainable_groups,
             tile_plan_mode=self.mlx_tile_plan,
@@ -3334,7 +3444,7 @@ class PNG2SVGConverter:
                 and edge_need >= strong_edge_threshold
             )
             if make_anisotropic:
-                angle = float(np.arctan2(primary_direction[1], primary_direction[0]))
+                angle = edge_tangent_angle(primary_direction)
                 cos_a, sin_a = float(np.cos(angle)), float(np.sin(angle))
                 rotation_matrix = np.array(
                     [[cos_a, -sin_a], [sin_a, cos_a]], dtype=np.float32
@@ -3737,10 +3847,7 @@ class PNG2SVGConverter:
                         image, x, y
                     )
                     if float(anisotropy) >= edge_anisotropy_threshold:
-                        angle = float(
-                            np.arctan2(primary_direction[1], primary_direction[0])
-                            + (0.5 * np.pi)
-                        )
+                        angle = edge_tangent_angle(primary_direction)
                         cos_a, sin_a = float(np.cos(angle)), float(np.sin(angle))
                         rotation_matrix = np.array(
                             [[cos_a, -sin_a], [sin_a, cos_a]], dtype=np.float32

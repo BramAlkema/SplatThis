@@ -126,10 +126,10 @@ def optimize_stage_mlx(
     if target_np.ndim != 3 or target_np.shape[-1] < 3:
         raise ValueError("target_linear_rgb must have shape [H, W, 3]")
     target_np = np.clip(target_np[: int(height), : int(width), :3], 0.0, 1.0)
-    loss_name = str(stage_config.loss.name).strip().lower().replace("_", "-")
-    use_spatial_weights = loss_name.startswith("weighted")
+    # Every MLX loss profile applies spatial weights to its L1 term when
+    # given, so honor any provided map rather than gating on the loss name.
     weights = None
-    if use_spatial_weights and spatial_weight_map is not None:
+    if spatial_weight_map is not None:
         weights_np = np.asarray(spatial_weight_map, dtype=np.float32)
         if weights_np.shape != (int(height), int(width)):
             raise ValueError("spatial_weight_map shape must match target HxW")
@@ -312,6 +312,10 @@ def optimize_stage_mlx(
                 )
             break
         iter_t0 = time.perf_counter()
+        # The loss returned by _train_step is measured on the PRE-step tree,
+        # so keep that tree around for best-tracking (MLX arrays are
+        # immutable; holding the old dict of references is free).
+        pre_step_tree = trainable
         (
             trainable,
             m_state,
@@ -333,7 +337,7 @@ def optimize_stage_mlx(
         is_better = loss_arr < best_loss_arr
         best_loss_arr = mlx.where(is_better, loss_arr, best_loss_arr)
         best_tree = {
-            key: mlx.where(is_better, trainable[key], best_tree[key])
+            key: mlx.where(is_better, pre_step_tree[key], best_tree[key])
             for key in trainable
         }
         if plan_mode == "periodic" and (iteration + 1) % plan_rebuild_interval == 0:
@@ -366,6 +370,19 @@ def optimize_stage_mlx(
                 iter_elapsed,
                 avg_iter,
             )
+
+    # The loop's best-tracking only ever measures pre-step trees, so the
+    # final post-step tree is unmeasured; on a still-descending loss tail it
+    # is the true best. One extra forward pass closes that gap.
+    if iterations_run > 0:
+        final_loss_arr = _loss_with_plan(trainable, plan.indices, plan.mask, plan.order)
+        final_better = final_loss_arr < best_loss_arr
+        best_loss_arr = mlx.where(final_better, final_loss_arr, best_loss_arr)
+        best_tree = {
+            key: mlx.where(final_better, trainable[key], best_tree[key])
+            for key in trainable
+        }
+        loss_arr = final_loss_arr
 
     # Single final sync for end-of-stage scalars + best_tree materialization.
     # Must precede elapsed_sec capture: in static/deferred-eval modes the loop

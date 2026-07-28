@@ -192,13 +192,18 @@ def _adaptive_gradient_stops(
 
     for n_stops in range(min_stops, max_stops + 1):
         stop_t = np.linspace(0.0, 1.0, n_stops)
-        stop_op = _gaussian_opacity_curve(stop_t, alpha, gradient_footprint)
+        # Quantize to the 2-decimal precision the SVG emitter writes, so the
+        # error check judges exactly the curve a browser will interpolate —
+        # otherwise rounding silently spends up to 0.005/stop of the budget.
+        stop_op = np.round(
+            _gaussian_opacity_curve(stop_t, alpha, gradient_footprint), 2
+        )
         interp_op = np.interp(sample_t, stop_t, stop_op)
         if float(np.max(np.abs(interp_op - true_op))) <= float(max_error):
             return [(float(t * inner_end), float(op)) for t, op in zip(stop_t, stop_op)]
 
     stop_t = np.linspace(0.0, 1.0, max_stops)
-    stop_op = _gaussian_opacity_curve(stop_t, alpha, gradient_footprint)
+    stop_op = np.round(_gaussian_opacity_curve(stop_t, alpha, gradient_footprint), 2)
     return [(float(t * inner_end), float(op)) for t, op in zip(stop_t, stop_op)]
 
 
@@ -381,8 +386,13 @@ def save_svg(
 
 
 def px_to_emu(value: float) -> int:
-    """Convert pixels to EMU units used by DrawingML."""
-    return int(round(max(0.0, value) * EMU_PER_PX))
+    """Convert pixels to EMU units used by DrawingML.
+
+    Negative values are legitimate: shape offsets (`a:off`) of splats that
+    overlap the slide's left/top edge must stay negative, or every border
+    splat gets displaced inward while keeping its full extent.
+    """
+    return int(round(value * EMU_PER_PX))
 
 
 def save_drawingml(

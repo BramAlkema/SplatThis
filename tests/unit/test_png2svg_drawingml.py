@@ -15,7 +15,32 @@ def test_px_to_emu_conversion():
     """Pixel to EMU conversion should follow OOXML ratio."""
     assert px_to_emu(1.0) == EMU_PER_PX
     assert px_to_emu(10.0) == 10 * EMU_PER_PX
-    assert px_to_emu(-5.0) == 0
+    # Negative offsets must survive: border-overlapping splats have
+    # legitimately negative a:off values (fix for the left/top-edge clamp).
+    assert px_to_emu(-5.0) == -5 * EMU_PER_PX
+
+
+def test_border_overlap_splat_keeps_negative_offset():
+    """A splat overlapping the left/top slide edge must emit a negative a:off.
+
+    Regression test for the px_to_emu clamp that displaced every
+    border-overlapping splat inward while keeping its full a:ext size.
+    """
+    splat = create_isotropic_splat(
+        center=[2.0, 3.0], sigma=8.0, color=[0.0, 1.0, 0.0], alpha=0.8
+    )
+    content = generate_drawingml_slide_content(
+        [splat], width=100, height=80, k_sigma=2.5
+    )
+    import re
+
+    offsets = [
+        (int(m.group(1)), int(m.group(2)))
+        for m in re.finditer(r'<a:off x="(-?\d+)" y="(-?\d+)"/>', content)
+    ]
+    # rx = 1.15 * 2.5 * 8 = 23px, so x = 2 - 23 = -21px and y = 3 - 23 = -20px.
+    assert any(x < 0 and y < 0 for x, y in offsets), offsets
+    assert (px_to_emu(2.0 - 23.0), px_to_emu(3.0 - 23.0)) in offsets
 
 
 def test_generate_drawingml_slide_content_basic():

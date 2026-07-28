@@ -84,6 +84,10 @@ def _resolve_cli_resource_limits(
         # cap silently collapse photo-10k/photo-20k back to the interactive 2k
         # ceiling unless the user explicitly supplies a cap.
         resolved_cap = None
+    elif splats is not None:
+        # Same reasoning for an explicit --splats: the user stated a count, so
+        # honor it rather than silently clamping to the interactive ceiling.
+        resolved_cap = None
     else:
         resolved_cap = DEFAULT_APPLE_SILICON_SPLAT_CAP
 
@@ -151,11 +155,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--mlx-loss",
         default=None,
-        choices=["linear-l1", "oklab-l1", "weighted-oklab-l1", "l1-ssim"],
+        choices=[
+            "linear-l1",
+            "oklab-l1",
+            "weighted-oklab-l1",
+            "l1-ssim",
+            "oklab-l1-ssim",
+        ],
         help="MLX optimizer loss profile when --optimizer-backend=mlx. "
-        "Default 'l1-ssim' matches the torch path's combined L1+SSIM loss "
-        "and avoids the color-cast regression that pure linear-l1 produces "
-        "on PPTX/SVG export.",
+        "Default 'oklab-l1-ssim' mirrors the torch default objective "
+        "(OKLab L1 + SSIM on the L channel + optional gradient term); "
+        "'l1-ssim' is the older linear-RGB variant.",
     )
     parser.add_argument(
         "--mlx-tile-plan",

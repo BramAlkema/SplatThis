@@ -237,6 +237,8 @@ def poisson_disk_sampling(
     Returns:
         List of (x, y) positions
     """
+    rng = _resolve_rng(rng)
+
     # Grid for spatial lookup
     cell_size = min_distance / np.sqrt(2)
     grid_width = int(np.ceil(width / cell_size))
@@ -437,6 +439,21 @@ def analyze_local_structure(
     anisotropy = lambda1 / max(lambda2, 1e-6)
     anisotropy = float(np.clip(anisotropy, 1.0, max(1.0, anisotropy_clip)))
     return primary_direction, anisotropy
+
+
+def edge_tangent_angle(primary_direction: np.ndarray) -> float:
+    """Rotation angle that aligns a splat's major axis with the local edge.
+
+    ``primary_direction`` is the structure tensor's dominant eigenvector — the
+    *gradient* direction, perpendicular to the edge. A splat elongated along
+    the edge must therefore be rotated 90° from it. Every anisotropic-splat
+    creation site should go through this helper so the convention cannot
+    drift between call sites.
+    """
+    return float(
+        np.arctan2(float(primary_direction[1]), float(primary_direction[0]))
+        + 0.5 * np.pi
+    )
 
 
 def estimate_local_color(
