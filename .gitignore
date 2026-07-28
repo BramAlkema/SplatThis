@@ -86,6 +86,7 @@ examples/output/
 *.svg
 !docs/examples/*.svg
 !docs/demo/*.svg
+!docs/journey/svg/*.svg
 
 # Local Claude Code settings
 .claude/

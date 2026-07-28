@@ -20,6 +20,8 @@ Same 2 000-splat set, ~8 min training on Apple Silicon. Files:
 [canvas.html](docs/demo/canvas.html) (interactive, 350 KB self-contained
 JS runtime — opens in any browser).
 
+**[How we got here](docs/journey/)** — ten months of getting to that render, in fourteen frames: the first four splats on black, the coverage hole, the density ladder that proved more splats were never the answer, and the π/2 rotation that finally straightened the edges.
+
 Most other Gaussian-splatting projects optimize for 3D scenes or training-throughput on
 CUDA GPUs. This one optimizes for **deployable vector documents**: SVG you can put
 in a webpage, PPTX you can paste into a deck.

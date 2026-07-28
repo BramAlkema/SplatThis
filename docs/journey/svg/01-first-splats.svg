@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 400 300"
+     xmlns="http://www.w3.org/2000/svg"
+     style="width: 100%; height: 100vh; background: #000;"
+     class="splat-svg"
+     data-parallax-strength="40"
+     data-interactive-top="0">
+    <defs></defs>
+    <g class="layer" data-depth="0.200" data-layer="0">
+        <ellipse cx="379.500" cy="17.000" rx="25.258" ry="28.869" style="fill: rgba(0, 0, 0, 0.841); stroke: none;" transform="rotate(90.000 379.500 17.000)"/>
+        <ellipse cx="379.500" cy="52.000" rx="25.258" ry="28.869" style="fill: rgba(0, 0, 0, 0.841); stroke: none;" transform="rotate(90.000 379.500 52.000)"/>
+        <ellipse cx="379.500" cy="87.000" rx="25.258" ry="28.869" style="fill: rgba(0, 0, 0, 0.841); stroke: none;" transform="rotate(90.000 379.500 87.000)"/>
+        <ellipse cx="339.500" cy="122.000" rx="25.258" ry="28.869" style="fill: rgba(0, 0, 0, 0.841); stroke: none;" transform="rotate(90.000 339.500 122.000)"/>
+        <ellipse cx="379.500" cy="122.000" rx="25.258" ry="28.869" style="fill: rgba(0, 0, 0, 0.841); stroke: none;" transform="rotate(90.000 379.500 122.000)"/>
+        <ellipse cx="339.514" cy="87.012" rx="25.241" ry="28.850" style="fill: rgba(0, 0, 0, 0.841); stroke: none;" transform="rotate(-90.435 339.514 87.012)"/>
+        <ellipse cx="379.563" cy="156.939" rx="25.170" ry="28.804" style="fill: rgba(0, 0, 0, 0.841); stroke: none;" transform="rotate(-88.044 379.563 156.939)"/>
+        <ellipse cx="340.000" cy="17.000" rx="25.258" ry="28.147" style="fill: rgba(0, 0, 0, 0.841); stroke: none;" transform="rotate(90.000 340.000 17.000)"/>
+        <ellipse cx="340.000" cy="52.000" rx="25.258" ry="28.147" style="fill: rgba(0, 0, 0, 0.841); stroke: none;" transform="rotate(90.000 340.000 52.000)"/>
+        <ellipse cx="339.500" cy="156.500" rx="24.536" ry="28.869" style="fill: rgba(0, 0, 0, 0.841); stroke: none;" transform="rotate(90.000 339.500 156.500)"/>
+        <ellipse cx="301.541" cy="52.014" rx="25.279" ry="27.444" style="fill: rgba(0, 0, 0, 0.842); stroke: none;" transform="rotate(-87.729 301.541 52.014)"/>
+        <ellipse cx="301.500" cy="17.000" rx="25.258" ry="27.425" style="fill: rgba(0, 0, 0, 0.842); stroke: none;" transform="rotate(90.000 301.500 17.000)"/>
+        <ellipse cx="379.434" cy="190.936" rx="23.907" ry="28.944" style="fill: rgba(0, 0, 0, 0.842); stroke: none;" transform="rotate(-88.493 379.434 190.936)"/>
+        <ellipse cx="379.000" cy="223.500" rx="23.092" ry="29.592" style="fill: rgba(0, 0, 0, 0.842); stroke: none;" transform="rotate(90.000 379.000 223.500)"/>
+        <ellipse cx="264.013" cy="52.014" rx="25.279" ry="26.719" style="fill: rgba(0, 0, 0, 0.842); stroke: none;" transform="rotate(-88.871 264.013 52.014)"/>
+        <ellipse cx="264.000" cy="17.000" rx="25.259" ry="26.703" style="fill: rgba(0, 0, 0, 0.842); stroke: none;" transform="rotate(90.000 264.000 17.000)"/>
+        <ellipse cx="263.000" cy="121.974" rx="25.223" ry="26.665" style="fill: rgba(0, 0, 255, 0.842); stroke: none;" transform="rotate(90.000 263.000 121.974)"/>
+        <ellipse cx="227.500" cy="17.000" rx="25.259" ry="25.981" style="fill: rgba(0, 0, 0, 0.843); stroke: none;" transform="rotate(90.000 227.500 17.000)"/>
+        <ellipse cx="227.500" cy="52.000" rx="25.259" ry="25.981" style="fill: rgba(0, 0, 0, 0.843); stroke: none;" transform="rotate(90.000 227.500 52.000)"/>
+        <ellipse cx="379.637" cy="254.853" rx="22.157" ry="28.798" style="fill: rgba(0, 0, 0, 0.843); stroke: none;" transform="rotate(-87.803 379.637 254.853)"/>
+        <ellipse cx="17.000" cy="17.000" rx="25.259" ry="25.259" style="fill: rgba(0, 0, 0, 0.843); stroke: none;"/>
+        <ellipse cx="52.000" cy="17.000" rx="25.259" ry="25.259" style="fill: rgba(0, 0, 0, 0.843); stroke: none;"/>
+        <ellipse cx="87.000" cy="17.000" rx="25.259" ry="25.259" style="fill: rgba(0, 0, 0, 0.843); stroke: none;"/>
+        <ellipse cx="122.000" cy="17.000" rx="25.259" ry="25.259" style="fill: rgba(0, 0, 0, 0.843); stroke: none;"/>
+        <ellipse cx="157.000" cy="17.000" rx="25.259" ry="25.259" style="fill: rgba(0, 0, 0, 0.843); stroke: none;"/>
+    </g>
+    <g class="layer" data-depth="0.467" data-layer="1">
+        <ellipse cx="192.000" cy="17.000" rx="25.259" ry="25.259" style="fill: rgba(0, 0, 0, 0.843); stroke: none;"/>
+        <ellipse cx="17.000" cy="52.000" rx="25.259" ry="25.259" style="fill: rgba(0, 0, 0, 0.843); stroke: none;"/>
+        <ellipse cx="192.000" cy="52.000" rx="25.259" ry="25.259" style="fill: rgba(0, 0, 0, 0.843); stroke: none;"/>
+        <ellipse cx="17.000" cy="87.000" rx="25.259" ry="25.259" style="fill: rgba(0, 0, 0, 0.843); stroke: none;"/>
+        <ellipse cx="17.000" cy="122.000" rx="25.259" ry="25.259" style="fill: rgba(0, 0, 0, 0.843); stroke: none;"/>
+        <ellipse cx="17.000" cy="157.000" rx="25.259" ry="25.259" style="fill: rgba(0, 0, 0, 0.843); stroke: none;"/>
+        <ellipse cx="52.000" cy="157.000" rx="25.259" ry="25.259" style="fill: rgba(0, 0, 0, 0.843); stroke: none;"/>
+        <ellipse cx="87.000" cy="87.000" rx="25.259" ry="25.259" style="fill: rgba(255, 0, 0, 0.844); stroke: none;"/>
+        <ellipse cx="87.000" cy="157.000" rx="25.259" ry="25.259" style="fill: rgba(0, 0, 0, 0.844); stroke: none;"/>
+        <ellipse cx="17.000" cy="191.500" rx="24.537" ry="25.259" style="fill: rgba(0, 0, 0, 0.844); stroke: none;" transform="rotate(90.000 17.000 191.500)"/>
+        <ellipse cx="52.000" cy="191.500" rx="24.537" ry="25.259" style="fill: rgba(0, 0, 0, 0.844); stroke: none;" transform="rotate(90.000 52.000 191.500)"/>
+        <ellipse cx="157.000" cy="191.500" rx="24.537" ry="25.259" style="fill: rgba(0, 128, 0, 0.844); stroke: none;" transform="rotate(90.000 157.000 191.500)"/>
+        <ellipse cx="379.357" cy="284.846" rx="21.147" ry="28.959" style="fill: rgba(0, 0, 0, 0.844); stroke: none;" transform="rotate(-88.050 379.357 284.846)"/>
+        <ellipse cx="300.549" cy="254.341" rx="22.195" ry="27.506" style="fill: rgba(255, 255, 0, 0.844); stroke: none;" transform="rotate(-95.419 300.549 254.341)"/>
+        <ellipse cx="300.473" cy="86.999" rx="25.260" ry="27.423" style="fill: rgba(0, 0, 18, 0.844); stroke: none;" transform="rotate(-88.511 300.473 86.999)"/>
+        <ellipse cx="227.000" cy="122.000" rx="25.259" ry="25.259" style="fill: rgba(0, 0, 255, 0.845); stroke: none;"/>
+        <ellipse cx="226.924" cy="222.916" rx="23.684" ry="25.203" style="fill: rgba(0, 0, 0, 0.845); stroke: none;" transform="rotate(-95.920 226.924 222.916)"/>
+        <ellipse cx="122.000" cy="87.000" rx="25.259" ry="25.259" style="fill: rgba(255, 0, 0, 0.845); stroke: none;"/>
+        <ellipse cx="192.000" cy="87.000" rx="25.259" ry="25.259" style="fill: rgba(0, 0, 1, 0.845); stroke: none;"/>
+        <ellipse cx="157.000" cy="122.000" rx="25.259" ry="25.259" style="fill: rgba(0, 0, 0, 0.845); stroke: none;"/>
+        <ellipse cx="157.000" cy="157.000" rx="25.259" ry="25.259" style="fill: rgba(0, 85, 0, 0.845); stroke: none;"/>
+        <ellipse cx="17.000" cy="224.500" rx="23.093" ry="25.260" style="fill: rgba(0, 0, 0, 0.845); stroke: none;" transform="rotate(90.000 17.000 224.500)"/>
+        <ellipse cx="52.000" cy="224.500" rx="23.093" ry="25.260" style="fill: rgba(0, 0, 0, 0.845); stroke: none;" transform="rotate(90.000 52.000 224.500)"/>
+        <ellipse cx="122.040" cy="190.542" rx="24.470" ry="25.220" style="fill: rgba(0, 127, 0, 0.845); stroke: none;" transform="rotate(-96.490 122.040 190.542)"/>
+        <ellipse cx="157.000" cy="52.000" rx="25.259" ry="25.259" style="fill: rgba(4, 0, 0, 0.845); stroke: none;"/>
+    </g>
+    <g class="layer" data-depth="0.733" data-layer="2">
+        <ellipse cx="157.000" cy="224.500" rx="23.093" ry="25.260" style="fill: rgba(0, 128, 0, 0.845); stroke: none;" transform="rotate(90.000 157.000 224.500)"/>
+        <ellipse cx="121.960" cy="156.544" rx="24.593" ry="25.318" style="fill: rgba(0, 51, 0, 0.845); stroke: none;" transform="rotate(-97.027 121.960 156.544)"/>
+        <ellipse cx="227.577" cy="254.414" rx="21.773" ry="26.048" style="fill: rgba(0, 0, 0, 0.846); stroke: none;" transform="rotate(-92.092 227.577 254.414)"/>
+        <ellipse cx="87.000" cy="255.000" rx="22.371" ry="25.260" style="fill: rgba(0, 0, 0, 0.846); stroke: none;" transform="rotate(90.000 87.000 255.000)"/>
+        <ellipse cx="87.000" cy="191.000" rx="23.815" ry="25.260" style="fill: rgba(0, 12, 0, 0.846); stroke: none;" transform="rotate(90.000 87.000 191.000)"/>
+        <ellipse cx="192.000" cy="190.500" rx="24.537" ry="25.259" style="fill: rgba(0, 88, 0, 0.846); stroke: none;" transform="rotate(90.000 192.000 190.500)"/>
+        <ellipse cx="227.500" cy="284.500" rx="21.649" ry="25.983" style="fill: rgba(0, 0, 0, 0.846); stroke: none;" transform="rotate(90.000 227.500 284.500)"/>
+        <ellipse cx="52.000" cy="122.000" rx="25.259" ry="25.259" style="fill: rgba(11, 0, 0, 0.846); stroke: none;"/>
+        <ellipse cx="87.000" cy="223.500" rx="23.093" ry="25.260" style="fill: rgba(0, 4, 0, 0.846); stroke: none;" transform="rotate(90.000 87.000 223.500)"/>
+        <ellipse cx="263.811" cy="156.373" rx="24.485" ry="26.477" style="fill: rgba(0, 0, 252, 0.846); stroke: none;" transform="rotate(-98.188 263.811 156.373)"/>
+        <ellipse cx="52.000" cy="52.000" rx="25.259" ry="25.259" style="fill: rgba(22, 0, 0, 0.846); stroke: none;"/>
+        <ellipse cx="17.000" cy="255.500" rx="21.649" ry="25.261" style="fill: rgba(0, 0, 0, 0.846); stroke: none;" transform="rotate(90.000 17.000 255.500)"/>
+        <ellipse cx="52.000" cy="255.500" rx="21.649" ry="25.261" style="fill: rgba(0, 0, 0, 0.846); stroke: none;" transform="rotate(90.000 52.000 255.500)"/>
+        <ellipse cx="122.000" cy="284.500" rx="21.649" ry="25.261" style="fill: rgba(0, 0, 0, 0.846); stroke: none;" transform="rotate(90.000 122.000 284.500)"/>
+        <ellipse cx="192.000" cy="284.500" rx="21.649" ry="25.261" style="fill: rgba(0, 0, 0, 0.846); stroke: none;" transform="rotate(90.000 192.000 284.500)"/>
+        <ellipse cx="122.000" cy="223.500" rx="23.093" ry="25.260" style="fill: rgba(0, 115, 0, 0.847); stroke: none;" transform="rotate(90.000 122.000 223.500)"/>
+        <ellipse cx="300.500" cy="122.000" rx="25.258" ry="27.425" style="fill: rgba(0, 0, 116, 0.847); stroke: none;" transform="rotate(90.000 300.500 122.000)"/>
+        <ellipse cx="192.093" cy="254.397" rx="21.794" ry="25.349" style="fill: rgba(0, 1, 0, 0.847); stroke: none;" transform="rotate(-93.059 192.093 254.397)"/>
+        <ellipse cx="17.000" cy="285.000" rx="20.927" ry="25.261" style="fill: rgba(0, 0, 0, 0.847); stroke: none;" transform="rotate(90.000 17.000 285.000)"/>
+        <ellipse cx="52.000" cy="285.000" rx="20.927" ry="25.261" style="fill: rgba(0, 0, 0, 0.847); stroke: none;" transform="rotate(90.000 52.000 285.000)"/>
+        <ellipse cx="87.000" cy="285.000" rx="20.927" ry="25.261" style="fill: rgba(0, 0, 0, 0.847); stroke: none;" transform="rotate(90.000 87.000 285.000)"/>
+        <ellipse cx="157.000" cy="285.000" rx="20.927" ry="25.261" style="fill: rgba(0, 0, 0, 0.847); stroke: none;" transform="rotate(90.000 157.000 285.000)"/>
+        <ellipse cx="300.791" cy="156.610" rx="24.536" ry="27.039" style="fill: rgba(0, 0, 64, 0.847); stroke: none;" transform="rotate(-95.782 300.791 156.610)"/>
+        <ellipse cx="191.912" cy="223.403" rx="22.944" ry="25.196" style="fill: rgba(0, 69, 0, 0.847); stroke: none;" transform="rotate(-94.560 191.912 223.403)"/>
+        <ellipse cx="227.470" cy="190.026" rx="23.780" ry="25.943" style="fill: rgba(0, 0, 18, 0.847); stroke: none;" transform="rotate(-88.472 227.470 190.026)"/>
+    </g>
+    <g class="layer" data-depth="1.000" data-layer="3">
+        <ellipse cx="227.514" cy="156.486" rx="24.558" ry="26.001" style="fill: rgba(0, 0, 236, 0.847); stroke: none;" transform="rotate(-91.227 227.514 156.486)"/>
+        <ellipse cx="122.000" cy="254.500" rx="21.649" ry="25.261" style="fill: rgba(0, 14, 0, 0.848); stroke: none;" transform="rotate(90.000 122.000 254.500)"/>
+        <ellipse cx="192.000" cy="122.000" rx="25.259" ry="25.259" style="fill: rgba(0, 0, 60, 0.848); stroke: none;"/>
+        <ellipse cx="157.000" cy="255.500" rx="21.649" ry="25.261" style="fill: rgba(0, 36, 0, 0.848); stroke: none;" transform="rotate(90.000 157.000 255.500)"/>
+        <ellipse cx="263.486" cy="87.014" rx="25.239" ry="25.963" style="fill: rgba(0, 0, 159, 0.848); stroke: none;" transform="rotate(-87.711 263.486 87.014)"/>
+        <ellipse cx="157.000" cy="87.000" rx="25.259" ry="25.259" style="fill: rgba(63, 0, 0, 0.848); stroke: none;"/>
+        <ellipse cx="227.500" cy="87.000" rx="25.259" ry="25.981" style="fill: rgba(0, 0, 131, 0.848); stroke: none;" transform="rotate(90.000 227.500 87.000)"/>
+        <ellipse cx="122.000" cy="122.000" rx="25.259" ry="25.259" style="fill: rgba(83, 0, 0, 0.848); stroke: none;"/>
+        <ellipse cx="87.000" cy="122.000" rx="25.259" ry="25.259" style="fill: rgba(102, 0, 0, 0.848); stroke: none;"/>
+        <ellipse cx="192.000" cy="156.500" rx="24.537" ry="25.259" style="fill: rgba(0, 20, 24, 0.848); stroke: none;" transform="rotate(90.000 192.000 156.500)"/>
+        <ellipse cx="87.000" cy="52.000" rx="25.259" ry="25.259" style="fill: rgba(131, 0, 0, 0.848); stroke: none;"/>
+        <ellipse cx="299.219" cy="222.960" rx="23.107" ry="27.396" style="fill: rgba(255, 255, 0, 0.848); stroke: none;" transform="rotate(-89.615 299.219 222.960)"/>
+        <ellipse cx="122.000" cy="52.000" rx="25.259" ry="25.259" style="fill: rgba(112, 0, 0, 0.848); stroke: none;"/>
+        <ellipse cx="52.000" cy="87.000" rx="25.259" ry="25.259" style="fill: rgba(128, 0, 0, 0.849); stroke: none;"/>
+        <ellipse cx="340.143" cy="190.286" rx="24.215" ry="28.138" style="fill: rgba(43, 43, 0, 0.850); stroke: none;" transform="rotate(-85.819 340.143 190.286)"/>
+        <ellipse cx="301.249" cy="190.326" rx="24.120" ry="27.956" style="fill: rgba(57, 57, 0, 0.852); stroke: none;" transform="rotate(-88.753 301.249 190.326)"/>
+        <ellipse cx="263.529" cy="254.388" rx="22.164" ry="26.124" style="fill: rgba(226, 226, 0, 0.853); stroke: none;" transform="rotate(-97.744 263.529 254.388)"/>
+        <ellipse cx="338.222" cy="223.050" rx="23.125" ry="28.798" style="fill: rgba(205, 205, 0, 0.853); stroke: none;" transform="rotate(-89.922 338.222 223.050)"/>
+        <ellipse cx="339.647" cy="254.283" rx="21.959" ry="28.879" style="fill: rgba(196, 196, 0, 0.855); stroke: none;" transform="rotate(-92.286 339.647 254.283)"/>
+        <ellipse cx="262.265" cy="222.876" rx="23.338" ry="25.890" style="fill: rgba(218, 218, 0, 0.855); stroke: none;" transform="rotate(-92.028 262.265 222.876)"/>
+        <ellipse cx="301.615" cy="284.615" rx="21.481" ry="27.344" style="fill: rgba(92, 92, 0, 0.855); stroke: none;" transform="rotate(-92.113 301.615 284.615)"/>
+        <ellipse cx="340.000" cy="284.500" rx="21.648" ry="28.149" style="fill: rgba(71, 71, 0, 0.855); stroke: none;" transform="rotate(90.000 340.000 284.500)"/>
+        <ellipse cx="263.678" cy="190.004" rx="24.079" ry="26.264" style="fill: rgba(49, 49, 32, 0.856); stroke: none;" transform="rotate(-88.674 263.678 190.004)"/>
+        <ellipse cx="264.123" cy="284.632" rx="21.456" ry="26.631" style="fill: rgba(82, 82, 0, 0.857); stroke: none;" transform="rotate(-92.590 264.123 284.632)"/>
+    </g>
+    <style><![CDATA[
+        .splat-svg {
+            overflow: hidden;
+            cursor: crosshair;
+        }
+
+        .layer {
+            transform-style: preserve-3d;
+            transition: transform 0.1s ease-out;
+            will-change: transform;
+        }
+
+        .layer ellipse {
+            vector-effect: non-scaling-stroke;
+        }
+
+        .interactive-splat {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .interactive-splat:hover {
+            transform: scale(1.1);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .layer, .interactive-splat {
+                transition: none !important;
+                animation: none !important;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .splat-svg {
+                cursor: default;
+            }
+        }
+    ]]></style>
+    <script><![CDATA[
+        (function() {
+            'use strict';
+
+            // Check for reduced motion preference
+            const prefersReducedMotion = window.matchMedia &&
+                window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+            if (prefersReducedMotion) {
+                console.log('SplatThis: Animations disabled due to user preference');
+                return;
+            }
+
+            const svg = document.querySelector('.splat-svg');
+            const layers = document.querySelectorAll('.layer');
+            const parallaxStrength = 40;
+            const interactiveTop = 0;
+
+            let isGyroSupported = false;
+            let isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+            // Mouse parallax for desktop
+            function handleMouseMove(e) {
+                if (isMobile || !svg) return;
+
+                const rect = svg.getBoundingClientRect();
+                const centerX = rect.width / 2;
+                const centerY = rect.height / 2;
+
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                const deltaX = (mouseX - centerX) / centerX;
+                const deltaY = (mouseY - centerY) / centerY;
+
+                updateLayerTransforms(deltaX, deltaY);
+            }
+
+            // Gyroscope parallax for mobile
+            function handleDeviceOrientation(e) {
+                if (!isMobile || !isGyroSupported) return;
+
+                const beta = e.beta || 0;   // X-axis rotation
+                const gamma = e.gamma || 0; // Y-axis rotation
+
+                const deltaX = Math.max(-1, Math.min(1, gamma / 30));
+                const deltaY = Math.max(-1, Math.min(1, beta / 30));
+
+                updateLayerTransforms(deltaX, deltaY);
+            }
+
+            function updateLayerTransforms(deltaX, deltaY) {
+                layers.forEach((layer, index) => {
+                    const depth = parseFloat(layer.getAttribute('data-depth')) || 0.5;
+                    const parallaxFactor = (depth - 0.6) * parallaxStrength;
+
+                    const translateX = deltaX * parallaxFactor;
+                    const translateY = deltaY * parallaxFactor;
+
+                    layer.style.transform = `translate(${translateX}px, ${translateY}px)`;
+
+                    // Add interactive effects for top splats
+                    if (interactiveTop > 0 && index < interactiveTop) {
+                        layer.classList.add('interactive-splat');
+                    }
+                });
+            }
+
+            // Initialize event listeners
+            if (!isMobile) {
+                svg.addEventListener('mousemove', handleMouseMove);
+                svg.addEventListener('mouseleave', () => {
+                    updateLayerTransforms(0, 0);
+                });
+            } else {
+                // Request gyroscope permission on iOS 13+
+                if (typeof DeviceOrientationEvent !== 'undefined' &&
+                    typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    DeviceOrientationEvent.requestPermission()
+                        .then(response => {
+                            if (response === 'granted') {
+                                isGyroSupported = true;
+                                window.addEventListener('deviceorientation', handleDeviceOrientation);
+                            }
+                        })
+                        .catch(console.error);
+                } else if (typeof DeviceOrientationEvent !== 'undefined') {
+                    isGyroSupported = true;
+                    window.addEventListener('deviceorientation', handleDeviceOrientation);
+                }
+            }
+
+            console.log(`SplatThis SVG loaded - ${layers.length} layers, parallax: ${parallaxStrength}`);
+        })();
+    ]]></script>
+</svg>
