@@ -639,6 +639,11 @@ class TorchBatchedGaussianRenderer(GaussianRenderer):
             self.max_active_splats_per_tile = None
         else:
             self.max_active_splats_per_tile = int(max(1, max_active_splats_per_tile))
+        self._padded_bin_cache: Optional[Tuple[torch.Tensor, torch.Tensor]] = None
+
+    def clear_tile_bin_cache(self) -> None:
+        super().clear_tile_bin_cache()
+        self._padded_bin_cache = None
 
     def tile_bin_cache_stats(self) -> dict:
         stats = super().tile_bin_cache_stats()
@@ -686,7 +691,7 @@ class TorchBatchedGaussianRenderer(GaussianRenderer):
             )
 
         if self.enable_tile_culling:
-            tile_indices, tile_mask = self._build_padded_tile_splat_indices(
+            tile_indices, tile_mask = self._get_padded_tile_splat_indices(
                 mu=mu,
                 sx=sx,
                 sy=sy,
@@ -754,6 +759,40 @@ class TorchBatchedGaussianRenderer(GaussianRenderer):
             .reshape(tiles_y * self.tile_size, tiles_x * self.tile_size, 3)
         )
         return padded[: self.height, : self.width]
+
+    def _get_padded_tile_splat_indices(
+        self,
+        mu: torch.Tensor,
+        sx: torch.Tensor,
+        sy: torch.Tensor,
+        device: torch.device,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Cached padded tile indices, honoring tile_bin_rebuild_interval.
+
+        The padded build runs a per-splat Python double loop; rebuilding it
+        on every forward pass dominated batched-training iteration time even
+        though the renderer accepted (and ignored) a rebuild interval.
+        """
+        cache_key = (
+            int(mu.shape[0]),
+            str(device),
+            int(self.tile_size),
+            int(self.width),
+            int(self.height),
+        )
+        should_rebuild = (
+            self._padded_bin_cache is None
+            or self._tile_bin_cache_key != cache_key
+            or self._tile_bin_cache_age >= self.tile_bin_rebuild_interval
+        )
+        if should_rebuild:
+            self._padded_bin_cache = self._build_padded_tile_splat_indices(
+                mu=mu, sx=sx, sy=sy, device=device
+            )
+            self._tile_bin_cache_key = cache_key
+            self._tile_bin_cache_age = 0
+        self._tile_bin_cache_age += 1
+        return self._padded_bin_cache
 
     def _build_padded_tile_splat_indices(
         self,
@@ -1237,6 +1276,51 @@ def _np_srgb_to_linear(x: np.ndarray) -> np.ndarray:
     )
 
 
+def iter_splat_footprints(
+    splats: List[GaussianSplat],
+    width: int,
+    height: int,
+    footprint_sigma: float = 3.0,
+):
+    """Yield per-splat alpha-over footprints: (raw, y0, y1, x0, x1, layer_alpha).
+
+    The single authoritative CPU implementation of the splat footprint math
+    (bbox intersection, rotated anisotropic Gaussian, layer alpha
+    1 - exp(-a*G)); shared by the numpy validator and the converter's
+    coverage/transmittance maps so the three copies cannot drift.
+    """
+    for splat in splats:
+        raw = splat.to_raw_splat()
+        # No center clip: evaluate the Gaussian at the true center like the
+        # torch/MLX/canvas/SVG paths; bbox intersection handles off-canvas.
+        cx = float(raw.x)
+        cy = float(raw.y)
+        sx = max(float(raw.sx), 1e-4)
+        sy = max(float(raw.sy), 1e-4)
+        theta = float(raw.theta)
+
+        radius_x = max(1, int(np.ceil(max(1.0, footprint_sigma) * sx)))
+        radius_y = max(1, int(np.ceil(max(1.0, footprint_sigma) * sy)))
+        x0 = max(0, int(np.floor(cx - radius_x)))
+        x1 = min(width, int(np.ceil(cx + radius_x + 1)))
+        y0 = max(0, int(np.floor(cy - radius_y)))
+        y1 = min(height, int(np.ceil(cy + radius_y + 1)))
+        if x0 >= x1 or y0 >= y1:
+            continue
+
+        dx = np.arange(x0, x1, dtype=np.float32).reshape(1, -1) - cx
+        dy = np.arange(y0, y1, dtype=np.float32).reshape(-1, 1) - cy
+        cos_t = float(np.cos(theta))
+        sin_t = float(np.sin(theta))
+        u = cos_t * dx + sin_t * dy
+        v = -sin_t * dx + cos_t * dy
+        quadratic = (u * u) / (sx * sx) + (v * v) / (sy * sy)
+
+        density = np.clip(float(raw.a), 0.0, 1.0) * np.exp(-0.5 * quadratic)
+        layer_alpha = 1.0 - np.exp(-density)
+        yield raw, y0, y1, x0, x1, layer_alpha
+
+
 def render_splats_numpy(
     splats: List[GaussianSplat],
     width: int,
@@ -1290,36 +1374,9 @@ def render_splats_numpy(
     # Composite low-importance -> high-importance.
     ordered = sorted(splats, key=render_order_key)
 
-    for splat in ordered:
-        raw = splat.to_raw_splat()
-        # No center clip: torch/MLX/canvas-JS/SVG all evaluate the Gaussian
-        # at the true center, so the validator must too — the bbox
-        # intersection below already handles off-canvas footprints.
-        cx = float(raw.x)
-        cy = float(raw.y)
-        sx = max(float(raw.sx), 1e-4)
-        sy = max(float(raw.sy), 1e-4)
-        theta = float(raw.theta)
-
-        radius_x = max(1, int(np.ceil(max(1.0, footprint_sigma) * sx)))
-        radius_y = max(1, int(np.ceil(max(1.0, footprint_sigma) * sy)))
-        x0 = max(0, int(np.floor(cx - radius_x)))
-        x1 = min(width, int(np.ceil(cx + radius_x + 1)))
-        y0 = max(0, int(np.floor(cy - radius_y)))
-        y1 = min(height, int(np.ceil(cy + radius_y + 1)))
-        if x0 >= x1 or y0 >= y1:
-            continue
-
-        dx = np.arange(x0, x1, dtype=np.float32).reshape(1, -1) - cx
-        dy = np.arange(y0, y1, dtype=np.float32).reshape(-1, 1) - cy
-        cos_t = float(np.cos(theta))
-        sin_t = float(np.sin(theta))
-        u = cos_t * dx + sin_t * dy
-        v = -sin_t * dx + cos_t * dy
-        quadratic = (u * u) / (sx * sx) + (v * v) / (sy * sy)
-
-        density = np.clip(float(raw.a), 0.0, 1.0) * np.exp(-0.5 * quadratic)
-        layer_alpha = 1.0 - np.exp(-density)
+    for raw, y0, y1, x0, x1, layer_alpha in iter_splat_footprints(
+        ordered, width, height, footprint_sigma
+    ):
         local_trans = transmittance[y0:y1, x0:x1]
         contrib = local_trans * layer_alpha
         color = np.array([raw.r, raw.g, raw.b], dtype=np.float32).reshape(1, 1, 3)

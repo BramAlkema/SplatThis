@@ -1,0 +1,165 @@
+"""PPTX soft-edge proxy renderer and loss (extracted from converter.py).
+
+PowerPoint renders soft-edge ellipses brighter and softer than a true
+Gaussian; these torch modules mirror that behavior so training can target
+the deployed PPTX appearance.
+"""
+
+from __future__ import annotations
+
+from typing import Optional
+
+import numpy as np
+import torch
+
+from .io import PPTX_SOFT_EDGE_ALPHA_SCALE, PPTX_SOFT_EDGE_K_SIGMA_SCALE
+from .renderer import torch_linear_to_srgb
+
+
+class _PPTXSoftEdgeProxyRenderer(torch.nn.Module):
+    """Approximate native PPTX soft-edge ellipses with a differentiable renderer."""
+
+    def __init__(
+        self,
+        base_renderer: torch.nn.Module,
+        alpha_scale: float = PPTX_SOFT_EDGE_ALPHA_SCALE,
+        sigma_scale: float = PPTX_SOFT_EDGE_K_SIGMA_SCALE,
+    ):
+        super().__init__()
+        self.base_renderer = base_renderer
+        self.alpha_scale = float(np.clip(alpha_scale, 1e-4, 1.0))
+        self.sigma_scale = float(np.clip(sigma_scale, 0.25, 3.0))
+
+    def forward(self, splats_tensor: torch.Tensor) -> torch.Tensor:
+        scaled_sigma = torch.clamp(splats_tensor[:, 2:4] * self.sigma_scale, min=1e-4)
+        raw_alpha = torch.clamp(splats_tensor[:, 9], 0.0, 1.0)
+        center_opacity = torch.clamp(
+            (1.0 - torch.exp(-raw_alpha)) * self.alpha_scale, 0.0, 1.0 - 1e-5
+        )
+        effective_alpha = -torch.log1p(-center_opacity)
+        fitted = torch.cat(
+            [
+                splats_tensor[:, 0:2],
+                scaled_sigma,
+                splats_tensor[:, 4:9],
+                effective_alpha.unsqueeze(-1),
+                splats_tensor[:, 10:11],
+            ],
+            dim=-1,
+        )
+        return self.base_renderer(fitted)
+
+
+class _PPTXProxyLoss(torch.nn.Module):
+    """Perceptual loss for PPTX-soft-edge proxy training."""
+
+    def __init__(
+        self,
+        target_linear_rgb: torch.Tensor,
+        base_loss: L1SSIMLoss,
+        spatial_weight_map: Optional[torch.Tensor] = None,
+        contrast_weight: float = 0.35,
+        saturation_weight: float = 0.18,
+        gradient_weight: float = 0.10,
+    ):
+        super().__init__()
+        self.base_loss = base_loss
+        self.contrast_weight = float(max(0.0, contrast_weight))
+        self.saturation_weight = float(max(0.0, saturation_weight))
+        self.gradient_weight = float(max(0.0, gradient_weight))
+        weights = (
+            torch.ones(
+                target_linear_rgb.shape[:2],
+                dtype=target_linear_rgb.dtype,
+                device=target_linear_rgb.device,
+            )
+            if spatial_weight_map is None
+            else spatial_weight_map.to(
+                target_linear_rgb.device, dtype=target_linear_rgb.dtype
+            )
+        )
+        weights = weights / torch.clamp(torch.mean(weights), min=1e-6)
+        target_srgb = torch_linear_to_srgb(target_linear_rgb)
+        target_luma = self._srgb_luminance(target_srgb)
+        target_sat = self._srgb_saturation(target_srgb)
+        self.register_buffer("weights", weights)
+        self.register_buffer("target_luma", target_luma)
+        self.register_buffer("target_sat", target_sat)
+        self.register_buffer(
+            "target_luma_std", self._weighted_std(target_luma, weights).detach()
+        )
+        self.register_buffer(
+            "target_sat_mean", self._weighted_mean(target_sat, weights).detach()
+        )
+        self.register_buffer(
+            "target_sat_std", self._weighted_std(target_sat, weights).detach()
+        )
+
+    def forward(self, rendered: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        loss = self.base_loss(rendered, target)
+        if (
+            self.contrast_weight <= 0.0
+            and self.saturation_weight <= 0.0
+            and self.gradient_weight <= 0.0
+        ):
+            return loss
+
+        rendered_srgb = torch_linear_to_srgb(rendered)
+        rendered_luma = self._srgb_luminance(rendered_srgb)
+        rendered_sat = self._srgb_saturation(rendered_srgb)
+        contrast_loss = torch.abs(
+            self._weighted_std(rendered_luma, self.weights) - self.target_luma_std
+        )
+        saturation_loss = torch.abs(
+            self._weighted_mean(rendered_sat, self.weights) - self.target_sat_mean
+        ) + 0.5 * torch.abs(
+            self._weighted_std(rendered_sat, self.weights) - self.target_sat_std
+        )
+        gradient_loss = self._luminance_gradient_l1(rendered_luma, self.target_luma)
+        return (
+            loss
+            + self.contrast_weight * contrast_loss
+            + self.saturation_weight * saturation_loss
+            + self.gradient_weight * gradient_loss
+        )
+
+    @staticmethod
+    def _srgb_luminance(values: torch.Tensor) -> torch.Tensor:
+        return (
+            0.2126 * values[..., 0] + 0.7152 * values[..., 1] + 0.0722 * values[..., 2]
+        )
+
+    @staticmethod
+    def _srgb_saturation(values: torch.Tensor) -> torch.Tensor:
+        maxc = torch.max(values, dim=-1).values
+        minc = torch.min(values, dim=-1).values
+        return torch.where(
+            maxc > 1e-6,
+            (maxc - minc) / torch.clamp(maxc, min=1e-6),
+            torch.zeros_like(maxc),
+        )
+
+    @staticmethod
+    def _weighted_mean(values: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+        return torch.sum(values * weights) / torch.clamp(torch.sum(weights), min=1e-8)
+
+    @classmethod
+    def _weighted_std(cls, values: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+        mean = cls._weighted_mean(values, weights)
+        variance = cls._weighted_mean((values - mean).pow(2), weights)
+        return torch.sqrt(torch.clamp(variance, min=1e-8))
+
+    def _luminance_gradient_l1(
+        self, rendered_luma: torch.Tensor, target_luma: torch.Tensor
+    ) -> torch.Tensor:
+        dx = torch.abs(
+            (rendered_luma[:, 1:] - rendered_luma[:, :-1])
+            - (target_luma[:, 1:] - target_luma[:, :-1])
+        )
+        dy = torch.abs(
+            (rendered_luma[1:, :] - rendered_luma[:-1, :])
+            - (target_luma[1:, :] - target_luma[:-1, :])
+        )
+        wx = 0.5 * (self.weights[:, 1:] + self.weights[:, :-1])
+        wy = 0.5 * (self.weights[1:, :] + self.weights[:-1, :])
+        return self._weighted_mean(dx, wx) + self._weighted_mean(dy, wy)

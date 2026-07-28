@@ -66,6 +66,10 @@ class MlxStageConfig:
     loss: MlxLossConfig = field(default_factory=MlxLossConfig)
     trainable_groups: Tuple[str, ...] = ("color", "alpha")
     grad_clip_norm: Optional[float] = 1.0
+    # Plateau LR-decay / early-stop schedule (same keys as the torch loop:
+    # enabled, check_interval, patience_checks, decay_ratio, max_decays,
+    # min_delta). None disables scheduling.
+    schedule: Optional[Dict[str, Any]] = None
     tile_plan_mode: str = "static"
     tile_plan_rebuild_interval: int = 10
     progress_interval: int = 0
@@ -241,6 +245,7 @@ def optimize_stage_mlx(
         m: Dict[str, Any],
         v: Dict[str, Any],
         step_count: Any,
+        lr_scale: Any,
         plan_indices: Any,
         plan_mask: Any,
         plan_order: Any,
@@ -271,7 +276,7 @@ def optimize_stage_mlx(
             m_hat = new_m[key] / bias1
             v_hat = new_v[key] / bias2
             lr = lr_dict.get(key, 0.0)
-            new_tree[key] = value - lr * m_hat / (mlx.sqrt(v_hat) + eps)
+            new_tree[key] = value - (lr * lr_scale) * m_hat / (mlx.sqrt(v_hat) + eps)
         new_tree = constrain_trainable_tree(
             new_tree,
             image_width=image_width_const,
@@ -289,6 +294,19 @@ def optimize_stage_mlx(
     m_state: Dict[str, Any] = {k: mlx.zeros_like(v) for k, v in trainable.items()}
     v_state: Dict[str, Any] = {k: mlx.zeros_like(v) for k, v in trainable.items()}
     step_count_arr = mlx.array(0, dtype=mlx.int32)
+    lr_scale_arr = mlx.array(1.0, dtype=mlx.float32)
+
+    schedule = dict(stage_config.schedule or {})
+    schedule_enabled = bool(schedule.get("enabled", False)) if schedule else False
+    check_interval = int(max(1, schedule.get("check_interval", 50)))
+    patience_checks = int(max(1, schedule.get("patience_checks", 3)))
+    decay_ratio = float(max(1.0, schedule.get("decay_ratio", 2.0)))
+    max_decays = int(max(0, schedule.get("max_decays", 2)))
+    min_delta = float(max(0.0, schedule.get("min_delta", 1e-4)))
+    best_at_last_check = start_loss
+    no_improve_checks = 0
+    decay_count = 0
+    early_stopped = False
     loss_arr = start_loss_arr
     grad_norm_arr = mlx.array(0.0, dtype=mlx.float32)
     clip_factor_arr = mlx.array(1.0, dtype=mlx.float32)
@@ -329,6 +347,7 @@ def optimize_stage_mlx(
             m_state,
             v_state,
             step_count_arr,
+            lr_scale_arr,
             plan.indices,
             plan.mask,
             plan.order,
@@ -342,6 +361,40 @@ def optimize_stage_mlx(
         }
         if plan_mode == "periodic" and (iteration + 1) % plan_rebuild_interval == 0:
             rebuild_plan(trainable, count_as_training_rebuild=True)
+        if schedule_enabled and (iteration + 1) % check_interval == 0:
+            # Host sync only at the configured interval, mirroring the torch
+            # loop's plateau detection / LR decay / early-stop semantics.
+            mlx.eval(best_loss_arr)
+            current_best = _array_scalar(best_loss_arr)
+            if current_best < best_at_last_check - min_delta:
+                best_at_last_check = current_best
+                no_improve_checks = 0
+            else:
+                no_improve_checks += 1
+                if no_improve_checks >= patience_checks:
+                    if decay_count >= max_decays:
+                        early_stopped = True
+                        if verbose:
+                            logger.info(
+                                "  MLX early stop at iteration %s/%s after %s LR decays",
+                                iteration + 1,
+                                num_iters,
+                                decay_count,
+                            )
+                        iterations_run = iteration + 1
+                        break
+                    lr_scale_arr = lr_scale_arr / decay_ratio
+                    decay_count += 1
+                    no_improve_checks = 0
+                    if verbose:
+                        logger.info(
+                            "  MLX LR decay %s/%s at iteration %s/%s (ratio=%.2f)",
+                            decay_count,
+                            max_decays,
+                            iteration + 1,
+                            num_iters,
+                            decay_ratio,
+                        )
         iter_elapsed = time.perf_counter() - iter_t0
         iter_times.append(iter_elapsed)
         iterations_run = iteration + 1
@@ -428,7 +481,8 @@ def optimize_stage_mlx(
         "median_iter_sec": summary["median_iter_sec"],
         "last_grad_norm": float(grad_norm),
         "last_clip_factor": float(clip_factor),
-        "lr_decays": 0,
+        "lr_decays": int(decay_count),
+        "early_stopped": bool(early_stopped),
         "stopped_for_time_budget": bool(stopped_for_time_budget),
         "tile_plan_mode": plan_mode,
         "tile_plan_build_sec": float(plan_build_sec),

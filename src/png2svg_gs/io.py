@@ -116,6 +116,53 @@ SVG_PRECOMP_ALPHA_THRESHOLD = 0.90
 SVG_PRECOMP_MAX_SRGB = 160.0
 
 
+class RegionMasks:
+    """Validated region-guidance masks + the shared safe-background test.
+
+    One implementation for every SVG recipe (standard/browser, scripted,
+    palette) instead of three drifting nested-closure copies.
+    """
+
+    def __init__(
+        self,
+        width: int,
+        height: int,
+        foreground: Optional[np.ndarray] = None,
+        background_safe: Optional[np.ndarray] = None,
+        edge_band: Optional[np.ndarray] = None,
+    ):
+        self.width = int(width)
+        self.height = int(height)
+        self.foreground = self._validated(foreground)
+        self.background_safe = self._validated(background_safe)
+        self.edge_band = self._validated(edge_band)
+
+    def _validated(self, mask: Optional[np.ndarray]) -> Optional[np.ndarray]:
+        if mask is None:
+            return None
+        arr = np.asarray(mask)
+        if arr.shape != (self.height, self.width):
+            raise ValueError("SVG region masks must match output height/width")
+        return arr.astype(bool, copy=False)
+
+    def splat_center(self, splat: "GaussianSplat") -> Tuple[int, int]:
+        x = int(np.clip(round(float(splat.mu[0])), 0, max(self.width - 1, 0)))
+        y = int(np.clip(round(float(splat.mu[1])), 0, max(self.height - 1, 0)))
+        return x, y
+
+    def in_safe_background(self, splat: "GaussianSplat") -> bool:
+        if self.background_safe is None:
+            return False
+        x, y = self.splat_center(splat)
+        if not bool(self.background_safe[y, x]):
+            return False
+        if self.foreground is not None and bool(self.foreground[y, x]):
+            return False
+        if self.edge_band is not None and bool(self.edge_band[y, x]):
+            return False
+        return True
+
+
 def _normalize_svg_export_recipe(export_recipe: str) -> str:
     normalized = str(export_recipe).strip().lower().replace("_", "-")
     if normalized in {"browser", "browser-compatible"}:
@@ -872,6 +919,7 @@ def generate_svg_content(
     foreground_mask: Optional[np.ndarray] = None,
     background_safe_mask: Optional[np.ndarray] = None,
     edge_band_mask: Optional[np.ndarray] = None,
+    palette_size: Optional[int] = None,
 ) -> str:
     """
     Generate SVG content from splats.
@@ -911,6 +959,11 @@ def generate_svg_content(
             foreground_mask=foreground_mask,
             background_safe_mask=background_safe_mask,
             edge_band_mask=edge_band_mask,
+            palette_size=(
+                SVG_PALETTE_QUANTIZED_DEFAULT_SIZE
+                if palette_size is None
+                else int(palette_size)
+            ),
         )
     if normalized_recipe == SVG_BLUR_RECIPE:
         return generate_blur_svg_content(
@@ -922,17 +975,13 @@ def generate_svg_content(
         )
     use_browser_recipe = normalized_recipe == SVG_BROWSER_COMPAT_RECIPE
 
-    def _valid_mask(mask: Optional[np.ndarray]) -> Optional[np.ndarray]:
-        if mask is None:
-            return None
-        arr = np.asarray(mask)
-        if arr.shape != (int(height), int(width)):
-            raise ValueError("SVG region masks must match output height/width")
-        return arr.astype(bool, copy=False)
-
-    foreground = _valid_mask(foreground_mask)
-    background_safe = _valid_mask(background_safe_mask)
-    edge_band = _valid_mask(edge_band_mask)
+    masks = RegionMasks(
+        width,
+        height,
+        foreground=foreground_mask,
+        background_safe=background_safe_mask,
+        edge_band=edge_band_mask,
+    )
 
     bg_linear: Optional[np.ndarray] = None
     bg_srgb: Optional[np.ndarray] = None
@@ -965,23 +1014,6 @@ def generate_svg_content(
         "      .splat { mix-blend-mode: normal; }",
         "    </style>",
     ]
-
-    def _splat_center(splat: GaussianSplat) -> Tuple[int, int]:
-        x = int(np.clip(round(float(splat.mu[0])), 0, max(int(width) - 1, 0)))
-        y = int(np.clip(round(float(splat.mu[1])), 0, max(int(height) - 1, 0)))
-        return x, y
-
-    def _in_safe_background(splat: GaussianSplat) -> bool:
-        if background_safe is None:
-            return False
-        x, y = _splat_center(splat)
-        if not bool(background_safe[y, x]):
-            return False
-        if foreground is not None and bool(foreground[y, x]):
-            return False
-        if edge_band is not None and bool(edge_band[y, x]):
-            return False
-        return True
 
     def _browser_compensated_color(splat: GaussianSplat, alpha: float) -> np.ndarray:
         color_linear = np.clip(np.array(splat.color[:3], dtype=np.float32), 0.0, 1.0)
@@ -1019,7 +1051,7 @@ def generate_svg_content(
     for i, splat in enumerate(splats):
         gradient_id = f"splat_grad_{i}"
         alpha = float(np.clip(splat.alpha, 0.0, 1.0))
-        if use_browser_recipe and _in_safe_background(splat):
+        if use_browser_recipe and masks.in_safe_background(splat):
             alpha = min(alpha, SVG_BACKGROUND_ALPHA_CAP)
 
         rgb_srgb = _browser_compensated_color(splat, alpha)
@@ -1094,17 +1126,13 @@ def generate_scripted_svg_content(
     execute inline SVG scripts.
     """
 
-    def _valid_mask(mask: Optional[np.ndarray]) -> Optional[np.ndarray]:
-        if mask is None:
-            return None
-        arr = np.asarray(mask)
-        if arr.shape != (int(height), int(width)):
-            raise ValueError("SVG region masks must match output height/width")
-        return arr.astype(bool, copy=False)
-
-    foreground = _valid_mask(foreground_mask)
-    background_safe = _valid_mask(background_safe_mask)
-    edge_band = _valid_mask(edge_band_mask)
+    masks = RegionMasks(
+        width,
+        height,
+        foreground=foreground_mask,
+        background_safe=background_safe_mask,
+        edge_band=edge_band_mask,
+    )
 
     bg_linear = np.ones(3, dtype=np.float32)
     if background_linear_rgb is not None:
@@ -1115,28 +1143,11 @@ def generate_scripted_svg_content(
     bg_srgb = linear_to_srgb(bg_linear)
     bg_rgb = tuple(int(np.clip(np.round(c * 255), 0, 255)) for c in bg_srgb)
 
-    def _splat_center(splat: GaussianSplat) -> Tuple[int, int]:
-        x = int(np.clip(round(float(splat.mu[0])), 0, max(int(width) - 1, 0)))
-        y = int(np.clip(round(float(splat.mu[1])), 0, max(int(height) - 1, 0)))
-        return x, y
-
-    def _in_safe_background(splat: GaussianSplat) -> bool:
-        if background_safe is None:
-            return False
-        x, y = _splat_center(splat)
-        if not bool(background_safe[y, x]):
-            return False
-        if foreground is not None and bool(foreground[y, x]):
-            return False
-        if edge_band is not None and bool(edge_band[y, x]):
-            return False
-        return True
-
     def _scripted_color_and_alpha(
         splat: GaussianSplat,
     ) -> Tuple[Tuple[int, int, int], float]:
         alpha = float(np.clip(splat.alpha, 0.0, 1.0))
-        if _in_safe_background(splat):
+        if masks.in_safe_background(splat):
             alpha = min(alpha, SVG_BACKGROUND_ALPHA_CAP)
 
         color_linear = np.clip(np.array(splat.color[:3], dtype=np.float32), 0.0, 1.0)
@@ -1321,17 +1332,13 @@ def generate_palette_quantized_svg_content(
     """
     from scipy.cluster.vq import kmeans2 as _kmeans2
 
-    def _valid_mask(mask: Optional[np.ndarray]) -> Optional[np.ndarray]:
-        if mask is None:
-            return None
-        arr = np.asarray(mask)
-        if arr.shape != (int(height), int(width)):
-            raise ValueError("SVG region masks must match output height/width")
-        return arr.astype(bool, copy=False)
-
-    foreground = _valid_mask(foreground_mask)
-    background_safe = _valid_mask(background_safe_mask)
-    edge_band = _valid_mask(edge_band_mask)
+    masks = RegionMasks(
+        width,
+        height,
+        foreground=foreground_mask,
+        background_safe=background_safe_mask,
+        edge_band=edge_band_mask,
+    )
 
     bg_srgb_str: Optional[str] = None
     if background_linear_rgb is not None:
@@ -1341,23 +1348,6 @@ def generate_palette_quantized_svg_content(
         bg_srgb = linear_to_srgb(np.clip(bg, 0.0, 1.0))
         bg_r, bg_g, bg_b = (int(np.clip(np.round(c * 255), 0, 255)) for c in bg_srgb)
         bg_srgb_str = f"rgb({bg_r},{bg_g},{bg_b})"
-
-    def _splat_center(splat: GaussianSplat) -> Tuple[int, int]:
-        x = int(np.clip(round(float(splat.mu[0])), 0, max(int(width) - 1, 0)))
-        y = int(np.clip(round(float(splat.mu[1])), 0, max(int(height) - 1, 0)))
-        return x, y
-
-    def _in_safe_background(splat: GaussianSplat) -> bool:
-        if background_safe is None:
-            return False
-        x, y = _splat_center(splat)
-        if not bool(background_safe[y, x]):
-            return False
-        if foreground is not None and bool(foreground[y, x]):
-            return False
-        if edge_band is not None and bool(edge_band[y, x]):
-            return False
-        return True
 
     bg_lin_arr: Optional[np.ndarray] = None
     bg_srgb_arr: Optional[np.ndarray] = None
@@ -1476,7 +1466,7 @@ def generate_palette_quantized_svg_content(
 
     for splat, label in zip(splats, labels):
         alpha = float(np.clip(splat.alpha, 0.0, 1.0))
-        if _in_safe_background(splat):
+        if masks.in_safe_background(splat):
             alpha = min(alpha, SVG_BACKGROUND_ALPHA_CAP)
         # Per-element opacity scales the shared Gaussian profile so the
         # center pixel reaches the true alpha-over center opacity.
