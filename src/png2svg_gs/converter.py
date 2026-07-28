@@ -188,6 +188,10 @@ class PNG2SVGConverter:
         self.svg_export_recipe = _normalize_svg_export_recipe(
             self.refinement_config.get("svg_export_recipe", "standard")
         )
+        self.svg_optimize = bool(self.refinement_config.get("svg_optimize", False))
+        self.svg_optimize_precision = int(
+            self.refinement_config.get("svg_optimize_precision", 2)
+        )
         # ADR-003 fidelity stage: resolve (and validate) the mode up front.
         from .fidelity import resolve_fidelity_config
 
@@ -1474,6 +1478,12 @@ class PNG2SVGConverter:
                 )
                 if verbose:
                     logger.info("Saved SVG: %s", output_path)
+                if self.svg_optimize:
+                    from .io import optimize_svg_file
+
+                    manifest["svg_optimize"] = optimize_svg_file(
+                        output_path, precision=self.svg_optimize_precision
+                    )
 
             if save_json:
                 json_path = str(Path(output_path).with_suffix(".json"))

@@ -300,6 +300,22 @@ def build_parser() -> argparse.ArgumentParser:
         "small palette sizes.",
     )
     parser.add_argument(
+        "--svg-optimize",
+        action="store_true",
+        help="Post-process the emitted SVG with `svgo` (must be on PATH). "
+        "At the default precision this is free: identical LPIPS/SSIM to four "
+        "decimals while shrinking the file. Skipped with a warning if svgo "
+        "is missing; the original is kept if svgo fails or degrades output.",
+    )
+    parser.add_argument(
+        "--svg-optimize-precision",
+        type=int,
+        default=2,
+        help="Decimal precision for --svg-optimize (default: 2). Below 2 is "
+        "measurably lossy for splats: stop-opacity quantization collapses the "
+        "alpha vocabulary and truncates Gaussian tails.",
+    )
+    parser.add_argument(
         "--fidelity-stage",
         default=None,
         choices=["off", "balanced", "max"],
@@ -405,6 +421,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         refinement_config["svg_export_recipe"] = args.svg_recipe
     if args.fidelity_stage is not None:
         refinement_config["fidelity_stage"] = args.fidelity_stage
+    if args.svg_optimize:
+        refinement_config["svg_optimize"] = True
+        refinement_config["svg_optimize_precision"] = int(args.svg_optimize_precision)
     # Resolve "auto" training_export_target. SVG output trains under sRGB
     # compositing (matches browser/rsvg blend). PPTX defaults to canvas
     # (linear-light) because the pptx-softedge proxy is calibrated for

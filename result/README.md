@@ -30,6 +30,28 @@ ceiling rather than a rasterizer artifact, and `rsvg-convert` is a legitimate
 stand-in for browser rendering when scoring SVG output — no browser needed in
 the measurement loop.
 
+## Post-processing with svgo
+
+A `chameleon optim.svg` optimized at **precision 1** was measured against the
+emitted original. It is not lossless:
+
+| variant | LPIPS | Δ | SSIM | raw | gz |
+|---|---:|---:|---:|---:|---:|
+| ours | 0.4151 | — | 0.7011 | 962 K | 79 K |
+| precision 1 | 0.4214 | **+0.0063** | 0.6930 | 853 K | 66 K |
+| **precision 2** | **0.4151** | **±0.0000** | **0.7011** | 816 K | 75 K |
+
+At precision 1 the stop-opacity vocabulary collapses from **64 distinct values
+to 7**, **1760 stops snap to fully transparent** (up from 422 — Gaussian tails
+truncated), and rotation pivots round to integers, displacing every rotated
+splat by up to half a pixel. Geometry, rotations and all 1750 gradients
+survive; the ellipse→circle rewrite and `rgb()`→hex are exact.
+
+Precision 2 is free — identical LPIPS/SSIM to four decimals, **15.2% smaller**
+— and is available as `--svg-optimize` (see `--svg-optimize-precision`).
+Precision 1 only wins on the wire (66 K vs 75 K gzipped); that 9 KB costs
+0.0063 LPIPS, which is at the edge of the ±0.005 run-to-run noise.
+
 ## Caveat
 
 `README.md`'s quality table reports the opposite ordering (SVG ≈ 0.32 LPIPS,

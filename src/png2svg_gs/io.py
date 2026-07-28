@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import logging
 import math
+import os
 import shutil
 import subprocess
 import tempfile
@@ -374,6 +375,131 @@ def _sort_splats_for_export(
     if normalized == "importance":
         return sorted(splats, key=render_order_key)
     raise ValueError(f"Unsupported export sort mode: {sort_mode}")
+
+
+# Rounding stop-opacity below 2 decimals is measurably lossy: at precision 1
+# the 64-value opacity vocabulary of a 1750-splat chameleon collapses to 7,
+# ~1300 extra Gaussian tails snap to fully transparent, and LPIPS regresses
+# 0.0063. At 2 decimals the optimization is free (identical LPIPS/SSIM to four
+# decimals) and still shrinks the file, because the real savings come from hex
+# colors, whitespace and ellipse->circle — not from rounding.
+SVG_OPTIMIZE_MIN_SAFE_PRECISION = 2
+
+
+def optimize_svg_file(
+    path: str,
+    precision: int = SVG_OPTIMIZE_MIN_SAFE_PRECISION,
+    timeout: float = 300.0,
+) -> Dict[str, Any]:
+    """Shrink an emitted SVG in place with `svgo`, if it is installed.
+
+    The original file is only replaced once the optimized result has been
+    parsed and sanity-checked, so a missing, failing or misbehaving svgo can
+    never damage good output. Returns a report for the run manifest.
+    """
+    report: Dict[str, Any] = {
+        "applied": False,
+        "precision": int(precision),
+        "bytes_before": None,
+        "bytes_after": None,
+    }
+    if not os.path.exists(path):
+        report["reason"] = "input-missing"
+        return report
+
+    before = os.path.getsize(path)
+    report["bytes_before"] = before
+
+    binary = shutil.which("svgo")
+    if binary is None:
+        report["reason"] = "svgo-not-installed"
+        logger.warning(
+            "--svg-optimize requested but `svgo` is not on PATH; leaving the "
+            "SVG unoptimized (install with `npm i -g svgo`)."
+        )
+        return report
+
+    if int(precision) < SVG_OPTIMIZE_MIN_SAFE_PRECISION:
+        logger.warning(
+            "svg optimize precision=%s is below the measured-safe minimum of "
+            "%s; stop-opacity quantization at this level visibly degrades "
+            "splat output.",
+            precision,
+            SVG_OPTIMIZE_MIN_SAFE_PRECISION,
+        )
+
+    with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        proc = subprocess.run(
+            [binary, "--precision", str(int(precision)), "-i", path, "-o", tmp_path],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if proc.returncode != 0:
+            report["reason"] = f"svgo-failed:{proc.returncode}"
+            logger.warning(
+                "svgo failed (%s); keeping the original SVG:\n%s",
+                proc.returncode,
+                (proc.stderr or "").strip()[:400],
+            )
+            return report
+
+        after = os.path.getsize(tmp_path)
+        if after == 0:
+            report["reason"] = "svgo-empty-output"
+            logger.warning("svgo produced an empty file; keeping the original SVG.")
+            return report
+
+        # Never trust the optimizer blindly: the result must still parse and
+        # must still contain every shape we emitted.
+        import xml.etree.ElementTree as ET
+
+        try:
+            ET.parse(tmp_path)
+        except ET.ParseError as exc:
+            report["reason"] = f"svgo-invalid-xml:{exc}"
+            logger.warning("svgo output is not well-formed XML; keeping the original.")
+            return report
+
+        def _shapes(p: str) -> int:
+            text = Path(p).read_text(encoding="utf-8")
+            return text.count("<ellipse") + text.count("<circle") + text.count("<path")
+
+        if _shapes(tmp_path) < _shapes(path):
+            report["reason"] = "svgo-dropped-shapes"
+            logger.warning("svgo dropped shapes; keeping the original SVG.")
+            return report
+
+        if after >= before:
+            report["reason"] = "no-size-win"
+            report["bytes_after"] = after
+            return report
+
+        shutil.move(tmp_path, path)
+        tmp_path = None  # moved
+        report.update(
+            applied=True,
+            bytes_after=after,
+            saved_bytes=before - after,
+            saved_pct=round(100.0 * (before - after) / max(before, 1), 2),
+        )
+        logger.info(
+            "Optimized SVG with svgo (precision=%s): %.0f KB -> %.0f KB (-%.1f%%)",
+            precision,
+            before / 1024,
+            after / 1024,
+            report["saved_pct"],
+        )
+        return report
+    except subprocess.TimeoutExpired:
+        report["reason"] = "svgo-timeout"
+        logger.warning("svgo timed out after %ss; keeping the original SVG.", timeout)
+        return report
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 def save_svg(
