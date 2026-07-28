@@ -29,8 +29,10 @@ def test_border_overlap_splat_keeps_negative_offset():
     splat = create_isotropic_splat(
         center=[2.0, 3.0], sigma=8.0, color=[0.0, 1.0, 0.0], alpha=0.8
     )
+    # 128x96 stays at emu_scale 1.0 (the OOXML minimum-slide guard kicks in
+    # below 96px), so the expected offsets below are exact.
     content = generate_drawingml_slide_content(
-        [splat], width=100, height=80, k_sigma=2.5
+        [splat], width=128, height=96, k_sigma=2.5
     )
     import re
 

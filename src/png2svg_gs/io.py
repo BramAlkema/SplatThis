@@ -432,14 +432,33 @@ def save_svg(
         raise
 
 
-def px_to_emu(value: float) -> int:
+# OOXML requires slide edges to be at least one inch; PowerPoint flags a
+# smaller <p:sldSz> as a schema violation and may repair or reject the file.
+MIN_SLIDE_EMU = 914400
+
+
+def pptx_emu_scale(width: int, height: int) -> float:
+    """Uniform EMU upscale so a small canvas still yields a legal slide size.
+
+    Images below 96 px would otherwise emit `sldSz` under the OOXML minimum.
+    The factor is applied to the slide box *and* every shape coordinate, so
+    the composition is unchanged — only the deck's physical size grows.
+    """
+    w = max(int(round(width * EMU_PER_PX)), 1)
+    h = max(int(round(height * EMU_PER_PX)), 1)
+    return max(1.0, MIN_SLIDE_EMU / w, MIN_SLIDE_EMU / h)
+
+
+def px_to_emu(value: float, scale: float = 1.0) -> int:
     """Convert pixels to EMU units used by DrawingML.
 
     Negative values are legitimate: shape offsets (`a:off`) of splats that
     overlap the slide's left/top edge must stay negative, or every border
     splat gets displaced inward while keeping its full extent.
+
+    `scale` is the uniform upscale from `pptx_emu_scale` (1.0 normally).
     """
-    return int(round(value * EMU_PER_PX))
+    return int(round(value * EMU_PER_PX * scale))
 
 
 def save_drawingml(
@@ -1672,8 +1691,11 @@ def generate_drawingml_slide_content(
 ) -> str:
     """Generate PresentationML slide XML containing DrawingML ellipse shapes."""
     normalized_splat_style = _normalize_pptx_splat_style(splat_style)
-    slide_width_emu = max(px_to_emu(width), 1)
-    slide_height_emu = max(px_to_emu(height), 1)
+    # Small canvases would emit a sub-inch slide, which is schema-invalid;
+    # scale the whole composition uniformly instead (see pptx_emu_scale).
+    emu_scale = pptx_emu_scale(width, height)
+    slide_width_emu = max(px_to_emu(width, emu_scale), 1)
+    slide_height_emu = max(px_to_emu(height, emu_scale), 1)
 
     lines = [
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
@@ -1754,6 +1776,7 @@ def generate_drawingml_slide_content(
                         splat,
                         shape_id,
                         k_sigma,
+                        emu_scale=emu_scale,
                         splat_style=normalized_splat_style,
                     )
                 )
@@ -1776,6 +1799,7 @@ def generate_drawingml_slide_content(
                     splat,
                     shape_id,
                     k_sigma,
+                    emu_scale=emu_scale,
                     splat_style=normalized_splat_style,
                 )
             )
@@ -1874,6 +1898,7 @@ def _background_to_drawingml_shape_lines(
 def _splat_geometry_for_drawingml(
     splat: GaussianSplat,
     k_sigma: float,
+    emu_scale: float = 1.0,
 ) -> Tuple[int, int, int, int, str, str]:
     """Return common DrawingML geometry and color fields for one splat."""
     eigenvals, eigenvecs = splat.eigendecomposition()
@@ -1896,10 +1921,10 @@ def _splat_geometry_for_drawingml(
     w = max(2.0 * rx, 1e-3)
     h = max(2.0 * ry, 1e-3)
 
-    x_emu = px_to_emu(x)
-    y_emu = px_to_emu(y)
-    w_emu = max(px_to_emu(w), 1)
-    h_emu = max(px_to_emu(h), 1)
+    x_emu = px_to_emu(x, emu_scale)
+    y_emu = px_to_emu(y, emu_scale)
+    w_emu = max(px_to_emu(w, emu_scale), 1)
+    h_emu = max(px_to_emu(h, emu_scale), 1)
 
     rotation_rad = float(np.arctan2(eigenvecs[1, 0], eigenvecs[0, 0]))
     rotation_deg = float(np.degrees(rotation_rad))
@@ -1978,6 +2003,7 @@ def _splat_to_drawingml_shape_lines(
     splat: GaussianSplat,
     shape_id: int,
     k_sigma: float,
+    emu_scale: float = 1.0,
     splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
 ) -> List[str]:
     """Convert one Gaussian splat to a DrawingML ellipse shape.
@@ -1988,12 +2014,14 @@ def _splat_to_drawingml_shape_lines(
     rad calibrated to σ × 3.25 EMU)."""
     normalized = _normalize_pptx_splat_style(splat_style)
     if normalized == "soft-edge":
-        return _splat_to_drawingml_soft_edge_shape_lines(splat, shape_id, k_sigma)
+        return _splat_to_drawingml_soft_edge_shape_lines(
+            splat, shape_id, k_sigma, emu_scale
+        )
     if normalized == "blur":
-        return _splat_to_drawingml_blur_shape_lines(splat, shape_id, k_sigma)
+        return _splat_to_drawingml_blur_shape_lines(splat, shape_id, k_sigma, emu_scale)
 
     x_emu, y_emu, w_emu, h_emu, rot_attr, color_hex = _splat_geometry_for_drawingml(
-        splat, k_sigma
+        splat, k_sigma, emu_scale
     )
 
     # Radial gradient stops mirroring the renderer's per-splat alpha-over
@@ -2033,6 +2061,7 @@ def _splat_to_drawingml_soft_edge_shape_lines(
     splat: GaussianSplat,
     shape_id: int,
     k_sigma: float,
+    emu_scale: float = 1.0,
 ) -> List[str]:
     """Solid-fill ellipse + `<a:softEdge>`. softEdge feathers the outer
     `rad` ring inward — NOT a Gaussian, but cheap to render and visually
@@ -2041,6 +2070,7 @@ def _splat_to_drawingml_soft_edge_shape_lines(
     x_emu, y_emu, w_emu, h_emu, rot_attr, color_hex = _splat_geometry_for_drawingml(
         splat,
         effective_k_sigma,
+        emu_scale,
     )
     center_opacity = 1.0 - math.exp(-float(np.clip(splat.alpha, 0.0, 1.0)))
     alpha_units = int(
@@ -2067,6 +2097,7 @@ def _splat_to_drawingml_blur_shape_lines(
     splat: GaussianSplat,
     shape_id: int,
     k_sigma: float,
+    emu_scale: float = 1.0,
 ) -> List[str]:
     """Small solid-fill ellipse + isotropic `<a:blur>`. The blur produces
     the Gaussian shape; the ellipse is the small coloured core. Mass-
@@ -2080,6 +2111,7 @@ def _splat_to_drawingml_blur_shape_lines(
     x_emu, y_emu, w_emu, h_emu, rot_attr, color_hex = _splat_geometry_for_drawingml(
         splat,
         float(PPTX_BLUR_CORE_K_SIGMA) / ELLIPSE_OVERLAP_BOOST,
+        emu_scale,
     )
     # Geometric-mean sigma drives the isotropic blur radius; ellipse
     # aspect-ratio (baked into w_emu/h_emu) absorbs the anisotropy.
@@ -2866,8 +2898,9 @@ def save_pptx_with_splat_png(
     image.save(png_buffer, format="PNG")
     png_bytes = png_buffer.getvalue()
 
-    slide_cx = max(px_to_emu(render_width), 1)
-    slide_cy = max(px_to_emu(render_height), 1)
+    _emu_scale = pptx_emu_scale(render_width, render_height)
+    slide_cx = max(px_to_emu(render_width, _emu_scale), 1)
+    slide_cy = max(px_to_emu(render_height, _emu_scale), 1)
     now_iso = (
         datetime.now(timezone.utc)
         .replace(microsecond=0)
@@ -2930,8 +2963,9 @@ def save_pptx_with_splats(
         sort_mode=sort_mode,
         sort_by_area=sort_by_area,
     )
-    slide_cx = max(px_to_emu(width), 1)
-    slide_cy = max(px_to_emu(height), 1)
+    _emu_scale = pptx_emu_scale(width, height)
+    slide_cx = max(px_to_emu(width, _emu_scale), 1)
+    slide_cy = max(px_to_emu(height, _emu_scale), 1)
     slide_xml = generate_drawingml_slide_content(
         ordered_splats,
         width=width,
