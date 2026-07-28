@@ -564,3 +564,205 @@ def test_luminance_gradient_loss_penalizes_soft_edges():
     assert float(loss.detach()) > 0.0
     loss.backward()
     assert rendered.grad is not None and torch.isfinite(rendered.grad).all()
+
+
+def _demo_splats(n=6):
+    rng = np.random.default_rng(3)
+    from png2svg_gs.splat import create_anisotropic_splat
+
+    splats = []
+    for i in range(n):
+        if i % 2 == 0:
+            splats.append(
+                create_isotropic_splat(
+                    center=rng.uniform(4, 28, size=2),
+                    sigma=float(rng.uniform(1.5, 4.0)),
+                    color=rng.uniform(0.1, 0.9, size=3),
+                    alpha=float(rng.uniform(0.3, 1.0)),
+                )
+            )
+        else:
+            angle = float(rng.uniform(0, np.pi))
+            vecs = np.array(
+                [
+                    [np.cos(angle), -np.sin(angle)],
+                    [np.sin(angle), np.cos(angle)],
+                ],
+                dtype=np.float32,
+            )
+            splats.append(
+                create_anisotropic_splat(
+                    center=rng.uniform(4, 28, size=2),
+                    eigenvals=np.array([9.0, 2.0], dtype=np.float32),
+                    eigenvecs=vecs,
+                    color=rng.uniform(0.1, 0.9, size=3),
+                    alpha=float(rng.uniform(0.3, 1.0)),
+                )
+            )
+    return splats
+
+
+def test_palette_quantized_recipe_shares_gradients_and_scales_opacity():
+    """Palette recipe: <= palette_size shared gradients, exact element opacity."""
+    from png2svg_gs.io import generate_palette_quantized_svg_content
+
+    splats = _demo_splats(8)
+    svg = generate_palette_quantized_svg_content(
+        splats, width=32, height=32, palette_size=4
+    )
+    assert svg.count("<radialGradient") <= 4
+    # Every emitted ellipse references a shared palette gradient and carries
+    # the true alpha-over center opacity 1 - exp(-alpha).
+    import re
+
+    ellipses = re.findall(r'<ellipse[^>]*opacity="([0-9.]+)"[^>]*url\(#p(\d+)\)', svg)
+    assert len(ellipses) == len(splats)
+    expected = sorted(
+        round(1.0 - np.exp(-min(max(s.alpha, 0.0), 1.0)), 4) for s in splats
+    )
+    assert sorted(float(op) for op, _ in ellipses) == expected
+    # Deterministic across calls (fixed kmeans seed).
+    assert svg == generate_palette_quantized_svg_content(
+        splats, width=32, height=32, palette_size=4
+    )
+
+
+def test_blur_recipe_filter_region_and_peak_opacity_target():
+    """Blur recipe: widened filter region + (1-exp(-a))/mass_fraction opacity."""
+    import re
+
+    from png2svg_gs.io import SVG_BLUR_CORE_K_SIGMA, generate_blur_svg_content
+
+    splats = _demo_splats(5)
+    svg = generate_blur_svg_content(splats, width=32, height=32)
+    assert 'x="-300%"' in svg and 'width="700%"' in svg
+    assert "<feGaussianBlur" in svg
+    mass_fraction = 1.0 - np.exp(-0.5 * SVG_BLUR_CORE_K_SIGMA**2)
+    opacities = sorted(
+        float(m) for m in re.findall(r'opacity="([0-9.]+)" filter=', svg)
+    )
+    expected = sorted(
+        round(min((1.0 - np.exp(-min(max(s.alpha, 0.0), 1.0))) / mass_fraction, 1.0), 4)
+        for s in splats
+    )
+    assert opacities == expected
+
+
+def test_parallax_canvas_html_embeds_strength_and_canvas():
+    from png2svg_gs.io import generate_parallax_canvas_html
+
+    splats = _demo_splats(4)
+    html = generate_parallax_canvas_html(
+        splats, width=32, height=32, parallax_strength=7.5
+    )
+    # Layer canvases are created by the JS runtime, not as static tags.
+    assert "canvas" in html.lower()
+    assert "const STRENGTH = 7.500;" in html
+
+
+def test_canvas_html_compositing_space_flag_and_color_encoding():
+    from png2svg_gs.io import generate_canvas_html, linear_to_srgb
+
+    splat = create_isotropic_splat(
+        center=np.array([16.0, 16.0]),
+        sigma=3.0,
+        color=np.array([0.2, 0.2, 0.2]),
+        alpha=0.9,
+    )
+    html_lin = generate_canvas_html([splat], width=32, height=32)
+    html_srgb = generate_canvas_html(
+        [splat], width=32, height=32, compositing_space="srgb"
+    )
+    assert "const SRGB_IN = false;" in html_lin
+    assert "const SRGB_IN = true;" in html_srgb
+    encoded = float(linear_to_srgb(np.array([0.2], dtype=np.float32))[0])
+    assert f"{encoded:.4f}"[:5] in html_srgb or f"{encoded:.6f}"[:6] in html_srgb
+
+
+def test_drawingml_blur_style_alpha_uses_peak_opacity_target():
+    import re
+
+    from png2svg_gs.io import PPTX_BLUR_CORE_K_SIGMA, generate_drawingml_slide_content
+
+    splat = create_isotropic_splat(
+        center=np.array([16.0, 16.0]),
+        sigma=4.0,
+        color=np.array([0.8, 0.1, 0.1]),
+        alpha=0.7,
+    )
+    content = generate_drawingml_slide_content(
+        [splat], width=32, height=32, splat_style="blur"
+    )
+    assert "<a:blur rad=" in content
+    mass_fraction = 1.0 - np.exp(-0.5 * PPTX_BLUR_CORE_K_SIGMA**2)
+    expected_units = int(
+        np.clip(
+            round(min((1.0 - np.exp(-0.7)) / mass_fraction, 1.0) * 100000), 0, 100000
+        )
+    )
+    alphas = [int(m) for m in re.findall(r'<a:alpha val="(\d+)"/>', content)]
+    assert expected_units in alphas
+
+
+def test_preview_png_srgb_mode_differs_from_linear(tmp_path):
+    from png2svg_gs.io import render_splats_preview_png
+
+    splat = create_isotropic_splat(
+        center=np.array([16.0, 16.0]),
+        sigma=5.0,
+        color=np.array([0.6, 0.3, 0.1]),
+        alpha=0.5,
+    )
+    lin_path = tmp_path / "lin.png"
+    srgb_path = tmp_path / "srgb.png"
+    render_splats_preview_png(
+        splats=[splat],
+        width=32,
+        height=32,
+        output_path=str(lin_path),
+        background_linear_rgb=np.array([0.9, 0.9, 0.9], dtype=np.float32),
+    )
+    render_splats_preview_png(
+        splats=[splat],
+        width=32,
+        height=32,
+        output_path=str(srgb_path),
+        background_linear_rgb=np.array([0.9, 0.9, 0.9], dtype=np.float32),
+        compositing_space="srgb",
+    )
+    lin_img = np.asarray(Image.open(lin_path), dtype=np.int16)
+    srgb_img = np.asarray(Image.open(srgb_path), dtype=np.int16)
+    assert np.abs(lin_img - srgb_img).max() > 1
+
+
+def test_convert_restores_run_mutated_config(tmp_path):
+    """convert() must not leave run-mutated config on the instance."""
+    import copy
+
+    img_path = tmp_path / "tiny.png"
+    rng = np.random.default_rng(0)
+    Image.fromarray((rng.uniform(0, 255, size=(16, 16, 3))).astype(np.uint8)).save(
+        img_path
+    )
+
+    converter = PNG2SVGConverter(
+        max_splats=16,
+        stages=[2, 1],
+        optimizer_backend="torch",
+        time_budget="smoke",
+    )
+    before = (
+        converter.max_splats,
+        list(converter.stages),
+        copy.deepcopy(converter.refinement_config),
+        copy.deepcopy(converter.acceptance_criteria),
+    )
+    out = tmp_path / "tiny.svg"
+    converter.convert(str(img_path), output_path=str(out), verbose=False)
+    after = (
+        converter.max_splats,
+        list(converter.stages),
+        converter.refinement_config,
+        converter.acceptance_criteria,
+    )
+    assert after == before

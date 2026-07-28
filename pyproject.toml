@@ -30,6 +30,9 @@ dependencies = [
     "Pillow>=9.0.0",
     "numpy>=1.21.0",
     "scikit-image>=0.19.0",
+    # Direct imports in png2svg_gs (io.py, features.py, converter.py); do not
+    # rely on it arriving transitively via scikit-image.
+    "scipy>=1.10",
     "psutil>=5.9.0",
     "torch>=2.0.0"
 ]
@@ -39,10 +42,8 @@ dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     # Formatters PINNED so CI and local devs agree on the rules.
-    # Bump in lockstep with requirements-dev.txt.
-    # Black 26.x requires Python >=3.10. We keep 3.9 in the CI matrix, so
-    # this pin tracks the latest 25.x (the last line that supports 3.9).
-    # When 3.9 drops from the matrix (EOL Oct 2025), bump to 26.x.
+    # This pin is kept in lockstep with CI and requirements-dev.txt; bump both
+    # together when moving to a newer black.
     "black==25.11.0",
     "isort==5.13.2",
     "mypy>=0.991",
@@ -83,11 +84,11 @@ where = ["src"]
 
 [tool.black]
 line-length = 88
-target-version = ['py38']
+target-version = ['py313']
 include = '\.pyi?$'
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.13"
 strict = true
 warn_return_any = true
 warn_unused_configs = true

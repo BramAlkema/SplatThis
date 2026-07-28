@@ -14,7 +14,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: "3.9"
+        python-version: "3.13"
 
     - name: Install build dependencies
       run: |
@@ -24,6 +24,11 @@ jobs:
     - name: Build package
       run: |
         python -m build
+
+    - name: Smoke-test the built wheel
+      run: |
+        pip install dist/*.whl
+        splatlify --help
 
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1

@@ -13,7 +13,7 @@ Takes a PNG, fits a few thousand 2D Gaussian splats to it, and emits one of:
 | Source | Canvas (HTML) | SVG |
 |---|---|---|
 | ![source](docs/demo/source.png) | ![canvas](docs/demo/canvas_render.png) | ![svg](docs/demo/svg_render.png) |
-| input.png · 476×502 | LPIPS **0.11** · PSNR 29 dB | LPIPS **0.32** · 1 MB editable |
+| docs/demo/source.png · 476×502 | LPIPS **0.11** · PSNR 29 dB | LPIPS **0.32** · 1 MB editable |
 
 Same 2 000-splat set, ~8 min training on Apple Silicon. Files:
 [chameleon.svg](docs/demo/chameleon.svg) (1 MB, opens in any vector editor),
@@ -80,7 +80,7 @@ SVG vs naive train-once-emit-anywhere.
 1. **PPTX export from splats, calibrated against real PowerPoint.** DrawingML's
    `<a:blur>` calibration constant (σ = rad / 3.25) was measured via erf-fit
    edge-response in real PowerPoint. See `docs/SVG_PPTX_GAUSSIAN_TRICKS.md` and
-   the writeup in [svg2ooxml's research notes](../svg2ooxml/docs/reference/research/blur-fidelity-results.md).
+   the writeup in [svg2ooxml's research notes](https://github.com/BramAlkema/svg2ooxml).
 
 2. **Format-aware training pipeline.** `--training-export-target {canvas, svg,
    pptx-softedge}` — the trainer optimizes against the deploy format's compositor
@@ -94,7 +94,7 @@ SVG vs naive train-once-emit-anywhere.
 
 ## Honest quality numbers
 
-Measured against the chameleon test image (`input.png`, 476×502) at 2 k splats
+Measured against the chameleon test image (`docs/demo/source.png`, 476×502) at 2 k splats
 with `--stages 1000,500,250` and `--training-export-target` matching the format:
 
 | Format | SSIM | LPIPS↓ | PSNR | File size |
@@ -169,10 +169,10 @@ backend; pass `--optimizer-backend torch` for CUDA/CPU runs.
 ## Related work
 
 - **[gsplat](https://github.com/nerfstudio-project/gsplat)** — CUDA-native
-  Gaussian rasterizer; vendored under `external/gsplat/`. Faster training, no
-  vector export.
-- **[Image-GS](https://github.com/<...>)** — academic 2D splat work; reference
-  under `external/image-gs/`.
+  Gaussian rasterizer; cloned locally under `external/gsplat/` (not committed).
+  Faster training, no vector export.
+- **[Image-GS](https://github.com/NYU-ICL/image-gs)** — academic 2D splat work
+  (Zhang et al., SIGGRAPH 2025); cloned locally under `external/image-gs/` (not committed).
 - **[3D Gaussian Splatting](https://github.com/graphdeco-inria/gaussian-splatting)**
   — Kerbl et al. 2023, the reference 3DGS implementation.
 - **[svg2ooxml](https://github.com/BramAlkema/svg2ooxml)** — sibling project for

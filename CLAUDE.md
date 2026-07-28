@@ -7,64 +7,73 @@
 source venv/bin/activate
 ```
 
+## Project Structure
+
+The live pipeline is `src/png2svg_gs/` (the legacy `src/splat_this` package was
+retired). CLI entry point: `splatlify` (= `png2svg_gs.cli:main`).
+
+| Module | Role |
+|---|---|
+| `cli.py` | `splatlify` argument parsing, resource-limit resolution |
+| `converter.py` | `PNG2SVGConverter` orchestrator: init → staged optimize → densify/prune → postfit → emit |
+| `features.py` | Seeding: gradient PDF, structure tensor (`edge_tangent_angle`), Poisson disk |
+| `optimizer.py` | Torch `SplatParams` + per-group Adam LRs |
+| `renderer.py` | Torch reference renderers (tiled + batched), `L1SSIMLoss`, numpy validator |
+| `mlx_*.py` | MLX backend (default on Apple Silicon): renderer, losses, fused-Adam stage |
+| `io.py` | Emission: SVG recipes (standard/browser/scripted/palette/blur), PPTX/DrawingML, canvas HTML, quality metrics |
+| `splat.py` | `GaussianSplat`, layer bands, render-order keys |
+
+Splats flow between stages as `List[GaussianSplat]` ⇄ `[N, 11]` tensors
+(x, y, sx, sy, theta, reserved, r, g, b, alpha, importance).
+
+- `tests/unit/` — the test suite (`tests/integration` is orphaned)
+- `tools/fidelity_lab.py`, `scripts/benchmark_*.py` — experiment harnesses
+- `docs/` — GitHub Pages landing + research notes (`SVG_PPTX_GAUSSIAN_TRICKS.md`)
+- `external/`, `ml-sharp/` — local clones of reference projects, not committed
+
 ## Testing Commands
 ```bash
-# Run all unit tests with coverage
-PYTHONPATH=. pytest tests/unit/ --cov=src --cov-report=term-missing --tb=short
+# Full unit suite with coverage (what CI runs)
+PYTHONPATH=. pytest tests/unit/ --cov=src/png2svg_gs --cov-report=term-missing --tb=short
 
-# Run specific test file
-PYTHONPATH=. pytest tests/unit/test_progressive_refinement.py -v --tb=short --no-cov
+# Single file, fast
+PYTHONPATH=. pytest tests/unit/test_mlx_renderer.py -v --tb=short --no-cov
+
+# Formatters are pinned; CI enforces black --check
+black src/png2svg_gs/ tests/unit/
 ```
 
-## Project Structure
-- `src/splat_this/` - Main source code
-- `tests/unit/` - Unit tests
-- `tests/e2e/` - End-to-end tests
-- `demo_*.py` - Demonstration scripts
-
-## Task Progress
-
-### Phase 3: Progressive Refinement - COMPLETED ✅
-- ✅ Manual gradient computation (T3.1)
-- ✅ SGD optimization loop (T3.2)
-- ✅ Progressive refinement system (T3.3)
-
-### Phase 4: Advanced Features - ONGOING
-- ✅ Anisotropic refinement (T4.1)
-- ✅ Advanced error metrics (T4.2)
-- ✅ Performance optimization (T4.3)
-
-## Recent Completion: T4.2 Advanced Error Metrics - COMPLETED ✅
-- ✅ LPIPS (Learned Perceptual Image Patch Similarity) integration
-- ✅ Edge-aware error weighting system
-- ✅ Frequency-domain error analysis with FFT
-- ✅ Region-based error aggregation with content awareness
-- ✅ Comparative quality assessment framework
-- ✅ Advanced error map generation (content-weighted, frequency-weighted)
-- ✅ Multi-scale SSIM, gradient similarity, texture similarity, edge coherence
-- ✅ Comprehensive unit tests (43 tests passing)
-- ✅ Full demonstration script with performance benchmarking
-
-## Demo Scripts Available
+## Running the Pipeline
 ```bash
-# T4.2 Advanced Error Metrics Demo
-python demo_advanced_error_metrics.py                    # Full demo
-python demo_advanced_error_metrics.py --demo lpips       # LPIPS only
-python demo_advanced_error_metrics.py --demo frequency   # Frequency analysis
-python demo_advanced_error_metrics.py --demo content     # Content-aware analysis
-python demo_advanced_error_metrics.py --demo comparative # Method comparison
-python demo_advanced_error_metrics.py --demo maps        # Error maps
-python demo_advanced_error_metrics.py --demo performance # Performance benchmark
-
-# T4.3 Performance Optimization Demo
-python demo_performance_optimization.py
-
-# T4.1 Anisotropic Refinement Demo
-python demo_anisotropic_refinement.py
+splatlify docs/demo/source.png -o out.svg --seed 42 --artifacts-dir artifacts/
+# Key flags: --profile (default max-fidelity), --splats, --stages, --time-budget,
+# --optimizer-backend {mlx,torch}, --format {svg,pptx,canvas}, --svg-recipe,
+# --training-export-target {auto,canvas,svg,pptx-softedge}
 ```
+MLX is the default optimizer backend (falls back to torch with a warning when
+mlx is missing). Torch is the cross-platform reference; keep the two in parity —
+`tests/unit/test_mlx_losses.py` and `test_mlx_renderer.py` pin it.
 
-## Bug Fixes Applied
-- **Gradient Calculation Fix**: Added size check for small regions in `_analyze_content_complexity()` to prevent numpy gradient calculation errors on regions smaller than 2x2 pixels. Uses variance as proxy for complexity in such cases.
-- **LPIPS Non-negative Fix**: Ensured LPIPS scores are always non-negative by clipping results.
-- **Gabor Kernel Size Fix**: Fixed kernel size calculation to ensure odd dimensions.
-- **Content Classification Priority**: Adjusted content type classification order for better accuracy.
+## Fidelity Protocol (non-negotiable)
+- Judge SVG quality on the **rasterized SVG** (`rsvg-convert`, or cairosvg via
+  the `rasterize` extra) — never on the internal renderer alone.
+- **LPIPS is the trusted metric**; SSIM over-rewards blur. Always eyeball a
+  side-by-side before claiming a win; keep wins, revert washes.
+- Models trained for SVG/PPTX targets composite in **sRGB** (browsers blend in
+  display space); validation renders must pass `compositing_space="srgb"`.
+- **Never validate PPTX with soffice/LibreOffice** (known rendering bugs).
+  Use `openxml-audit` (local: `~/projects/openxml-audit`) for structure and the
+  real-PowerPoint capture tooling in `~/projects/svg2ooxml/tools/ppt_research/`
+  for visuals.
+- Headless-Chrome canvas screenshots: never set `--window-size` equal to the
+  canvas dimensions (bottom rows come out black) — oversize and crop.
+
+## Conventions
+- Splat orientation comes from the structure tensor's gradient direction; any
+  anisotropic splat creation must go through `features.edge_tangent_angle()`
+  (major axis along the edge = gradient direction + π/2).
+- Compositing order is ascending importance everywhere (torch stable argsort,
+  MLX/numpy stable sorts, SVG document order); don't introduce unstable sorts.
+- SVG uses per-splat baked colors — a shared `currentColor` gradient breaks rsvg.
+- `convert()` must not leave run-mutated config on the instance; per-run state
+  is snapshot/restored in the `convert()` wrapper.
