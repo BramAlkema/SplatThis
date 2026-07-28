@@ -123,3 +123,9 @@ examples/output/
 # heavy regenerable artifacts are not (see result/README.md).
 /result/artifacts/chameleon.svg
 /result/artifacts/powerpoint_screen_capture.png
+
+# Reference corpus: images regenerate from skimage.data via
+# `python tools/corpus_benchmark.py --materialize`; runs are large.
+# corpus.json (the manifest with hashes) and results.jsonl ARE tracked.
+/result/corpus/images/
+/result/corpus/runs/
