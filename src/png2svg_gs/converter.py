@@ -663,6 +663,10 @@ class PNG2SVGConverter:
         self.svg_export_recipe = _normalize_svg_export_recipe(
             self.refinement_config.get("svg_export_recipe", "standard")
         )
+        # ADR-003 fidelity stage: resolve (and validate) the mode up front.
+        from .fidelity import resolve_fidelity_config
+
+        self.fidelity_config = resolve_fidelity_config(self.refinement_config)
         self.training_export_target = self._normalize_training_export_target(
             self.refinement_config.get("training_export_target", "canvas")
         )
@@ -1778,6 +1782,42 @@ class PNG2SVGConverter:
                     "Blur proxy post-fit completed in %.2fs",
                     timings["blur_proxy_postfit"],
                 )
+        # ADR-003 fidelity stage: bounded accept-or-revert polish against the
+        # deployed artifact. Phase 1 implements the SVG target only.
+        if self.fidelity_config.mode != "off":
+            if output_format == "svg":
+                phase_t0 = time.perf_counter()
+                splats, fidelity_fragment = self._run_fidelity_stage(
+                    splats=splats,
+                    image=image,
+                    width=width,
+                    height=height,
+                    artifacts_path=artifacts_path,
+                    seed=seed,
+                    verbose=verbose,
+                )
+                timings["fidelity_stage"] = float(time.perf_counter() - phase_t0)
+                manifest["fidelity_stage"] = fidelity_fragment
+                if verbose:
+                    logger.info(
+                        "Fidelity stage (%s) in %.2fs: %s candidates, "
+                        "accepted=%s, stop=%s",
+                        self.fidelity_config.mode,
+                        timings["fidelity_stage"],
+                        fidelity_fragment.get("candidates_evaluated"),
+                        fidelity_fragment.get("accepted_candidates"),
+                        fidelity_fragment.get("stop_reason"),
+                    )
+            else:
+                manifest["fidelity_stage"] = {
+                    "enabled": False,
+                    "mode": self.fidelity_config.mode,
+                    "reason": (
+                        f"unsupported-target:{output_format} "
+                        "(ADR-003 phase 1 implements svg only)"
+                    ),
+                }
+
         self._write_stage_artifact(
             artifacts_path, "final", splats, {"count": len(splats)}
         )
@@ -4776,6 +4816,71 @@ class PNG2SVGConverter:
             background_safe_mask=self._region_background_safe_mask,
             edge_band_mask=self._region_edge_band_mask,
         )
+
+    def _run_fidelity_stage(
+        self,
+        *,
+        splats: List[GaussianSplat],
+        image: np.ndarray,
+        width: int,
+        height: int,
+        artifacts_path: Optional[Path],
+        seed: Optional[int],
+        verbose: bool,
+    ) -> Tuple[List[GaussianSplat], Dict[str, Any]]:
+        """ADR-003 stage: candidates emitted through the exact export path.
+
+        The evaluator emits candidates via _generate_svg, so recipe and
+        region-mask semantics are identical to the final export. State
+        isolation is inherited from the convert() snapshot wrapper.
+        """
+        import tempfile
+
+        from .fidelity import (
+            FidelityCandidate,
+            FidelityEvaluator,
+            FidelityStage,
+            build_operators,
+            write_fidelity_report,
+        )
+
+        if artifacts_path is not None:
+            work_dir = str(Path(artifacts_path) / "fidelity")
+            keep_artifacts = True
+            cleanup_dir = None
+        else:
+            cleanup_dir = tempfile.TemporaryDirectory(prefix="fidelity-")
+            work_dir = cleanup_dir.name
+            keep_artifacts = False
+
+        try:
+            saliency_mask = None
+            if self._region_foreground_mask is not None:
+                saliency_mask = np.asarray(self._region_foreground_mask, dtype=bool)
+            evaluator = FidelityEvaluator(
+                target_linear_rgb=image[:, :, :3],
+                background_linear_rgb=self._background_linear_rgb,
+                compositing_space=self._deployed_compositing_space(),
+                emit_svg=lambda s: self._generate_svg(s, width, height),
+                work_dir=work_dir,
+                config=self.fidelity_config,
+                saliency_mask=saliency_mask,
+                keep_candidate_artifacts=keep_artifacts,
+            )
+            stage = FidelityStage(
+                config=self.fidelity_config,
+                evaluator=evaluator,
+                operators=build_operators(self.fidelity_config),
+            )
+            baseline = FidelityCandidate(name="baseline", splats=tuple(splats))
+            result = stage.run(baseline)
+            fragment = write_fidelity_report(
+                work_dir, result, self.fidelity_config, seed
+            )
+            return list(result.winner.splats), fragment
+        finally:
+            if cleanup_dir is not None:
+                cleanup_dir.cleanup()
 
     def _generate_drawingml(
         self, splats: List[GaussianSplat], width: int, height: int

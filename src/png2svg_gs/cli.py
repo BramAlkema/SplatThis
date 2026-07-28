@@ -300,6 +300,16 @@ def build_parser() -> argparse.ArgumentParser:
         "small palette sizes.",
     )
     parser.add_argument(
+        "--fidelity-stage",
+        default=None,
+        choices=["off", "balanced", "max"],
+        help="ADR-003 fidelity stage: bounded accept-or-revert polish "
+        "evaluated on the emitted, actually-rasterized SVG (default: off). "
+        "'balanced' runs the monotonic evaluator shell; 'max' also enables "
+        "the bounded operator portfolio. Candidates are kept only on a "
+        "measured deployed-artifact gain with hard no-regression gates.",
+    )
+    parser.add_argument(
         "--svg-proxy-postfit-iters",
         type=int,
         default=0,
@@ -393,6 +403,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     refinement_config = {}
     if args.svg_recipe is not None:
         refinement_config["svg_export_recipe"] = args.svg_recipe
+    if args.fidelity_stage is not None:
+        refinement_config["fidelity_stage"] = args.fidelity_stage
     # Resolve "auto" training_export_target. SVG output trains under sRGB
     # compositing (matches browser/rsvg blend). PPTX defaults to canvas
     # (linear-light) because the pptx-softedge proxy is calibrated for
