@@ -1065,65 +1065,6 @@ def tensor_to_splats(tensor: torch.Tensor) -> List[GaussianSplat]:
     return splats
 
 
-class SimpleLoss(nn.Module):
-    """
-    Simple loss function for PNG→SVG conversion.
-
-    Combines MSE, total variation, and area penalty.
-    """
-
-    def __init__(
-        self, mse_weight: float = 1.0, tv_weight: float = 0.1, area_weight: float = 0.01
-    ):
-        super().__init__()
-        self.mse_weight = mse_weight
-        self.tv_weight = tv_weight
-        self.area_weight = area_weight
-
-    def forward(
-        self, rendered: torch.Tensor, target: torch.Tensor, splats_tensor: torch.Tensor
-    ) -> torch.Tensor:
-        """
-        Compute combined loss.
-
-        Args:
-            rendered: Rendered image [H, W, 3]
-            target: Target image [H, W, 3]
-            splats_tensor: Splat parameters [N, 11]
-
-        Returns:
-            Combined loss scalar
-        """
-        # MSE loss
-        mse_loss = torch.mean((rendered - target) ** 2)
-
-        # Total variation loss on alpha (encourage smoothness)
-        if len(splats_tensor) > 0:
-            alphas = splats_tensor[:, 9]  # [N]
-            tv_loss = torch.mean(torch.abs(alphas[1:] - alphas[:-1]))
-        else:
-            tv_loss = torch.tensor(0.0, device=rendered.device)
-
-        # Area penalty (encourage smaller splats)
-        if len(splats_tensor) > 0:
-            # Approximate area from determinant of covariance
-            areas = torch.clamp(splats_tensor[:, 2], min=1e-4) * torch.clamp(
-                splats_tensor[:, 3], min=1e-4
-            )
-            area_loss = torch.mean(areas)
-        else:
-            area_loss = torch.tensor(0.0, device=rendered.device)
-
-        # Combined loss
-        total_loss = (
-            self.mse_weight * mse_loss
-            + self.tv_weight * tv_loss
-            + self.area_weight * area_loss
-        )
-
-        return total_loss
-
-
 class L1SSIMLoss(nn.Module):
     """
     Baseline reconstruction loss for Phase 1.

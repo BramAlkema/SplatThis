@@ -179,63 +179,7 @@ def table_to_splats(
     return splats
 
 
-class MlxAdam:
-    """Small functional Adam implementation over a dict of MLX arrays."""
-
-    def __init__(
-        self,
-        initial_tree: Mapping[str, Any],
-        learning_rates: Optional[Mapping[str, float]] = None,
-        beta1: float = 0.9,
-        beta2: float = 0.999,
-        eps: float = 1e-8,
-        grad_clip_norm: Optional[float] = 1.0,
-    ):
-        mlx = _require_mlx()
-        self.learning_rates = {**DEFAULT_LEARNING_RATES, **dict(learning_rates or {})}
-        self.beta1 = float(beta1)
-        self.beta2 = float(beta2)
-        self.eps = float(eps)
-        self.grad_clip_norm = grad_clip_norm
-        self.step_count = 0
-        self.m = {key: mlx.zeros_like(value) for key, value in initial_tree.items()}
-        self.v = {key: mlx.zeros_like(value) for key, value in initial_tree.items()}
-
-    def _global_grad_norm(self, grads: Mapping[str, Any]) -> Any:
-        mlx = _require_mlx()
-        total = mlx.array(0.0, dtype=mlx.float32)
-        for grad in grads.values():
-            total = total + mlx.sum(grad * grad)
-        return mlx.sqrt(total)
-
-    def step(
-        self, tree: Mapping[str, Any], grads: Mapping[str, Any]
-    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
-        mlx = _require_mlx()
-        self.step_count += 1
-        grad_norm = self._global_grad_norm(grads)
-        if self.grad_clip_norm is None:
-            clip_factor = mlx.array(1.0, dtype=mlx.float32)
-        else:
-            clip_factor = mlx.minimum(
-                1.0, float(self.grad_clip_norm) / (grad_norm + 1e-6)
-            )
-
-        next_tree: Dict[str, Any] = {}
-        for key, value in tree.items():
-            grad = grads[key] * clip_factor
-            self.m[key] = self.beta1 * self.m[key] + (1.0 - self.beta1) * grad
-            self.v[key] = self.beta2 * self.v[key] + (1.0 - self.beta2) * (grad * grad)
-            m_hat = self.m[key] / (1.0 - self.beta1**self.step_count)
-            v_hat = self.v[key] / (1.0 - self.beta2**self.step_count)
-            lr = float(self.learning_rates[key])
-            next_tree[key] = value - lr * m_hat / (mlx.sqrt(v_hat) + self.eps)
-
-        return next_tree, {"grad_norm": grad_norm, "clip_factor": clip_factor}
-
-
 __all__ = [
-    "MlxAdam",
     "MlxSplatParams",
     "TRAINABLE_KEYS",
     "clone_tree",

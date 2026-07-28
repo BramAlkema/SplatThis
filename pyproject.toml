@@ -58,10 +58,6 @@ test = [
 rasterize = [
     "cairosvg>=2.5.0"
 ]
-# VGG perceptual loss (png2svg_gs.losses.PerceptualLoss); not used by default.
-perceptual = [
-    "torchvision>=0.15.0"
-]
 # Apple-Silicon-native optimizer backend (the CLI default when available;
 # PNG2SVGConverter falls back to torch with a warning when mlx is missing).
 mlx = [

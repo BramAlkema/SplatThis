@@ -650,6 +650,7 @@ class PNG2SVGConverter:
         self.learning_rates = profile_defaults["learning_rates"].copy()
         if learning_rates:
             self.learning_rates.update(learning_rates)
+        self.learning_rates = self._normalize_learning_rates(self.learning_rates)
 
         self.refinement_config = profile_defaults["refinement"].copy()
         if refinement_config:
@@ -770,6 +771,35 @@ class PNG2SVGConverter:
             self.time_budget,
             self.layered_saliency,
         )
+
+    @staticmethod
+    def _normalize_learning_rates(learning_rates: Dict[str, float]) -> Dict[str, float]:
+        """Map the legacy 'covariance' LR key onto scale+theta; reject typos.
+
+        Profiles historically set {"covariance": ...} from the pre-refactor
+        parameter layout; build_optimizer/mlx read only position/scale/theta/
+        color/alpha, so the key was silently dead and scale/theta trained at
+        defaults regardless of profile intent.
+        """
+        valid = {"position", "scale", "theta", "color", "alpha"}
+        normalized: Dict[str, float] = {}
+        for key, value in learning_rates.items():
+            if key == "covariance":
+                logger.warning(
+                    "learning_rates key 'covariance' is deprecated; applying "
+                    "%.5f to both 'scale' and 'theta' (set them explicitly).",
+                    float(value),
+                )
+                normalized.setdefault("scale", float(value))
+                normalized.setdefault("theta", float(value))
+            elif key in valid:
+                normalized[key] = float(value)
+            else:
+                raise ValueError(
+                    f"Unknown learning_rates key: {key!r} "
+                    f"(expected one of {sorted(valid)} or legacy 'covariance')"
+                )
+        return normalized
 
     @staticmethod
     def _normalize_optimizer_backend(value: Any) -> str:
@@ -5645,12 +5675,6 @@ class PNG2SVGConverter:
         )
         return float(np.mean(coverage_map >= threshold))
 
-    def _build_contribution_map(
-        self, splats: List[GaussianSplat], width: int, height: int
-    ) -> np.ndarray:
-        """Backward-compatible alias for the alpha coverage map."""
-        return self._build_alpha_coverage_map(splats=splats, width=width, height=height)
-
     def _resolve_target_size(self, input_path: str) -> Tuple[int, int]:
         """Resolve effective target size after applying resolution scale."""
         if self.target_size is not None:
@@ -5669,7 +5693,8 @@ class PNG2SVGConverter:
             "m4-fast-loop": {
                 "learning_rates": {
                     "position": 0.0095,
-                    "covariance": 0.0040,
+                    "scale": 0.0040,
+                    "theta": 0.0040,
                     "color": 0.016,
                     "alpha": 0.0080,
                 },
@@ -5740,7 +5765,8 @@ class PNG2SVGConverter:
             "fast": {
                 "learning_rates": {
                     "position": 0.009,
-                    "covariance": 0.004,
+                    "scale": 0.004,
+                    "theta": 0.004,
                     "color": 0.016,
                     "alpha": 0.008,
                 },
@@ -5811,7 +5837,8 @@ class PNG2SVGConverter:
             "balanced": {
                 "learning_rates": {
                     "position": 0.01,
-                    "covariance": 0.005,
+                    "scale": 0.005,
+                    "theta": 0.005,
                     "color": 0.02,
                     "alpha": 0.01,
                 },
@@ -5882,7 +5909,8 @@ class PNG2SVGConverter:
             "max-fidelity": {
                 "learning_rates": {
                     "position": 0.0075,
-                    "covariance": 0.0055,
+                    "scale": 0.0055,
+                    "theta": 0.0055,
                     "color": 0.016,
                     "alpha": 0.010,
                 },
