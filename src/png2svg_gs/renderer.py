@@ -1278,12 +1278,31 @@ class L1SSIMLoss(nn.Module):
         return torch.clamp(ssim, min=-1.0, max=1.0)
 
 
+def _np_linear_to_srgb(x: np.ndarray) -> np.ndarray:
+    """Linear-RGB -> sRGB for float arrays in [0,1] (numpy mirror)."""
+    x = np.clip(x, 0.0, 1.0)
+    return np.where(
+        x <= 0.0031308,
+        12.92 * x,
+        1.055 * np.power(np.maximum(x, 1e-12), 1.0 / 2.4) - 0.055,
+    ).astype(np.float32)
+
+
+def _np_srgb_to_linear(x: np.ndarray) -> np.ndarray:
+    """sRGB -> linear-RGB for float arrays in [0,1] (numpy mirror)."""
+    x = np.clip(x, 0.0, 1.0)
+    return np.where(x <= 0.04045, x / 12.92, np.power((x + 0.055) / 1.055, 2.4)).astype(
+        np.float32
+    )
+
+
 def render_splats_numpy(
     splats: List[GaussianSplat],
     width: int,
     height: int,
     background_linear_rgb: Optional[np.ndarray] = None,
     footprint_sigma: float = 3.0,
+    compositing_space: str = "linear",
 ) -> np.ndarray:
     """
     Simple NumPy renderer for validation and debugging.
@@ -1292,10 +1311,19 @@ def render_splats_numpy(
         splats: List of splats
         width: Image width
         height: Image height
+        compositing_space: "linear" or "srgb". Models trained for SVG/PPTX
+            deploy targets composite in sRGB (browsers blend in display
+            space); pass "srgb" so validation renders match that forward
+            model. Input colors and the returned image stay linear-RGB.
 
     Returns:
-        Rendered image [H, W, 3]
+        Rendered image [H, W, 3] (linear RGB)
     """
+    compositing_space = str(compositing_space).strip().lower()
+    if compositing_space not in {"linear", "srgb"}:
+        raise ValueError(f"Unsupported compositing space: {compositing_space}")
+    srgb_mode = compositing_space == "srgb"
+
     if background_linear_rgb is None:
         background = np.zeros(3, dtype=np.float32)
     else:
@@ -1303,13 +1331,16 @@ def render_splats_numpy(
         if background.size != 3:
             raise ValueError("background_linear_rgb must have 3 values")
         background = np.clip(background, 0.0, 1.0).astype(np.float32)
+    if srgb_mode:
+        background = _np_linear_to_srgb(background)
 
     if not splats:
-        return (
+        rendered_bg = (
             np.broadcast_to(background.reshape(1, 1, 3), (height, width, 3))
             .astype(np.float32)
             .copy()
         )
+        return _np_srgb_to_linear(rendered_bg) if srgb_mode else rendered_bg
 
     # Create output image and transmittance for alpha-over.
     output = np.zeros((height, width, 3), dtype=np.float32)
@@ -1320,8 +1351,11 @@ def render_splats_numpy(
 
     for splat in ordered:
         raw = splat.to_raw_splat()
-        cx = float(np.clip(raw.x, 0.0, width - 1.0))
-        cy = float(np.clip(raw.y, 0.0, height - 1.0))
+        # No center clip: torch/MLX/canvas-JS/SVG all evaluate the Gaussian
+        # at the true center, so the validator must too — the bbox
+        # intersection below already handles off-canvas footprints.
+        cx = float(raw.x)
+        cy = float(raw.y)
         sx = max(float(raw.sx), 1e-4)
         sy = max(float(raw.sy), 1e-4)
         theta = float(raw.theta)
@@ -1348,9 +1382,12 @@ def render_splats_numpy(
         local_trans = transmittance[y0:y1, x0:x1]
         contrib = local_trans * layer_alpha
         color = np.array([raw.r, raw.g, raw.b], dtype=np.float32).reshape(1, 1, 3)
+        if srgb_mode:
+            color = _np_linear_to_srgb(color)
 
         output[y0:y1, x0:x1] += contrib[..., None] * color
         transmittance[y0:y1, x0:x1] = local_trans * (1.0 - layer_alpha)
 
     output += transmittance[..., None] * background.reshape(1, 1, 3)
-    return np.clip(output, 0.0, 1.0).astype(np.float32)
+    output = np.clip(output, 0.0, 1.0).astype(np.float32)
+    return _np_srgb_to_linear(output) if srgb_mode else output

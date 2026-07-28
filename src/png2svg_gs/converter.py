@@ -813,6 +813,18 @@ class PNG2SVGConverter:
         }
     )
 
+    def _deployed_compositing_space(self) -> str:
+        """Compositing space of the DEPLOYED artifact the model was trained for.
+
+        Mirrors the forcing in _create_training_renderer/_optimize_stage_mlx:
+        SVG/PPTX-softedge targets train and deploy in sRGB compositing, so
+        validation/preview renders must composite there too or they misreport
+        deployed fidelity.
+        """
+        if self.training_export_target in {"svg", "pptx-softedge"}:
+            return "srgb"
+        return self.compositing_space
+
     def _needs_region_guidance(self) -> bool:
         """Single source of truth for whether a run computes region guidance."""
         return bool(
@@ -1809,6 +1821,7 @@ class PNG2SVGConverter:
                     height,
                     background_linear_rgb=self._background_linear_rgb,
                     title=Path(input_path).stem,
+                    compositing_space=self._deployed_compositing_space(),
                 )
         else:
             if verbose:
@@ -1906,6 +1919,7 @@ class PNG2SVGConverter:
             width,
             height,
             background_linear_rgb=self._background_linear_rgb,
+            compositing_space=self._deployed_compositing_space(),
         )
         timings["proxy_render"] = float(time.perf_counter() - phase_t0)
         phase_t0 = time.perf_counter()
@@ -2000,6 +2014,7 @@ class PNG2SVGConverter:
                 height=height,
                 output_path=preview_path,
                 background_linear_rgb=self._background_linear_rgb,
+                compositing_space=self._deployed_compositing_space(),
             )
             timings["preview_png"] = float(time.perf_counter() - phase_t0)
             if verbose:

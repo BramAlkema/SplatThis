@@ -696,33 +696,47 @@ def generate_canvas_html(
     height: int,
     background_linear_rgb: Optional[np.ndarray] = None,
     title: str = "SplatThis Canvas",
+    compositing_space: str = "linear",
 ) -> str:
     """Self-contained HTML that renders the splats via a JS canvas runtime
-    doing real linear-space alpha-over compositing.
+    doing real alpha-over compositing in the requested space.
 
     Mirrors `render_splats_numpy` math exactly (3σ footprint, sorted by
     importance ascending = back-to-front, per-splat alpha-over with
-    `layer_alpha = 1 - exp(-a * exp(-0.5 * q))`, then linear -> sRGB on
-    output). The browser's gamma-space SVG compositing and 8-stop gradient
+    `layer_alpha = 1 - exp(-a * exp(-0.5 * q))`). In "linear" mode the
+    accumulator is linear-RGB and the output is gamma-encoded at the end; in
+    "srgb" mode colors/background are pre-encoded host-side and composited
+    directly in display space, matching models trained for SVG/PPTX deploy
+    targets. The browser's gamma-space SVG compositing and gradient-stop
     discretization are the things you can't reproduce with `radialGradient`;
     a JS canvas can. So the displayed result == the optimizer's own forward,
     breaking the SVG primitive's structural cap.
     """
     import json
 
-    bg_lin = (
-        [0.0, 0.0, 0.0]
-        if background_linear_rgb is None
-        else [
-            float(np.clip(c, 0.0, 1.0))
-            for c in np.asarray(background_linear_rgb).reshape(-1)[:3]
-        ]
-    )
+    compositing_space = str(compositing_space).strip().lower()
+    if compositing_space not in {"linear", "srgb"}:
+        raise ValueError(f"Unsupported compositing space: {compositing_space}")
+    srgb_mode = compositing_space == "srgb"
+
+    bg_arr = np.zeros(3, dtype=np.float32)
+    if background_linear_rgb is not None:
+        bg_arr = np.clip(
+            np.asarray(background_linear_rgb, dtype=np.float32).reshape(-1)[:3],
+            0.0,
+            1.0,
+        )
+    if srgb_mode:
+        bg_arr = linear_to_srgb(bg_arr)
+    bg_lin = [float(c) for c in bg_arr]
 
     # Compact per-splat record: x, y, sx, sy, theta, r, g, b, a, render_order, layer.
     rows: List[List[float]] = []
     for splat in splats:
         raw = splat.to_raw_splat()
+        rgb = np.clip(np.array([raw.r, raw.g, raw.b], dtype=np.float32), 0.0, 1.0)
+        if srgb_mode:
+            rgb = linear_to_srgb(rgb)
         rows.append(
             [
                 float(raw.x),
@@ -730,9 +744,9 @@ def generate_canvas_html(
                 float(raw.sx),
                 float(raw.sy),
                 float(raw.theta),
-                float(raw.r),
-                float(raw.g),
-                float(raw.b),
+                float(rgb[0]),
+                float(rgb[1]),
+                float(rgb[2]),
                 float(raw.a),
                 render_importance_for_raw(raw),
                 -1.0 if raw.layer is None else float(raw.layer),
@@ -795,10 +809,12 @@ def generate_canvas_html(
     }
   }
 
-  // Linear -> sRGB and pack into ImageData.
+  // Pack into ImageData. SRGB_IN means colors were pre-encoded host-side and
+  // composited directly in display space, so no gamma encode here.
   const img = ctx.createImageData(W, H);
   const out = img.data;
   const THR = 0.0031308;
+  const SRGB_IN = __SRGB_IN__;
   for (let i = 0; i < W * H; i++) {
     const j = i * 3, k = i * 4;
     const tt = T[i];
@@ -808,22 +824,23 @@ def generate_canvas_html(
     if (rL < 0) rL = 0; else if (rL > 1) rL = 1;
     if (gL < 0) gL = 0; else if (gL > 1) gL = 1;
     if (bL < 0) bL = 0; else if (bL > 1) bL = 1;
-    const rS = rL <= THR ? 12.92 * rL : 1.055 * Math.pow(rL, 1/2.4) - 0.055;
-    const gS = gL <= THR ? 12.92 * gL : 1.055 * Math.pow(gL, 1/2.4) - 0.055;
-    const bS = bL <= THR ? 12.92 * bL : 1.055 * Math.pow(bL, 1/2.4) - 0.055;
+    const rS = SRGB_IN ? rL : (rL <= THR ? 12.92 * rL : 1.055 * Math.pow(rL, 1/2.4) - 0.055);
+    const gS = SRGB_IN ? gL : (gL <= THR ? 12.92 * gL : 1.055 * Math.pow(gL, 1/2.4) - 0.055);
+    const bS = SRGB_IN ? bL : (bL <= THR ? 12.92 * bL : 1.055 * Math.pow(bL, 1/2.4) - 0.055);
     out[k]     = (rS * 255 + 0.5) | 0;
     out[k + 1] = (gS * 255 + 0.5) | 0;
     out[k + 2] = (bS * 255 + 0.5) | 0;
     out[k + 3] = 255;
   }
   ctx.putImageData(img, 0, 0);
-  status.textContent = 'rendered ' + SPLATS.length + ' splats at ' + W + '×' + H + ' in ' + (performance.now() - t0).toFixed(0) + 'ms (linear-space alpha-over)';
+  status.textContent = 'rendered ' + SPLATS.length + ' splats at ' + W + '×' + H + ' in ' + (performance.now() - t0).toFixed(0) + 'ms (' + (SRGB_IN ? 'srgb' : 'linear') + '-space alpha-over)';
 })();
 """.replace(
             "__W__", str(int(width))
         )
         .replace("__H__", str(int(height)))
         .replace("__BG__", f"[{bg_lin[0]:.6f},{bg_lin[1]:.6f},{bg_lin[2]:.6f}]")
+        .replace("__SRGB_IN__", "true" if srgb_mode else "false")
         .replace("__SPLATS__", splats_json)
     )
 
@@ -1342,12 +1359,47 @@ def generate_palette_quantized_svg_content(
             return False
         return True
 
+    bg_lin_arr: Optional[np.ndarray] = None
+    bg_srgb_arr: Optional[np.ndarray] = None
+    if background_linear_rgb is not None:
+        bg_lin_arr = np.clip(
+            np.asarray(background_linear_rgb, dtype=np.float32).reshape(-1)[:3],
+            0.0,
+            1.0,
+        )
+        bg_srgb_arr = linear_to_srgb(bg_lin_arr)
+
+    def _precompensated_srgb(splat: GaussianSplat) -> np.ndarray:
+        """Same dark-splat display-space solve as the browser recipe.
+
+        Browsers blend stops in display space; solve the stop color whose
+        center-over-background result matches linear alpha-over. Applied
+        BEFORE clustering so the palette is built from deployable colors.
+        """
+        color_linear = np.clip(np.array(splat.color[:3], dtype=np.float32), 0.0, 1.0)
+        color_srgb = linear_to_srgb(color_linear)
+        if (
+            bg_lin_arr is None
+            or bg_srgb_arr is None
+            or float(splat.alpha) < SVG_PRECOMP_ALPHA_THRESHOLD
+            or float(np.max(color_srgb) * 255.0) > SVG_PRECOMP_MAX_SRGB
+        ):
+            return color_srgb
+        paint_alpha = 1.0 - math.exp(-float(np.clip(splat.alpha, 0.0, 1.0)))
+        if paint_alpha <= 1e-6:
+            return color_srgb
+        target_srgb = linear_to_srgb(
+            paint_alpha * color_linear + (1.0 - paint_alpha) * bg_lin_arr
+        )
+        return np.clip(
+            (target_srgb - (1.0 - paint_alpha) * bg_srgb_arr) / paint_alpha, 0.0, 1.0
+        )
+
     # Palette-quantize the splats' sRGB colors via k-means. Use a fixed RNG
     # seed so the same input produces the same SVG byte-for-byte.
     splat_colors_srgb = np.empty((len(splats), 3), dtype=np.float64)
     for i, splat in enumerate(splats):
-        c_lin = np.clip(np.array(splat.color[:3], dtype=np.float32), 0.0, 1.0)
-        splat_colors_srgb[i] = linear_to_srgb(c_lin)
+        splat_colors_srgb[i] = _precompensated_srgb(splat)
     actual_palette_size = int(max(1, min(int(palette_size), len(splats))))
     if actual_palette_size >= len(splats):
         # No clustering needed; each splat is its own palette entry.
@@ -1378,7 +1430,9 @@ def generate_palette_quantized_svg_content(
 
     # Palette-shared gradient stops use a Gaussian falloff in opacity space.
     # The palette color is baked into stop-color; the per-element opacity
-    # then scales the whole splat to its trained alpha.
+    # then scales the whole splat to its trained alpha. (An alpha-bucketed
+    # exact-profile variant was measured LPIPS-neutral on real content while
+    # costing ~75% more bytes, so the alpha-independent profile stays.)
     footprint = ELLIPSE_OVERLAP_BOOST * k_sigma
     n_stops = 5
     stop_t = np.linspace(0.0, 1.0, n_stops)
@@ -1397,13 +1451,11 @@ def generate_palette_quantized_svg_content(
         ),
         "  <defs>",
     ]
-    palette_hex: List[str] = []
     for i, centroid in enumerate(centroids):
         r = int(np.clip(np.round(centroid[0] * 255), 0, 255))
         g = int(np.clip(np.round(centroid[1] * 255), 0, 255))
         b = int(np.clip(np.round(centroid[2] * 255), 0, 255))
         color_str = f"rgb({r},{g},{b})"
-        palette_hex.append(color_str)
         svg_lines.append(
             f'    <radialGradient id="p{i}" cx="50%" cy="50%" r="50%" '
             'gradientUnits="objectBoundingBox">'
@@ -1423,6 +1475,15 @@ def generate_palette_quantized_svg_content(
         svg_lines.append("")
 
     for splat, label in zip(splats, labels):
+        alpha = float(np.clip(splat.alpha, 0.0, 1.0))
+        if _in_safe_background(splat):
+            alpha = min(alpha, SVG_BACKGROUND_ALPHA_CAP)
+        # Per-element opacity scales the shared Gaussian profile so the
+        # center pixel reaches the true alpha-over center opacity.
+        element_opacity = 1.0 - math.exp(-alpha)
+        if element_opacity <= 0.0:
+            continue
+
         eigenvals, eigenvecs = splat.eigendecomposition()
         rx = max(
             MIN_ELLIPSE_RADIUS_PX,
@@ -1440,15 +1501,6 @@ def generate_palette_quantized_svg_content(
         rotation_deg = float(np.degrees(rotation_rad))
         cx = float(splat.mu[0])
         cy = float(splat.mu[1])
-
-        alpha = float(np.clip(splat.alpha, 0.0, 1.0))
-        if _in_safe_background(splat):
-            alpha = min(alpha, SVG_BACKGROUND_ALPHA_CAP)
-        # Per-element opacity scales the shared Gaussian profile so the
-        # center pixel reaches the true alpha-over center opacity.
-        element_opacity = 1.0 - math.exp(-alpha)
-        if element_opacity <= 0.0:
-            continue
 
         transform_attr = ""
         if abs(rotation_deg) > 0.1:
@@ -1540,9 +1592,14 @@ def generate_blur_svg_content(
     # absorb minor anisotropy in the ellipse aspect ratio.
     svg_lines.append("  <defs>")
     for i, center in enumerate(bucket_centers):
+        # Filter region: the blurred core has support out to k·σ_axis + 3·σ_blur,
+        # and for anisotropic splats σ_blur (≈ σ_geo) can be ~2× the minor
+        # axis — the old ±2·bbox region hard-clipped those tails at ~2σ-minor.
+        # ±3.5·bbox (x=-300%, width=700%) covers anisotropy up to the 4.0
+        # structure-tensor clip with margin; filter regions are cheap.
         svg_lines.extend(
             [
-                f'    <filter id="b{i}" x="-50%" y="-50%" width="200%" height="200%" '
+                f'    <filter id="b{i}" x="-300%" y="-300%" width="700%" height="700%" '
                 'color-interpolation-filters="linearRGB">',
                 f'      <feGaussianBlur stdDeviation="{center:.3f}"/>',
                 "    </filter>",
@@ -1572,9 +1629,13 @@ def generate_blur_svg_content(
         gi = int(np.clip(np.round(rgb_srgb[1] * 255), 0, 255))
         bi = int(np.clip(np.round(rgb_srgb[2] * 255), 0, 255))
         # Mass-fraction compensation: a uniform disk of radius k·σ convolved
-        # with Gaussian σ has peak α·(1 − e^(−k²/2)). Compensate by 1/mf.
+        # with Gaussian σ has peak fill_opacity·(1 − e^(−k²/2)). The renderer's
+        # per-splat peak opacity is 1 − e^(−α) (alpha-over layer alpha), not α
+        # itself, so compensate that target by 1/mf. Values above the
+        # mf ceiling clip — a structural limit of the flat-core approximation.
         mass_fraction = 1.0 - np.exp(-0.5 * SVG_BLUR_CORE_K_SIGMA**2)
-        alpha = float(np.clip(splat.alpha / max(mass_fraction, 1e-6), 0.0, 1.0))
+        peak_opacity = 1.0 - np.exp(-float(np.clip(splat.alpha, 0.0, 1.0)))
+        alpha = float(np.clip(peak_opacity / max(mass_fraction, 1e-6), 0.0, 1.0))
         svg_lines.append(
             f'  <ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{rx:.2f}" ry="{ry:.2f}"'
             f"{transform_attr}"
@@ -1661,9 +1722,13 @@ def generate_drawingml_slide_content(
         by_layer: Dict[Optional[int], List[GaussianSplat]] = {}
         for splat in splats:
             by_layer.setdefault(_splat_layer(splat), []).append(splat)
+        # None-layer splats have render keys in [0, 1) — the LAYER_BASE band
+        # (see render_importance_for_raw) — so they must draw with that band,
+        # not front-most above the edge layer. Base group first, then the
+        # None bucket, then the numbered layers.
         layer_ids = sorted(
             by_layer,
-            key=lambda layer: (layer is None, 0 if layer is None else int(layer)),
+            key=lambda layer: (0 if layer is None else int(layer), layer is None),
         )
         if background_linear_rgb is not None and LAYER_BASE not in by_layer:
             layer_ids.insert(0, LAYER_BASE)
@@ -2034,7 +2099,10 @@ def _splat_to_drawingml_blur_shape_lines(
     sigma_geo_px = float(np.sqrt(sigma_major * sigma_minor))
 
     mass_fraction = 1.0 - math.exp(-0.5 * float(PPTX_BLUR_CORE_K_SIGMA) ** 2)
-    alpha_compensated = min(1.0, float(splat.alpha) / max(mass_fraction, 1e-6))
+    # Target the renderer's peak per-splat opacity 1 − e^(−α), not raw α
+    # (same correction as the SVG blur recipe).
+    peak_opacity = 1.0 - math.exp(-min(max(float(splat.alpha), 0.0), 1.0))
+    alpha_compensated = min(1.0, peak_opacity / max(mass_fraction, 1e-6))
     alpha_units = int(np.clip(round(alpha_compensated * 100000.0), 0, 100000))
     rad_emu = max(1, int(round(sigma_geo_px * EMU_PER_PX * PPTX_BLUR_RAD_PER_SIGMA)))
 
@@ -2319,9 +2387,13 @@ def render_splats_preview_png(
     output_path: str,
     scale: float = 1.0,
     background_linear_rgb: Optional[np.ndarray] = None,
+    compositing_space: str = "linear",
 ) -> str:
     """
     Render splats to a PNG preview image (linear->sRGB conversion included).
+
+    Pass compositing_space="srgb" for models trained against SVG/PPTX deploy
+    targets so the preview reflects the deployed compositing, not linear.
     """
     from .renderer import render_splats_numpy
 
@@ -2333,6 +2405,7 @@ def render_splats_preview_png(
         width,
         height,
         background_linear_rgb=background_linear_rgb,
+        compositing_space=compositing_space,
     )
     rendered_srgb = linear_to_srgb(np.clip(rendered, 0.0, 1.0))
     image = Image.fromarray((rendered_srgb * 255.0).astype(np.uint8), mode="RGB")
@@ -2772,6 +2845,7 @@ def save_pptx_with_splat_png(
     sort_by_area: bool = False,
     render_scale: float = 1.0,
     background_linear_rgb: Optional[np.ndarray] = None,
+    compositing_space: str = "linear",
 ) -> None:
     """
     Save a self-contained PPTX containing one slide with a rendered splat PNG.
@@ -2791,6 +2865,7 @@ def save_pptx_with_splat_png(
         width=width,
         height=height,
         background_linear_rgb=background_linear_rgb,
+        compositing_space=compositing_space,
     )
     rendered_srgb = linear_to_srgb(np.clip(rendered, 0.0, 1.0))
     image = Image.fromarray((rendered_srgb * 255.0).astype(np.uint8), mode="RGB")
