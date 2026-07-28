@@ -1128,8 +1128,9 @@ earn their complexity under matched budgets.
 ## References
 
 - `docs/adr-002-png2splat-python-pipeline.md`
-- `docs/LAYERED_SALIENCY_PASSES_SPEC.md`
-- `docs/MLX_RENDERER_OPTIMIZER_SPEC.md`
+- `docs/PROVENANCE_AND_BENCHMARKS.md` (layer-model semantics and the MLX/torch
+  benchmarks previously in LAYERED_SALIENCY_PASSES_SPEC.md and
+  MLX_RENDERER_OPTIMIZER_SPEC.md, both retired)
 - `docs/SVG_PPTX_GAUSSIAN_TRICKS.md`
 - `src/png2svg_gs/converter.py`
 - `src/png2svg_gs/renderer.py`

@@ -160,5 +160,5 @@ Definition of Done for this ADR:
 ## References
 
 1. Apple `ml-sharp`: https://github.com/apple/ml-sharp
-2. Prior internal decision: `docs/adr-001-image-gs-insights.md`
+2. Image-GS paper constants and upstream provenance: `docs/PROVENANCE_AND_BENCHMARKS.md`
 3. Related method families reviewed: GaussianImage, Instant GaussianImage, DiffVG, LIVE, Bézier-style splat/vector hybrids

@@ -256,60 +256,52 @@ Closes #123
 #### Unit Test Example
 
 ```python
-import pytest
 import numpy as np
-from splat_this.core.extract import SplatExtractor, Gaussian
+import pytest
 
-class TestSplatExtractor:
-    def setup_method(self):
-        """Set up test fixtures."""
-        self.extractor = SplatExtractor()
-        self.test_image = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+from png2svg_gs.splat import create_isotropic_splat
+from png2svg_gs.io import generate_svg_content
 
-    def test_extract_splats_basic(self):
-        """Test basic splat extraction."""
-        splats = self.extractor.extract_splats(self.test_image, n_splats=50)
 
-        assert len(splats) <= 50
-        assert all(isinstance(splat, Gaussian) for splat in splats)
-        assert all(splat.rx > 0 and splat.ry > 0 for splat in splats)
+def test_svg_content_emits_one_gradient_per_splat():
+    """Each splat should get its own radial gradient in the emitted SVG."""
+    splats = [
+        create_isotropic_splat(
+            center=np.array([10.0, 10.0]),
+            sigma=2.0,
+            color=np.array([1.0, 0.2, 0.2]),
+            alpha=0.8,
+        )
+    ]
+    svg = generate_svg_content(splats, width=32, height=24, k_sigma=2.5)
 
-    def test_extract_splats_empty_image(self):
-        """Test extraction with empty image."""
-        empty_image = np.zeros((10, 10, 3), dtype=np.uint8)
-        splats = self.extractor.extract_splats(empty_image, n_splats=10)
-
-        # Should handle gracefully
-        assert isinstance(splats, list)
+    assert svg.count("<radialGradient") == len(splats)
+    assert 'fill="url(#splat_grad_' in svg
 ```
 
 #### Integration Test Example
 
 ```python
-def test_full_pipeline_integration(self):
-    """Test complete processing pipeline."""
-    from splat_this.utils.image import ImageLoader
-    from splat_this.core.layering import LayerAssigner
-    from splat_this.core.svgout import SVGGenerator
+def test_full_pipeline_integration(tmp_path):
+    """Image in, parseable SVG out, through the real converter."""
+    import xml.etree.ElementTree as ET
 
-    # Load test image
-    loader = ImageLoader()
-    image = self._create_test_image()
+    from PIL import Image
+    from png2svg_gs.converter import PNG2SVGConverter
 
-    # Process through pipeline
-    extractor = SplatExtractor()
-    splats = extractor.extract_splats(image, n_splats=100)
+    src = tmp_path / "tiny.png"
+    Image.fromarray(
+        np.random.default_rng(0).integers(0, 255, (16, 16, 3), dtype=np.uint8)
+    ).save(src)
 
-    assigner = LayerAssigner(n_layers=3)
-    layers = assigner.assign_layers(splats)
+    out = tmp_path / "tiny.svg"
+    converter = PNG2SVGConverter(
+        max_splats=16, stages=[2, 1], optimizer_backend="torch"
+    )
+    converter.convert(str(src), output_path=str(out), verbose=False)
 
-    generator = SVGGenerator(image.shape[1], image.shape[0])
-    svg_content = generator.generate_svg(layers)
-
-    # Validate output
-    assert len(svg_content) > 1000  # Non-trivial content
-    assert '<svg' in svg_content
-    assert '</svg>' in svg_content
+    assert out.exists()
+    ET.parse(out)  # emitted SVG must be well-formed
 ```
 
 ### Running Tests
@@ -439,12 +431,11 @@ def complex_function(param1: str, param2: int = 10) -> Dict[str, Any]:
 # Check documentation coverage
 python -c "
 import pydoc
-import splat_this
-help(splat_this)
+import png2svg_gs
+help(png2svg_gs)
 "
 
 # Validate examples in documentation
-python -m doctest docs/EXAMPLES.md
 ```
 
 ## Issue Reporting
