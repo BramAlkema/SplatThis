@@ -83,6 +83,10 @@ def test_cli_accepts_mlx_optimizer_flags() -> None:
     assert args.mlx_trainable_groups == "position,scale,theta,color,alpha"
 
 
+@pytest.mark.skipif(
+    not is_mlx_available(),
+    reason="converter falls back to torch when MLX is absent, so MLX-config semantics do not apply",
+)
 def test_converter_rejects_geometry_groups_for_static_mlx_plan() -> None:
     with pytest.raises(ValueError, match="color/alpha with static tile plans"):
         PNG2SVGConverter(
@@ -112,6 +116,10 @@ def test_converter_accepts_geometry_groups_for_periodic_mlx_plan() -> None:
     )
 
 
+@pytest.mark.skipif(
+    not is_mlx_available(),
+    reason="converter falls back to torch when MLX is absent, so MLX-config semantics do not apply",
+)
 def test_converter_enables_spatial_weights_for_weighted_mlx_loss() -> None:
     converter = PNG2SVGConverter(
         optimizer_backend="mlx",

@@ -253,6 +253,19 @@ def test_resolve_fidelity_config_validates_mode():
         resolve_fidelity_config({"fidelity_stage": "extreme"})
 
 
+def _rasterizer_available() -> bool:
+    import shutil
+
+    if shutil.which("rsvg-convert"):
+        return True
+    try:
+        import cairosvg  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
 def _tiny_image(tmp_path):
     rng = np.random.default_rng(7)
     img_path = tmp_path / "tiny.png"
@@ -303,8 +316,14 @@ def test_fidelity_stage_writes_manifest_and_artifacts(tmp_path):
     assert fragment["mode"] == "balanced"
     assert fragment["winner_is_baseline"] is True
     assert fragment["candidates_evaluated"] == 0
-    # Baseline was rendered from the deployed artifact, not a proxy.
-    assert not str(fragment["baseline_metrics"]["render_method"]).startswith("proxy")
+    # With a rasterizer available the baseline must come from the deployed
+    # artifact; without one (bare CI runners) the honest proxy fallback is
+    # recorded instead — and the gate refuses gains from it by construction.
+    render_method = str(fragment["baseline_metrics"]["render_method"])
+    if _rasterizer_available():
+        assert not render_method.startswith("proxy")
+    else:
+        assert render_method.startswith("proxy")
     fidelity_dir = artifacts / "fidelity"
     assert (fidelity_dir / "decisions.jsonl").exists()
     assert (fidelity_dir / "baseline-metrics.json").exists()
