@@ -1,0 +1,78 @@
+# Deployed-artifact fidelity by export format
+
+Measured 2026-07-29 · chameleon (`docs/demo/source.png`, 476×502) · seed 42 ·
+default `max-fidelity` profile · MLX backend.
+
+Every number here comes from the **artifact a viewer actually opens** —
+the emitted SVG put through a rasterizer, and the PPTX rendered by **real
+PowerPoint** — never from the internal renderer.
+
+| Format | Renderer | LPIPS ↓ | SSIM (sRGB) | PSNR (sRGB) | Size |
+|---|---|---:|---:|---:|---:|
+| SVG | rsvg-convert | 0.4151 | 0.7011 | 21.21 dB | 962 KB |
+| SVG | Chrome | 0.4152 | 0.6967 | 21.22 dB | 962 KB |
+| **PPTX** | **PowerPoint** | **0.4059** | **0.7342** | 19.78 dB | **156 KB** |
+
+![comparison](comparison.jpg)
+
+## What this shows
+
+**1. PPTX beats SVG perceptually, at 1/6 the size.** Better LPIPS and SSIM
+while *losing* on PSNR — the pixel-error-vs-perceptual split that recurs
+throughout this project, where the perceptual metric is the one that tracks
+what the eye sees. The likely cause is format-aware training: `--format pptx`
+fits PowerPoint's compositor during optimization rather than converting to it
+afterwards. It costs ~2.3× the wall clock (192 s vs 82 s).
+
+**2. The SVG measurement is renderer-independent.** Chrome and rsvg-convert
+agree to four decimal places on LPIPS. So the SVG figure is the format's
+ceiling rather than a rasterizer artifact, and `rsvg-convert` is a legitimate
+stand-in for browser rendering when scoring SVG output — no browser needed in
+the measurement loop.
+
+## Caveat
+
+`README.md`'s quality table reports the opposite ordering (SVG ≈ 0.32 LPIPS,
+PPTX ≈ 0.40). That table comes from a much longer run
+(`--stages 1000,500,250`); these numbers are the default profile. Both can be
+true — heavy training may favour SVG. Do not treat either as superseding the
+other without matching the configurations.
+
+This is also a best-effort-per-format comparison, not one splat set exported
+two ways: each format trains against its own export target, which is what a
+user actually gets per format.
+
+## Contents
+
+```
+comparison.jpg        source | SVG(rsvg) | SVG(Chrome) | PPTX(PowerPoint)
+results.json          machine-readable metrics + config + commit
+renders/              the four 476×502 images compared above
+artifacts/
+  chameleon.pptx      156 KB, 1828 native DrawingML shapes, openxml-audit clean
+  chameleon.svg       962 KB
+  powerpoint_screen_capture.png   raw 3164×2024 PowerPoint slideshow capture
+```
+
+`chameleon.svg` (962 KB) and `powerpoint_screen_capture.png` (4.4 MB) are
+generated locally and not committed — both are reproducible with the commands
+below. Everything else here is tracked.
+
+## Regenerating
+
+```bash
+splatlify docs/demo/source.png -o out.svg  --seed 42                  # ~82 s
+splatlify docs/demo/source.png -o out.pptx --seed 42 --format pptx    # ~192 s
+```
+
+Score the SVG with `rsvg-convert`/cairosvg. The PPTX capture uses the
+real-PowerPoint tooling in `../svg2ooxml/tools/ppt_research/`:
+
+```bash
+python -m tools.ppt_research.powerpoint_capture_cli deck.pptx out.png \
+  --mode slideshow --delay 6 --slideshow-delay 5
+```
+
+**Never validate PPTX with soffice/LibreOffice** — it has a known rendering
+bug for these shapes. Structure is checked with `openxml-audit`; the same
+checks run natively in `tests/unit/test_pptx_package_validity.py`.

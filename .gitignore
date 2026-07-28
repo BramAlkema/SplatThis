@@ -115,3 +115,11 @@ examples/output/
 !/pyproject.toml
 
 # Note: /*.svg is already covered by the global *.svg rule above.
+
+# PowerPoint owner-lock files, created whenever a deck is opened.
+~$*
+
+# Measured experiment outputs. The curated result set is tracked; the two
+# heavy regenerable artifacts are not (see result/README.md).
+/result/artifacts/chameleon.svg
+/result/artifacts/powerpoint_screen_capture.png

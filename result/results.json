@@ -1,0 +1,41 @@
+{
+  "experiment": "Deployed-artifact fidelity by export format",
+  "date": "2026-07-29",
+  "source": "docs/demo/source.png (476x502)",
+  "commit": "2cea805",
+  "config": {
+    "profile": "max-fidelity (default)",
+    "optimizer_backend": "mlx",
+    "seed": 42,
+    "note": "best-effort per format: each format trained against its own export target"
+  },
+  "results": [
+    {
+      "format": "svg",
+      "renderer": "rsvg-convert",
+      "lpips_alex": 0.4151,
+      "ssim_srgb": 0.7011,
+      "psnr_srgb_db": 21.21,
+      "artifact": "chameleon.svg",
+      "artifact_bytes": 985514
+    },
+    {
+      "format": "svg",
+      "renderer": "chrome",
+      "lpips_alex": 0.4152,
+      "ssim_srgb": 0.6967,
+      "psnr_srgb_db": 21.22,
+      "artifact": "chameleon.svg",
+      "artifact_bytes": 985514
+    },
+    {
+      "format": "pptx",
+      "renderer": "powerpoint",
+      "lpips_alex": 0.4059,
+      "ssim_srgb": 0.7342,
+      "psnr_srgb_db": 19.78,
+      "artifact": "chameleon.pptx",
+      "artifact_bytes": 159752
+    }
+  ]
+}
