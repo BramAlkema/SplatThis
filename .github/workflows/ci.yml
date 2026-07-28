@@ -111,7 +111,8 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: "3.11"
+        # Must satisfy requires-python (>=3.13) or the wheel-install smoke fails.
+        python-version: "3.13"
 
     - name: Install build dependencies
       run: |
