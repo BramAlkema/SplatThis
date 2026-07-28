@@ -30,6 +30,32 @@ All eight SHAs were re-verified against the local checkouts on 2026-07-28.
 | ml-sharp | `ml-sharp` | `1eaa046` | Feed-forward gaussian prediction architecture patterns |
 | svg2ooxml | `../svg2ooxml` | `4a16e34` | DrawingML/PPTX builder architecture reference |
 
+### Restoring the reference clones
+
+The clones were removed from disk on 2026-07-28 (577 MB, never committed, no
+local modifications and no unpushed commits at deletion — every HEAD matched
+the SHAs above). Nothing in `src/` imports them: the optional gsplat path in
+`renderer.py` resolves through `_legacy_gsplat_ops()` and falls back to torch
+when the package is absent, which is the normal state on this machine.
+
+To restore the exact state they were studied at:
+
+```bash
+mkdir -p external && cd external
+while read -r name url sha; do
+  git clone "$url" "$name" && git -C "$name" checkout "$sha"
+done <<'REPOS'
+GaussianImage         https://github.com/Xinjie-Q/GaussianImage.git          d53393b
+Instant-GI            https://github.com/whoiszzj/Instant-GI.git             91bba42
+image-gs              https://github.com/nyu-icl/image-gs.git                0308836
+gsplat                https://github.com/nerfstudio-project/gsplat.git       6f37836
+2d-gaussian-splatting https://github.com/hbb1/2d-gaussian-splatting.git      335ad61
+diffvg                https://github.com/BachiLi/diffvg.git                  85802a7
+REPOS
+cd .. && git clone https://github.com/apple/ml-sharp.git ml-sharp \
+  && git -C ml-sharp checkout 1eaa046
+```
+
 ### Which algorithm came from where
 
 The live source carries no attribution comments; this mapping exists nowhere
