@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-
 TIME_BUDGET_ALIASES = {
     "smoke": "1m",
     "1min": "1m",

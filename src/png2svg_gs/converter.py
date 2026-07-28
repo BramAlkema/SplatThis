@@ -18,6 +18,7 @@ import psutil
 import torch
 from PIL import Image
 
+from .budgets import TIME_BUDGET_ALIASES, TIME_BUDGET_PRESETS
 from .features import (
     analyze_local_structure,
     compute_gradient_magnitude,
@@ -54,6 +55,8 @@ from .io import (
 from .mlx_losses import MlxLossConfig
 from .mlx_stage import MlxRendererConfig, MlxStageConfig, optimize_stage_mlx
 from .optimizer import SplatParams, build_optimizer
+from .profiles import get_profile_defaults
+from .proxies import _PPTXProxyLoss, _PPTXSoftEdgeProxyRenderer
 from .renderer import (
     L1SSIMLoss,
     create_renderer,
@@ -74,10 +77,6 @@ from .splat import (
     create_anisotropic_splat,
     create_isotropic_splat,
 )
-
-from .budgets import TIME_BUDGET_ALIASES, TIME_BUDGET_PRESETS
-from .profiles import get_profile_defaults
-from .proxies import _PPTXProxyLoss, _PPTXSoftEdgeProxyRenderer
 
 logger = logging.getLogger(__name__)
 

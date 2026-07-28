@@ -5,13 +5,13 @@ DEPLOYED artifact (emitted + rasterized SVG) and kept only when measurably
 better under hard regression gates. See docs/adr-003-fidelity-roadmap.md.
 """
 
-from .config import FidelityConfig, resolve_fidelity_config
-from .metrics import FidelityMetrics, compute_fidelity_metrics
 from .analysis import ResidualAnalysis, analyze_residual, select_fixed_rois
+from .config import FidelityConfig, resolve_fidelity_config
 from .evaluator import FidelityEvaluator
-from .stage import CandidateOperator, FidelityCandidate, FidelityResult, FidelityStage
+from .metrics import FidelityMetrics, compute_fidelity_metrics
 from .operators import RecolorOperator, build_operators
 from .report import write_fidelity_report
+from .stage import CandidateOperator, FidelityCandidate, FidelityResult, FidelityStage
 
 __all__ = [
     "CandidateOperator",

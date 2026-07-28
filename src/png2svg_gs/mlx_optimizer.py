@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import numpy as np
 
-from .optimizer import DEFAULT_LEARNING_RATES
 from .splat import GaussianSplat, RawSplat
 
 try:  # pragma: no cover - exercised in MLX-enabled environments.

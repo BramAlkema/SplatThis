@@ -16,7 +16,6 @@ Parameter layout of the [N, 11] tensor consumed by the renderer:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import Dict, Optional
 
 import torch

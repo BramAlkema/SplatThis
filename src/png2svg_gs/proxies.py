@@ -13,7 +13,7 @@ import numpy as np
 import torch
 
 from .io import PPTX_SOFT_EDGE_ALPHA_SCALE, PPTX_SOFT_EDGE_K_SIGMA_SCALE
-from .renderer import torch_linear_to_srgb
+from .renderer import L1SSIMLoss, torch_linear_to_srgb
 
 
 class _PPTXSoftEdgeProxyRenderer(torch.nn.Module):
