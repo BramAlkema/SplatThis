@@ -11,6 +11,10 @@ from typing import List, Optional, Tuple
 from PIL import Image
 
 from ._version import __version__
+from .adaptive_compute import (
+    DEFAULT_CHROME_PSNR_SAFETY_MARGIN,
+    DEFAULT_CHROME_SSIM_SAFETY_MARGIN,
+)
 from .budgets import TIME_BUDGET_ALIASES, TIME_BUDGET_PRESETS
 from .converter import PNG2SVGConverter
 
@@ -37,6 +41,13 @@ def _non_negative_float(text: str) -> float:
     value = float(text)
     if value < 0:
         raise argparse.ArgumentTypeError("must be zero or positive")
+    return value
+
+
+def _unit_interval_float(text: str) -> float:
+    value = float(text)
+    if not 0.0 <= value <= 1.0:
+        raise argparse.ArgumentTypeError("must be between 0 and 1")
     return value
 
 
@@ -249,6 +260,51 @@ def build_parser() -> argparse.ArgumentParser:
         "strength. Requires --layered-saliency to give meaningful depth; "
         "without it all splats fall back to a single mid-depth layer. "
         "Default: 0 = static (use the existing single-canvas runtime).",
+    )
+    parser.add_argument(
+        "--adaptive-compute",
+        action="store_true",
+        help="For Canvas output, stop before later densification/stages once an "
+        "observed deployed-Canvas checkpoint reaches the quality target. "
+        "Default: off. This conservative controller does not use plateau or "
+        "future-budget prediction.",
+    )
+    parser.add_argument(
+        "--adaptive-target-ssim-srgb",
+        type=_unit_interval_float,
+        default=None,
+        help="Desired Chrome SSIM_sRGB target for --adaptive-compute, scored "
+        "with the byte-exact Canvas runtime model (default: 0.98).",
+    )
+    parser.add_argument(
+        "--adaptive-target-psnr-srgb",
+        type=_non_negative_float,
+        default=None,
+        help="Optional desired Chrome PSNR_sRGB target for --adaptive-compute. "
+        "When supplied, both margin-adjusted SSIM and PSNR targets must be met.",
+    )
+    parser.add_argument(
+        "--adaptive-min-checkpoints",
+        type=_positive_int,
+        default=None,
+        help="Minimum completed Canvas stages before adaptive stopping "
+        "(default: 2).",
+    )
+    parser.add_argument(
+        "--adaptive-chrome-ssim-margin",
+        type=_non_negative_float,
+        default=None,
+        help="Advanced cross-version SSIM safety-margin override for the "
+        "byte-exact Canvas runtime model "
+        f"(calibrated default: {DEFAULT_CHROME_SSIM_SAFETY_MARGIN:g}).",
+    )
+    parser.add_argument(
+        "--adaptive-chrome-psnr-margin",
+        type=_non_negative_float,
+        default=None,
+        help="Advanced cross-version PSNR safety-margin override for the "
+        "byte-exact Canvas runtime model "
+        f"in dB (calibrated default: {DEFAULT_CHROME_PSNR_SAFETY_MARGIN:g}).",
     )
     parser.add_argument(
         "--initial-splat-cap",
@@ -502,6 +558,28 @@ def _run_conversion(args: argparse.Namespace) -> int:
     if args.canvas_parallax_strength is not None:
         refinement_config["canvas_parallax_strength"] = float(
             args.canvas_parallax_strength
+        )
+    if args.adaptive_compute:
+        refinement_config["adaptive_compute_enabled"] = True
+    if args.adaptive_target_ssim_srgb is not None:
+        refinement_config["adaptive_compute_target_ssim_srgb"] = float(
+            args.adaptive_target_ssim_srgb
+        )
+    if args.adaptive_target_psnr_srgb is not None:
+        refinement_config["adaptive_compute_target_psnr_srgb"] = float(
+            args.adaptive_target_psnr_srgb
+        )
+    if args.adaptive_min_checkpoints is not None:
+        refinement_config["adaptive_compute_min_checkpoints"] = int(
+            args.adaptive_min_checkpoints
+        )
+    if args.adaptive_chrome_ssim_margin is not None:
+        refinement_config["adaptive_compute_chrome_ssim_margin"] = float(
+            args.adaptive_chrome_ssim_margin
+        )
+    if args.adaptive_chrome_psnr_margin is not None:
+        refinement_config["adaptive_compute_chrome_psnr_margin"] = float(
+            args.adaptive_chrome_psnr_margin
         )
     if args.initial_splat_cap is not None:
         refinement_config["initial_splat_cap"] = int(args.initial_splat_cap)

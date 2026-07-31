@@ -60,6 +60,12 @@ test = [
 rasterize = [
     "cairosvg>=2.5.0"
 ]
+# Exact Chrome canvas capture. The tools launch an installed Chrome executable,
+# so this installs the Python automation client without requiring a bundled
+# browser download.
+capture = [
+    "playwright>=1.55"
+]
 # Apple-Silicon-native optimizer backend (the CLI default when available;
 # PNG2SVGConverter falls back to torch with a warning when mlx is missing).
 mlx = [

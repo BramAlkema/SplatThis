@@ -35,8 +35,11 @@ git clone https://github.com/BramAlkema/SplatThis.git
 cd SplatThis
 python3.13 -m venv venv
 source venv/bin/activate
-pip install -e ".[dev,rasterize]"
+pip install -e ".[dev,rasterize,capture]"
 ```
+
+The `capture` extra supplies Playwright for exact Canvas screenshots using an
+installed Google Chrome; it does not require the sibling `svg2pptx` project.
 
 On Apple Silicon, install the optional MLX backend:
 
@@ -54,6 +57,11 @@ CPU or CUDA runs.
 # Highest-fidelity deploy target; self-contained HTML.
 splatlify input.png -o output.html --format canvas \
   --splats 4000 --initial-splat-cap 4000
+
+# Optional: stop later Canvas stages once this run reaches the desired Chrome target.
+splatlify input.png -o output.html --format canvas \
+  --splats 4000 --initial-splat-cap 4000 \
+  --adaptive-compute --adaptive-target-ssim-srgb 0.98
 
 # Static editable SVG, trained for the SVG compositor.
 splatlify input.png -o output.svg --format svg --splats 2000
@@ -147,11 +155,30 @@ cards near the viewport.
 | `--svg-recipe {standard,blur,palette-quantized,...}` | SVG primitive family |
 | `--pptx-splat-style {gradient,soft-edge,blur}` | DrawingML primitive family |
 | `--fidelity-stage {off,balanced,max}` | Accept-or-revert SVG artifact polish |
+| `--adaptive-compute` | Default-off Canvas hard-target early stopping |
+| `--adaptive-target-ssim-srgb X` | Desired Chrome SSIM, scored with the byte-exact runtime model |
 | `--artifacts-dir DIR` | Manifest and stage checkpoints |
 
 Top-K distillation and mixed primitives live in experimental modules and MVP
 tools. They are not default release paths because their gains are not yet
 robust across the full corpus.
+
+Artifact-repeat noise has been calibrated over all 21 images for Chrome
+Canvas, `rsvg-convert`, and real Microsoft PowerPoint. The versioned floors
+live in `data/artifact-gates.json`. Canvas also has a default-off online
+controller that can skip later stages after an observed checkpoint reaches an
+explicit Chrome quality target. Its deployed scorer now mirrors JavaScript
+double math, Float32Array accumulation, and 8-bit sRGB ImageData packing. All
+48 browser-captured full-frame checkpoints were byte-for-byte identical to
+Chrome, eliminating the former `0.001102` continuous-model overstatement and
+the need for a default safety margin. It does not predict higher budgets or
+stop on a plateau. An exact replay then rescored all 84 raw checkpoints across
+all 21 images. Targets 0.98 and 0.979 both stopped only Brick and Colorwheel and
+saved 1.3% of aggregate stage time with zero observed opportunity cost, below
+the 5% gate for further hard-target A/B expansion. The earlier single
+Colorwheel arm that saved 27% remains mechanism evidence, not the governing
+speed claim. See
+[artifact gates and adaptive compute](docs/artifact-gates-and-adaptive-compute.md).
 
 ## Development and release verification
 

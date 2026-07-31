@@ -1,0 +1,207 @@
+{
+  "schema": "splatthis.adaptive-online-mvp/1",
+  "date": "2026-07-31",
+  "scope": {
+    "target": "canvas",
+    "images": [
+      "colorwheel",
+      "brick"
+    ],
+    "seed": 0,
+    "requested_splats": 4000,
+    "initial_splat_cap": 4000,
+    "profile": "max-fidelity",
+    "optimizer_backend": "mlx",
+    "browser_capture": "Google Chrome canvas.toDataURL",
+    "single_run_per_arm": true,
+    "predictive_claim": false,
+    "general_speedup_claim": false
+  },
+  "environment": {
+    "python": "3.13.14",
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "mlx": "0.31.2",
+    "browser": "140.0.7339.81"
+  },
+  "limitations": [
+    "Only two complete images and one seed were tested.",
+    "Seeded MLX runs followed materially different checkpoint curves.",
+    "Runs were sequential and wall time may include thermal variation.",
+    "The in-process deployed model differed from Chrome by roughly 0.0003 to 0.0004 SSIM in the selected examples.",
+    "Metric changes between separate fixed and adaptive runs cannot be attributed only to early stopping."
+  ],
+  "run_order": [
+    "colorwheel-fixed",
+    "brick-fixed",
+    "colorwheel-target-0.98",
+    "brick-target-0.98",
+    "colorwheel-target-0.979"
+  ],
+  "runs": [
+    {
+      "id": "colorwheel-fixed",
+      "source_sha256": "ac3ce503a2fa8c7af20abd181dbfd9ae892c2ec06ea9251edd44d27f93aad327",
+      "config_hash": "25d6153b097a",
+      "adaptive_compute": false,
+      "runtime_sec": 614.5,
+      "final_splats": 2844,
+      "artifact_bytes": 451229,
+      "browser_render_ms": 162.40000009536743,
+      "metrics": {
+        "ssim_srgb": 0.9832861311846627,
+        "lpips": 0.006373126059770584,
+        "psnr_srgb": 45.76633472130289,
+        "ms_ssim_luma": 0.9961304988395602,
+        "delta_e_ok_mean": 0.003220484359189868,
+        "delta_e_ok_p95": 0.01082354411482811,
+        "edge_chamfer": 0.4572764885308953,
+        "edge_gradient_l1": 0.0017617781413719058,
+        "worst_roi_error": 0.01127669494599104
+      }
+    },
+    {
+      "id": "brick-fixed",
+      "source_sha256": "3f4fbbd4b334a46f3743836e26b1184d733c9af2aae50c36d5b9d265401de89a",
+      "config_hash": "06e2aeb6fd5d",
+      "adaptive_compute": false,
+      "runtime_sec": 429.9,
+      "final_splats": 2067,
+      "artifact_bytes": 390798,
+      "browser_render_ms": 84.0,
+      "metrics": {
+        "ssim_srgb": 0.9797244308694922,
+        "lpips": 0.030867023393511772,
+        "psnr_srgb": 38.950279665747914,
+        "ms_ssim_luma": 0.9907832500955632,
+        "delta_e_ok_mean": 0.006042493507266045,
+        "delta_e_ok_p95": 0.021003425121307373,
+        "edge_chamfer": 0.04204976638134756,
+        "edge_gradient_l1": 0.008935302495956421,
+        "worst_roi_error": 0.007939967326819897
+      }
+    },
+    {
+      "id": "colorwheel-target-0.98",
+      "source_sha256": "ac3ce503a2fa8c7af20abd181dbfd9ae892c2ec06ea9251edd44d27f93aad327",
+      "config_hash": "30eef6448666",
+      "adaptive_compute": true,
+      "target_ssim_srgb": 0.98,
+      "min_checkpoints": 2,
+      "runtime_sec": 777.3,
+      "final_splats": 2000,
+      "artifact_bytes": 321072,
+      "browser_render_ms": 144.09999990463257,
+      "controller": {
+        "stopped_early": false,
+        "reason": "quality-target-not-met",
+        "checkpoints_observed": 3,
+        "selected_checkpoint": "stage-1",
+        "selected_model_ssim_srgb": 0.9799345470812776,
+        "skipped_main_stages": 0,
+        "skipped_main_stage_iterations": 0,
+        "skipped_residual_detail": false
+      },
+      "metrics": {
+        "ssim_srgb": 0.9795402328997685,
+        "lpips": 0.007974585518240929,
+        "psnr_srgb": 44.21119764814453,
+        "ms_ssim_luma": 0.9946844278856344,
+        "delta_e_ok_mean": 0.0035296385176479816,
+        "delta_e_ok_p95": 0.013226967304944992,
+        "edge_chamfer": 0.49629211316057165,
+        "edge_gradient_l1": 0.0019039260223507881,
+        "worst_roi_error": 0.008879161439836025
+      }
+    },
+    {
+      "id": "brick-target-0.98",
+      "source_sha256": "3f4fbbd4b334a46f3743836e26b1184d733c9af2aae50c36d5b9d265401de89a",
+      "config_hash": "ac4ed6136848",
+      "adaptive_compute": true,
+      "target_ssim_srgb": 0.98,
+      "min_checkpoints": 2,
+      "runtime_sec": 447.1,
+      "final_splats": 2094,
+      "artifact_bytes": 396199,
+      "browser_render_ms": 84.39999997615814,
+      "controller": {
+        "stopped_early": true,
+        "reason": "quality-target",
+        "checkpoints_observed": 3,
+        "selected_checkpoint": "stage-3",
+        "selected_model_ssim_srgb": 0.9806835933868626,
+        "skipped_main_stages": 0,
+        "skipped_main_stage_iterations": 0,
+        "skipped_residual_detail": true
+      },
+      "metrics": {
+        "ssim_srgb": 0.9800272993857214,
+        "lpips": 0.03073279932141304,
+        "psnr_srgb": 39.102634825281825,
+        "ms_ssim_luma": 0.9909617241926774,
+        "delta_e_ok_mean": 0.005988036748021841,
+        "delta_e_ok_p95": 0.020600806921720505,
+        "edge_chamfer": 0.04006324918036398,
+        "edge_gradient_l1": 0.00887681357562542,
+        "worst_roi_error": 0.007445142604410648
+      }
+    },
+    {
+      "id": "colorwheel-target-0.979",
+      "source_sha256": "ac3ce503a2fa8c7af20abd181dbfd9ae892c2ec06ea9251edd44d27f93aad327",
+      "config_hash": "75429a9bb1ed",
+      "adaptive_compute": true,
+      "target_ssim_srgb": 0.979,
+      "min_checkpoints": 2,
+      "runtime_sec": 449.1,
+      "final_splats": 2853,
+      "artifact_bytes": 451939,
+      "browser_render_ms": 152.10000002384186,
+      "controller": {
+        "stopped_early": true,
+        "reason": "quality-target",
+        "checkpoints_observed": 2,
+        "selected_checkpoint": "stage-2",
+        "selected_model_ssim_srgb": 0.9843472219666897,
+        "skipped_main_stages": 1,
+        "skipped_main_stage_iterations": 250,
+        "skipped_residual_detail": true
+      },
+      "metrics": {
+        "ssim_srgb": 0.9839235627527643,
+        "lpips": 0.006737946532666683,
+        "psnr_srgb": 45.44054716763309,
+        "ms_ssim_luma": 0.9959578302952757,
+        "delta_e_ok_mean": 0.003095311112701893,
+        "delta_e_ok_p95": 0.011013631708920002,
+        "edge_chamfer": 0.45403484079292156,
+        "edge_gradient_l1": 0.0017906720750033855,
+        "worst_roi_error": 0.00855423603206873
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "baseline": "colorwheel-fixed",
+      "candidate": "colorwheel-target-0.98",
+      "runtime_change_fraction": 0.2649308380797397,
+      "controller_saved_work": false
+    },
+    {
+      "baseline": "brick-fixed",
+      "candidate": "brick-target-0.98",
+      "runtime_change_fraction": 0.0400093044894161,
+      "controller_saved_work": true,
+      "saved_work_scope": "residual-detail-only"
+    },
+    {
+      "baseline": "colorwheel-fixed",
+      "candidate": "colorwheel-target-0.979",
+      "runtime_change_fraction": -0.26916273393002443,
+      "controller_saved_work": true,
+      "saved_work_scope": "stage-3-and-residual-detail",
+      "metric_direction": "mixed"
+    }
+  ]
+}

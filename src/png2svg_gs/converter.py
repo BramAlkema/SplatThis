@@ -18,6 +18,12 @@ import psutil
 import torch
 from PIL import Image
 
+from .adaptive_compute import (
+    CanvasCheckpoint,
+    OnlineAdaptiveDecision,
+    evaluate_online_checkpoints,
+    resolve_online_adaptive_config,
+)
 from .budgets import TIME_BUDGET_ALIASES, TIME_BUDGET_PRESETS
 from .features import (
     analyze_local_structure,
@@ -61,6 +67,7 @@ from .proxies import _PPTXProxyLoss, _PPTXSoftEdgeProxyRenderer
 from .renderer import (
     L1SSIMLoss,
     create_renderer,
+    render_canvas_runtime_numpy,
     render_splats_numpy,
     resolve_renderer_backend,
     splats_to_tensor,
@@ -188,6 +195,9 @@ class PNG2SVGConverter:
         self.refinement_config = profile_defaults["refinement"].copy()
         if refinement_config:
             self.refinement_config.update(refinement_config)
+        self.adaptive_compute_config = resolve_online_adaptive_config(
+            self.refinement_config
+        )
         self.region_weighting_enabled = bool(
             self.refinement_config.get("region_weighting_enabled", False)
         )
@@ -967,6 +977,23 @@ class PNG2SVGConverter:
         """
         if output_format not in {"svg", "drawingml", "pptx", "canvas"}:
             raise ValueError(f"Unsupported output format: {output_format}")
+        if self.adaptive_compute_config.enabled:
+            if output_format != "canvas":
+                raise ValueError(
+                    "adaptive compute currently supports only Canvas output"
+                )
+            if self.training_export_target != "canvas":
+                raise ValueError(
+                    "adaptive compute requires training_export_target='canvas'"
+                )
+            if not bool(
+                self.refinement_config.get(
+                    "canvas_monotonic_stage_selection_enabled", True
+                )
+            ):
+                raise ValueError(
+                    "adaptive compute requires monotonic Canvas stage selection"
+                )
 
         run_seed = self.seed if seed is None else seed
         rng = (
@@ -1043,6 +1070,7 @@ class PNG2SVGConverter:
                 "platform_splat_cap": self._platform_splat_cap,
                 "apple_silicon_splat_cap": self.apple_silicon_splat_cap,
                 "layered_saliency": self.layered_saliency,
+                "adaptive_compute": self.adaptive_compute_config.as_dict(),
             },
             "stages": [],
             "timings_sec": timings,
@@ -2295,6 +2323,13 @@ class PNG2SVGConverter:
         best_canvas_splats: Optional[List[GaussianSplat]] = None
         best_canvas_metrics: Optional[Dict[str, float]] = None
         best_canvas_label: Optional[str] = None
+        final_canvas_label: Optional[str] = None
+        canvas_checkpoints: List[CanvasCheckpoint] = []
+        adaptive_last_decision: Optional[OnlineAdaptiveDecision] = None
+        adaptive_stop_decision: Optional[OnlineAdaptiveDecision] = None
+        adaptive_enabled = bool(
+            monotonic_stage_selection and self.adaptive_compute_config.enabled
+        )
 
         def consider_canvas_checkpoint(
             label: str,
@@ -2409,6 +2444,26 @@ class PNG2SVGConverter:
                     current_splats,
                     deployed_quality,
                 )
+                final_canvas_label = f"stage-{stage_idx + 1}"
+                canvas_checkpoints.append(
+                    CanvasCheckpoint(
+                        label=final_canvas_label,
+                        ssim_srgb=float(deployed_quality["ssim_srgb"]),
+                        psnr_srgb=float(deployed_quality["psnr_srgb"]),
+                        splat_count=len(current_splats),
+                        elapsed_sec=float(stage_metric.get("elapsed_sec", 0.0)),
+                    )
+                )
+                if adaptive_enabled:
+                    adaptive_last_decision = evaluate_online_checkpoints(
+                        canvas_checkpoints,
+                        self.adaptive_compute_config,
+                    )
+                    stage_metric["adaptive_compute_decision"] = (
+                        adaptive_last_decision.as_dict()
+                    )
+                    if adaptive_last_decision.stop:
+                        adaptive_stop_decision = adaptive_last_decision
             remaining = self._time_budget_seconds_remaining()
             if remaining is not None:
                 stage_metric["time_budget_remaining_sec"] = max(0.0, float(remaining))
@@ -2435,6 +2490,17 @@ class PNG2SVGConverter:
                 current_splats,
                 stage_metric,
             )
+            if adaptive_stop_decision is not None:
+                if verbose:
+                    logger.info(
+                        "Adaptive compute stopped after stage %s/%s: "
+                        "selected %s at SSIM_sRGB=%.4f",
+                        stage_idx + 1,
+                        len(self.stages),
+                        adaptive_stop_decision.selected.label,
+                        adaptive_stop_decision.selected.ssim_srgb,
+                    )
+                break
 
             coverage_after_densify: Optional[np.ndarray] = None
             remaining_after_stage = self._time_budget_seconds_remaining()
@@ -2487,7 +2553,15 @@ class PNG2SVGConverter:
                     precomputed_coverage_map=coverage_after_densify,
                 )
 
-        if self._time_budget_exhausted():
+        residual_metrics: List[Dict[str, Any]]
+        if adaptive_stop_decision is not None:
+            if verbose and residual_detail_enabled:
+                logger.info(
+                    "Skipping residual detail because the adaptive quality target "
+                    "was met."
+                )
+            residual_metrics = []
+        elif self._time_budget_exhausted():
             if verbose:
                 logger.info(
                     "Skipping residual detail pass because training budget is exhausted."
@@ -2517,6 +2591,7 @@ class PNG2SVGConverter:
                 current_splats,
                 deployed_quality,
             )
+            final_canvas_label = "residual-final"
         for metric in residual_metrics:
             stage_metrics.append(metric)
             pass_idx = int(metric.get("residual_pass", len(stage_metrics)))
@@ -2527,12 +2602,52 @@ class PNG2SVGConverter:
                 metric,
             )
 
+        if adaptive_enabled:
+            observed_stages = len(canvas_checkpoints)
+            stopped_early = adaptive_stop_decision is not None
+            decision = adaptive_stop_decision or adaptive_last_decision
+            stage_metrics.append(
+                {
+                    "stage": -4,
+                    "stage_type": "canvas_adaptive_compute",
+                    "mode": "online-observed-only",
+                    "uses_future_evidence": False,
+                    "enabled": True,
+                    "stopped_early": stopped_early,
+                    "reason": (
+                        decision.reason if decision is not None else "no-checkpoint"
+                    ),
+                    "stop_after_checkpoint": (
+                        adaptive_stop_decision.current.label
+                        if adaptive_stop_decision is not None
+                        else None
+                    ),
+                    "selected_checkpoint": (
+                        decision.selected.label if decision is not None else None
+                    ),
+                    "checkpoints_observed": observed_stages,
+                    "scheduled_main_stages": len(self.stages),
+                    "skipped_main_stages": (
+                        max(0, len(self.stages) - observed_stages)
+                        if stopped_early
+                        else 0
+                    ),
+                    "skipped_main_stage_iterations": (
+                        int(sum(self.stages[observed_stages:])) if stopped_early else 0
+                    ),
+                    "skipped_residual_detail": bool(
+                        stopped_early and residual_detail_enabled
+                    ),
+                    "policy": self.adaptive_compute_config.as_dict(),
+                }
+            )
+
         if monotonic_stage_selection and best_canvas_splats is not None:
             selected_count = len(best_canvas_splats)
             current_count = len(current_splats)
             selection_decision = (
                 "keep-final"
-                if best_canvas_label == "residual-final"
+                if best_canvas_label == final_canvas_label
                 else "revert-to-best-checkpoint"
             )
             stage_metrics.append(
@@ -4526,7 +4641,7 @@ class PNG2SVGConverter:
         """Score splats with the exact NumPy counterpart of emitted canvas JS."""
 
         height, width = image.shape[:2]
-        rendered = render_splats_numpy(
+        rendered = render_canvas_runtime_numpy(
             splats,
             width=width,
             height=height,

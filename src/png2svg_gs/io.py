@@ -940,63 +940,32 @@ def generate_canvas_html(
     """Self-contained HTML that renders the splats via a JS canvas runtime
     doing real alpha-over compositing in the requested space.
 
-    Mirrors `render_splats_numpy` math exactly (3σ footprint, sorted by
-    importance ascending = back-to-front, per-splat alpha-over with
+    Shares its serialized inputs with `render_canvas_runtime_numpy`, whose
+    double-precision math, Float32Array writeback, and 8-bit ImageData packing
+    are calibrated byte-for-byte against Chrome. Both use a 3σ footprint,
+    importance ascending = back-to-front ordering, and per-splat alpha-over with
     `layer_alpha = 1 - exp(-a * exp(-0.5 * q))`). In "linear" mode the
     accumulator is linear-RGB and the output is gamma-encoded at the end; in
     "srgb" mode colors/background are pre-encoded host-side and composited
     directly in display space, matching models trained for SVG/PPTX deploy
     targets. The browser's gamma-space SVG compositing and gradient-stop
     discretization are the things you can't reproduce with `radialGradient`;
-    a JS canvas can. So the displayed result == the optimizer's own forward,
-    breaking the SVG primitive's structural cap.
+    a JS canvas can. The continuous optimizer forward remains unquantized; the
+    deployed scorer models the actual displayed bytes.
     """
     import json
+
+    from .renderer import prepare_canvas_runtime_data
 
     if int(width) <= 0 or int(height) <= 0:
         raise ValueError("Canvas width and height must be positive integers")
 
-    compositing_space = str(compositing_space).strip().lower()
-    if compositing_space not in {"linear", "srgb"}:
-        raise ValueError(f"Unsupported compositing space: {compositing_space}")
-    srgb_mode = compositing_space == "srgb"
-
-    bg_arr = np.zeros(3, dtype=np.float32)
-    if background_linear_rgb is not None:
-        bg_arr = np.clip(
-            np.asarray(background_linear_rgb, dtype=np.float32).reshape(-1)[:3],
-            0.0,
-            1.0,
-        )
-    if srgb_mode:
-        bg_arr = linear_to_srgb(bg_arr)
-    bg_lin = [float(c) for c in bg_arr]
-
-    # Compact per-splat record: x, y, sx, sy, theta, r, g, b, a, render_order, layer.
-    rows: List[List[float]] = []
-    for splat in splats:
-        raw = splat.to_raw_splat()
-        rgb = np.clip(np.array([raw.r, raw.g, raw.b], dtype=np.float32), 0.0, 1.0)
-        if srgb_mode:
-            rgb = linear_to_srgb(rgb)
-        rows.append(
-            [
-                float(raw.x),
-                float(raw.y),
-                float(raw.sx),
-                float(raw.sy),
-                float(raw.theta),
-                float(rgb[0]),
-                float(rgb[1]),
-                float(rgb[2]),
-                float(raw.a),
-                render_importance_for_raw(raw),
-                -1.0 if raw.layer is None else float(raw.layer),
-            ]
-        )
-    # Python's stable sort matches JavaScript's stable Array.sort semantics.
-    # Do this once at export time instead of at every browser startup.
-    rows.sort(key=lambda row: row[9])
+    rows, serialized_background, srgb_mode = prepare_canvas_runtime_data(
+        splats,
+        background_linear_rgb=background_linear_rgb,
+        compositing_space=compositing_space,
+    )
+    bg_lin = [float(channel) for channel in serialized_background]
     splats_json = json.dumps(rows, separators=(",", ":"))
 
     js = (

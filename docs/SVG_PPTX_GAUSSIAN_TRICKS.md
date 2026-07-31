@@ -145,7 +145,7 @@ with a gradient ramp.
 
 | Format | Linear-light support |
 |---|---|
-| Canvas runtime (our JS) | **Yes**, we compute linear alpha-over explicitly. This lets the deployed runtime match the trained forward model, but it does not by itself guarantee high SSIM at a finite splat budget. |
+| Canvas runtime (our JS) | **Yes**, we compute linear alpha-over explicitly. A separate deployed scorer also reproduces JavaScript/Float32Array/8-bit ImageData semantics byte-for-byte; this does not by itself guarantee high SSIM at a finite splat budget. |
 | SVG | Only inside `<filter color-interpolation-filters="linearRGB">`. Inter-element compositing is sRGB. So filter-based splat rendering can be linear-light, but if we have one filter per splat the inter-splat blend reverts to sRGB. To get fully-linear blending we'd need to compose all splats inside ONE filter graph, which doesn't scale to 20k shapes. |
 | DrawingML | **No public linear-light path.** PowerPoint blends in sRGB display space throughout. The sRGB-aware training (`compositing_space="srgb"`) is our only lever. |
 
@@ -161,8 +161,9 @@ canvas bounded rotated anisotropic splats with unrotated `sx`/`sy` rectangles.
 The MLX/Torch tiled training renderers did not, so the optimizer saw complete
 ellipses while the emitted canvas clipped their rotated major axes. Both
 runtime paths now use the exact rotated ellipse AABB. On the full-frame
-chameleon 4k calibration, corrected browser SSIM is within roughly 0.001 of
-the final MLX acceptance SSIM.
+chameleon 4k calibration, corrected browser SSIM was within roughly 0.001 of
+the then-continuous MLX acceptance score. The later byte-exact Canvas scorer
+eliminates that measurement gap at the deployed framebuffer boundary.
 
 At the existing requested-2k budget, the corrected full 21-image canvas corpus
 has median browser SSIM 0.7751 and median LPIPS 0.2443. Six images reach 0.90

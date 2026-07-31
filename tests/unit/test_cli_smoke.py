@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -67,6 +68,18 @@ def test_cli_rejects_invalid_resource_limit():
     assert exc.value.code == 2
 
 
+def test_cli_rejects_invalid_adaptive_target():
+    with pytest.raises(SystemExit) as exc:
+        main(["source.png", "--adaptive-target-ssim-srgb", "1.01"])
+    assert exc.value.code == 2
+
+
+def test_cli_rejects_negative_adaptive_chrome_margin():
+    with pytest.raises(SystemExit) as exc:
+        main(["source.png", "--adaptive-chrome-ssim-margin", "-0.001"])
+    assert exc.value.code == 2
+
+
 def test_cli_reports_corrupt_image_without_traceback(tmp_path, capsys):
     corrupt = tmp_path / "corrupt.png"
     corrupt.write_bytes(b"not an image")
@@ -124,3 +137,45 @@ def test_cli_smoke_torch_pptx(tmp_path):
         names = zf.namelist()
     assert "[Content_Types].xml" in names
     assert any(name.startswith("ppt/slides/") for name in names)
+
+
+def test_cli_smoke_canvas_adaptive_compute(tmp_path):
+    img = _write_fixture_image(tmp_path)
+    out_html = tmp_path / "out.html"
+    artifacts = tmp_path / "artifacts"
+    code = _run_cli(
+        [
+            str(img),
+            "-o",
+            str(out_html),
+            "--format",
+            "canvas",
+            "--optimizer-backend",
+            "torch",
+            "--stages",
+            "1,1,1",
+            "--splats",
+            "16",
+            "--adaptive-compute",
+            "--adaptive-target-ssim-srgb",
+            "0",
+            "--adaptive-min-checkpoints",
+            "2",
+            "--artifacts-dir",
+            str(artifacts),
+        ]
+    )
+
+    assert code in (0, None)
+    assert out_html.is_file()
+    manifest = json.loads((artifacts / "run_manifest.json").read_text())
+    adaptive = next(
+        stage
+        for stage in manifest["stages"]
+        if stage.get("stage_type") == "canvas_adaptive_compute"
+    )
+    assert adaptive["stopped_early"] is True
+    assert adaptive["skipped_main_stages"] == 1
+    assert adaptive["policy"]["chrome_ssim_safety_margin"] == 0.0
+    assert adaptive["policy"]["effective_model_ssim_threshold"] == 0.0
+    assert adaptive["policy"]["runtime_scorer"] == "canvas-image-data-byte-v1"

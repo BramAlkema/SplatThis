@@ -7,6 +7,7 @@ Includes:
 """
 
 import logging
+import math
 from typing import List, Literal, Optional, Tuple, Union
 
 import numpy as np
@@ -1446,3 +1447,137 @@ def render_splats_numpy(
     output += transmittance[..., None] * background.reshape(1, 1, 3)
     output = np.clip(output, 0.0, 1.0).astype(np.float32)
     return _np_srgb_to_linear(output) if srgb_mode else output
+
+
+def prepare_canvas_runtime_data(
+    splats: List[GaussianSplat],
+    background_linear_rgb: Optional[np.ndarray] = None,
+    compositing_space: str = "linear",
+) -> Tuple[List[List[float]], np.ndarray, bool]:
+    """Prepare the exact ordered values serialized into the Canvas runtime."""
+
+    normalized_space = str(compositing_space).strip().lower()
+    if normalized_space not in {"linear", "srgb"}:
+        raise ValueError(f"Unsupported compositing space: {compositing_space}")
+    srgb_mode = normalized_space == "srgb"
+
+    if background_linear_rgb is None:
+        background = np.zeros(3, dtype=np.float32)
+    else:
+        background = np.asarray(background_linear_rgb, dtype=np.float32).reshape(-1)
+        if background.size != 3:
+            raise ValueError("background_linear_rgb must have 3 values")
+        background = np.clip(background, 0.0, 1.0).astype(np.float32)
+    if srgb_mode:
+        background = _np_linear_to_srgb(background)
+    # generate_canvas_html emits six decimal places for the background. Apply
+    # the same boundary here so scoring sees exactly the serialized values.
+    serialized_background = np.asarray(
+        [float(f"{float(channel):.6f}") for channel in background],
+        dtype=np.float64,
+    )
+
+    rows: List[List[float]] = []
+    for splat in splats:
+        raw = splat.to_raw_splat()
+        rgb = np.clip(np.asarray([raw.r, raw.g, raw.b], dtype=np.float32), 0.0, 1.0)
+        if srgb_mode:
+            rgb = _np_linear_to_srgb(rgb)
+        rows.append(
+            [
+                float(raw.x),
+                float(raw.y),
+                float(raw.sx),
+                float(raw.sy),
+                float(raw.theta),
+                float(rgb[0]),
+                float(rgb[1]),
+                float(rgb[2]),
+                float(raw.a),
+                render_importance_for_raw(raw),
+                -1.0 if raw.layer is None else float(raw.layer),
+            ]
+        )
+    rows.sort(key=lambda row: row[9])
+    return rows, serialized_background, srgb_mode
+
+
+def render_canvas_runtime_numpy(
+    splats: List[GaussianSplat],
+    width: int,
+    height: int,
+    background_linear_rgb: Optional[np.ndarray] = None,
+    compositing_space: str = "linear",
+) -> np.ndarray:
+    """Render the exact 8-bit framebuffer emitted by the Canvas JavaScript.
+
+    JavaScript evaluates geometry and exponentials as doubles, while the
+    runtime's ``Float32Array`` accumulators round after every splat update.
+    Finally, ``ImageData`` rounds display-space channels to bytes. This is a
+    deployed-artifact scorer; keep ``render_splats_numpy`` continuous for
+    training diagnostics and differentiable-renderer comparisons.
+    """
+
+    if int(width) <= 0 or int(height) <= 0:
+        raise ValueError("Canvas width and height must be positive integers")
+    width = int(width)
+    height = int(height)
+    rows, background, srgb_mode = prepare_canvas_runtime_data(
+        splats,
+        background_linear_rgb=background_linear_rgb,
+        compositing_space=compositing_space,
+    )
+
+    output = np.zeros((height, width, 3), dtype=np.float32)
+    transmittance = np.ones((height, width), dtype=np.float32)
+    footprint = 3.0
+    for row in rows:
+        x, y, sx_value, sy_value, theta = row[:5]
+        sx = max(sx_value, 1e-4)
+        sy = max(sy_value, 1e-4)
+        alpha = min(1.0, max(0.0, row[8]))
+        cos_t = math.cos(theta)
+        sin_t = math.sin(theta)
+        radius_x = max(
+            1,
+            math.ceil(footprint * math.sqrt((sx * cos_t) ** 2 + (sy * sin_t) ** 2)),
+        )
+        radius_y = max(
+            1,
+            math.ceil(footprint * math.sqrt((sx * sin_t) ** 2 + (sy * cos_t) ** 2)),
+        )
+        x0 = max(0, math.floor(x - radius_x))
+        x1 = min(width, math.ceil(x + radius_x + 1))
+        y0 = max(0, math.floor(y - radius_y))
+        y1 = min(height, math.ceil(y + radius_y + 1))
+        if x0 >= x1 or y0 >= y1:
+            continue
+
+        dx = np.arange(x0, x1, dtype=np.float64).reshape(1, -1) - x
+        dy = np.arange(y0, y1, dtype=np.float64).reshape(-1, 1) - y
+        u = cos_t * dx + sin_t * dy
+        v = -sin_t * dx + cos_t * dy
+        quadratic = (u * u) / (sx * sx) + (v * v) / (sy * sy)
+        weight = np.exp(-0.5 * quadratic)
+        layer_alpha = 1.0 - np.exp(-alpha * weight)
+
+        local_transmittance = transmittance[y0:y1, x0:x1]
+        contribution = local_transmittance.astype(np.float64) * layer_alpha
+        color = np.asarray(row[5:8], dtype=np.float64).reshape(1, 1, 3)
+        # Assignment to float32 arrays mirrors Float32Array writeback.
+        output[y0:y1, x0:x1] += contribution[..., None] * color
+        transmittance[y0:y1, x0:x1] = local_transmittance.astype(np.float64) * (
+            1.0 - layer_alpha
+        )
+
+    display = output.astype(np.float64)
+    display += transmittance[..., None].astype(np.float64) * background.reshape(1, 1, 3)
+    display = np.clip(display, 0.0, 1.0)
+    if not srgb_mode:
+        display = np.where(
+            display <= 0.0031308,
+            12.92 * display,
+            1.055 * np.power(display, 1.0 / 2.4) - 0.055,
+        )
+    framebuffer = np.floor(display * 255.0 + 0.5).astype(np.uint8)
+    return _np_srgb_to_linear(framebuffer.astype(np.float32) / 255.0)

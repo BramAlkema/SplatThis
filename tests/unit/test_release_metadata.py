@@ -13,6 +13,14 @@ def test_package_version_matches_pyproject() -> None:
     assert metadata["project"]["version"] == __version__
 
 
+def test_capture_extra_owns_the_playwright_dependency() -> None:
+    metadata = tomllib.loads((REPO / "pyproject.toml").read_text())
+    assert any(
+        dependency.startswith("playwright>=")
+        for dependency in metadata["project"]["optional-dependencies"]["capture"]
+    )
+
+
 def test_release_documents_exist() -> None:
     for filename in ("LICENSE", "CHANGELOG.md", "CONTRIBUTING.md", "README.md"):
         path = REPO / filename

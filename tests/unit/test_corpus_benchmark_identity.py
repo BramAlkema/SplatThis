@@ -70,6 +70,30 @@ def test_run_identity_changes_with_source_and_optimizer_config(tmp_path: Path) -
         corpus_benchmark._config_hash(changed_source)
     )
 
+    changed_adaptive_policy = corpus_benchmark._run_config(
+        source=source,
+        fmt="canvas",
+        seed=0,
+        splats=2000,
+        stages="1000,500,250",
+        profile="max-fidelity",
+        optimizer_backend="mlx",
+        full_geometry=False,
+        adaptive_compute=True,
+        adaptive_target_ssim_srgb=0.99,
+        adaptive_min_checkpoints=3,
+        adaptive_chrome_ssim_margin=0.0005,
+        adaptive_chrome_psnr_margin=0.05,
+    )
+    assert changed_adaptive_policy["adaptive_compute"] is True
+    assert changed_adaptive_policy["adaptive_target_ssim_srgb"] == 0.99
+    assert changed_adaptive_policy["adaptive_min_checkpoints"] == 3
+    assert changed_adaptive_policy["adaptive_chrome_ssim_margin"] == 0.0005
+    assert changed_adaptive_policy["adaptive_chrome_psnr_margin"] == 0.05
+    assert corpus_benchmark._config_hash(changed_adaptive_policy) != (
+        corpus_benchmark._config_hash(changed_source)
+    )
+
 
 def test_run_key_uses_config_hash_not_human_label() -> None:
     key = corpus_benchmark.run_key("rocket", "pptx", 0, "abc123")

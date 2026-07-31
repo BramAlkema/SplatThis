@@ -41,6 +41,11 @@ import numpy as np
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "src"))
 
+from png2svg_gs.adaptive_compute import (  # noqa: E402
+    DEFAULT_CHROME_PSNR_SAFETY_MARGIN,
+    DEFAULT_CHROME_SSIM_SAFETY_MARGIN,
+)
+
 DEFAULT_ROOT = REPO / "result" / "corpus"
 MAX_EDGE = 384  # keeps a 20-image x 2-format sweep tractable; recorded in meta
 
@@ -246,14 +251,14 @@ def score_pptx_proxy(source_png: Path, splats_json: Path) -> Optional[dict]:
 def score_canvas(
     source_png: Path, splats_json: Path, manifest_path: Path
 ) -> Optional[dict]:
-    """Score the same linear-light forward model used by the canvas runtime."""
+    """Score the byte-exact deployed Canvas runtime model."""
     from png2svg_gs.io import (
         compute_quality_metrics,
         linear_to_srgb,
         load_png,
         load_splats_json,
     )
-    from png2svg_gs.renderer import render_splats_numpy
+    from png2svg_gs.renderer import render_canvas_runtime_numpy
 
     if not splats_json.exists() or not manifest_path.exists():
         return None
@@ -261,20 +266,23 @@ def score_canvas(
     h, w = target_lin.shape[:2]
     splats = load_splats_json(str(splats_json))
     manifest = json.loads(manifest_path.read_text())
-    background = manifest.get("config", {}).get(
-        "background_linear_rgb", [0.0, 0.0, 0.0]
-    )
-    rendered = render_splats_numpy(
+    config = manifest.get("config", {})
+    background = config.get("background_linear_rgb", [0.0, 0.0, 0.0])
+    training_target = str(config.get("training_export_target", "canvas"))
+    compositing_space = str(config.get("compositing_space", "linear"))
+    if training_target in {"svg", "pptx-softedge"}:
+        compositing_space = "srgb"
+    rendered = render_canvas_runtime_numpy(
         splats,
         width=w,
         height=h,
         background_linear_rgb=np.asarray(background, dtype=np.float32),
-        compositing_space="linear",
+        compositing_space=compositing_space,
     )
     metrics = compute_quality_metrics(target_lin, rendered)
     lpips_score = _lpips_score(linear_to_srgb(target_lin), linear_to_srgb(rendered))
     return {
-        "renderer": "canvas-linear",
+        "renderer": "canvas-image-data-byte-v1",
         "render_kind": "canvas-runtime-model",
         "is_deployed_artifact": False,
         "lpips": round(lpips_score, 4),
@@ -1512,11 +1520,16 @@ def _run_config(
     full_geometry: bool,
     initial_splat_cap: Optional[int] = None,
     initial_splat_fraction: Optional[float] = None,
+    adaptive_compute: bool = False,
+    adaptive_target_ssim_srgb: float = 0.98,
+    adaptive_min_checkpoints: int = 2,
+    adaptive_chrome_ssim_margin: float = DEFAULT_CHROME_SSIM_SAFETY_MARGIN,
+    adaptive_chrome_psnr_margin: float = DEFAULT_CHROME_PSNR_SAFETY_MARGIN,
 ) -> dict:
     """Return the canonical, content-addressed identity of a corpus run."""
     geometry = full_geometry or profile in {"balanced", "max-fidelity"}
     return {
-        "schema": 2,
+        "schema": 3,
         "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "format": fmt,
         "seed": seed,
@@ -1539,6 +1552,11 @@ def _run_config(
             if initial_splat_fraction is not None
             else "profile-default"
         ),
+        "adaptive_compute": bool(adaptive_compute),
+        "adaptive_target_ssim_srgb": float(adaptive_target_ssim_srgb),
+        "adaptive_min_checkpoints": int(adaptive_min_checkpoints),
+        "adaptive_chrome_ssim_margin": float(adaptive_chrome_ssim_margin),
+        "adaptive_chrome_psnr_margin": float(adaptive_chrome_psnr_margin),
         "code_fingerprint": _code_fingerprint(),
     }
 
@@ -1580,6 +1598,11 @@ def run(
     browser_executable: Path,
     initial_splat_cap: Optional[int],
     initial_splat_fraction: Optional[float],
+    adaptive_compute: bool,
+    adaptive_target_ssim_srgb: float,
+    adaptive_min_checkpoints: int,
+    adaptive_chrome_ssim_margin: float,
+    adaptive_chrome_psnr_margin: float,
 ) -> None:
     meta = json.loads((root / "corpus.json").read_text())["images"]
     results_path = root / "results.jsonl"
@@ -1605,6 +1628,11 @@ def run(
                     full_geometry,
                     initial_splat_cap,
                     initial_splat_fraction,
+                    adaptive_compute,
+                    adaptive_target_ssim_srgb,
+                    adaptive_min_checkpoints,
+                    adaptive_chrome_ssim_margin,
+                    adaptive_chrome_psnr_margin,
                 )
                 config_hash = _config_hash(config)
                 if run_key(name, fmt, seed, config_hash) not in done:
@@ -1655,6 +1683,18 @@ def run(
                 "10",
                 "--mlx-trainable-groups",
                 "position,scale,theta,color,alpha",
+            ]
+        if adaptive_compute:
+            cmd += [
+                "--adaptive-compute",
+                "--adaptive-target-ssim-srgb",
+                str(adaptive_target_ssim_srgb),
+                "--adaptive-min-checkpoints",
+                str(adaptive_min_checkpoints),
+                "--adaptive-chrome-ssim-margin",
+                str(adaptive_chrome_ssim_margin),
+                "--adaptive-chrome-psnr-margin",
+                str(adaptive_chrome_psnr_margin),
             ]
 
         print(f"[{idx}/{len(todo)}] {name} {fmt} seed={seed} ... ", end="", flush=True)
@@ -2091,6 +2131,37 @@ def main() -> int:
         help="forward the initial population fraction to the converter",
     )
     ap.add_argument(
+        "--adaptive-compute",
+        action="store_true",
+        help="enable the online Canvas quality-target controller",
+    )
+    ap.add_argument(
+        "--adaptive-target-ssim-srgb",
+        type=float,
+        default=0.98,
+        help="deployed Canvas SSIM target for adaptive runs (default: 0.98)",
+    )
+    ap.add_argument(
+        "--adaptive-min-checkpoints",
+        type=int,
+        default=2,
+        help="minimum completed stages before adaptive stopping (default: 2)",
+    )
+    ap.add_argument(
+        "--adaptive-chrome-ssim-margin",
+        type=float,
+        default=DEFAULT_CHROME_SSIM_SAFETY_MARGIN,
+        help="cross-version SSIM safety-margin override for adaptive runs "
+        f"(default: {DEFAULT_CHROME_SSIM_SAFETY_MARGIN:g})",
+    )
+    ap.add_argument(
+        "--adaptive-chrome-psnr-margin",
+        type=float,
+        default=DEFAULT_CHROME_PSNR_SAFETY_MARGIN,
+        help="cross-version PSNR safety-margin override in dB for adaptive runs "
+        f"(default: {DEFAULT_CHROME_PSNR_SAFETY_MARGIN:g})",
+    )
+    ap.add_argument(
         "--canvas-capture-python",
         type=Path,
         default=None,
@@ -2104,6 +2175,28 @@ def main() -> int:
         help="browser executable used for canvas artifact capture",
     )
     args = ap.parse_args()
+    if not 0.0 <= args.adaptive_target_ssim_srgb <= 1.0:
+        ap.error("--adaptive-target-ssim-srgb must be between 0 and 1")
+    if args.adaptive_min_checkpoints < 1:
+        ap.error("--adaptive-min-checkpoints must be positive")
+    if args.adaptive_chrome_ssim_margin < 0.0:
+        ap.error("--adaptive-chrome-ssim-margin must be non-negative")
+    if args.adaptive_chrome_psnr_margin < 0.0:
+        ap.error("--adaptive-chrome-psnr-margin must be non-negative")
+    if (
+        args.adaptive_compute
+        and args.adaptive_target_ssim_srgb + args.adaptive_chrome_ssim_margin > 1.0
+    ):
+        ap.error("adaptive SSIM target plus Chrome safety margin must not exceed 1")
+    requested_formats = [
+        value.strip() for value in args.formats.split(",") if value.strip()
+    ]
+    if (
+        args.run
+        and args.adaptive_compute
+        and any(value != "canvas" for value in requested_formats)
+    ):
+        ap.error("--adaptive-compute currently supports only --formats canvas")
 
     root = Path(args.root)
     root.mkdir(parents=True, exist_ok=True)
@@ -2114,7 +2207,7 @@ def main() -> int:
     if args.run:
         run(
             root,
-            formats=[f.strip() for f in args.formats.split(",") if f.strip()],
+            formats=requested_formats,
             seeds=[int(s) for s in args.seeds.split(",") if s.strip()],
             splats=args.splats,
             stages=args.stages,
@@ -2127,6 +2220,11 @@ def main() -> int:
             browser_executable=args.browser_executable,
             initial_splat_cap=args.initial_splat_cap,
             initial_splat_fraction=args.initial_splat_fraction,
+            adaptive_compute=args.adaptive_compute,
+            adaptive_target_ssim_srgb=args.adaptive_target_ssim_srgb,
+            adaptive_min_checkpoints=args.adaptive_min_checkpoints,
+            adaptive_chrome_ssim_margin=args.adaptive_chrome_ssim_margin,
+            adaptive_chrome_psnr_margin=args.adaptive_chrome_psnr_margin,
         )
     if args.capture_canvas_runs:
         if args.canvas_capture_python is None:

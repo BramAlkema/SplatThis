@@ -1,0 +1,136 @@
+{
+  "schema": "splatthis.canvas-checkpoint-parity-evidence/2",
+  "generated_at": "2026-07-31T16:48:15.613927+00:00",
+  "method": {
+    "full_frame": true,
+    "retrained": false,
+    "seed": 0,
+    "capture_method": "Google Chrome canvas.toDataURL",
+    "browser": "140.0.7339.81",
+    "checkpoint_labels": [
+      "iter-1",
+      "iter-2",
+      "iter-3",
+      "residual-1"
+    ],
+    "source_summary": "./tmp/canvas-checkpoint-parity/summary.json",
+    "reproduction_tool": "tools/calibrate_canvas_checkpoint_parity.py",
+    "runtime_scorer": "canvas-image-data-byte-v1",
+    "runtime_semantics": "JavaScript double compute, Float32Array accumulation, 8-bit sRGB ImageData",
+    "optimizer_variance_in_scope": false
+  },
+  "coverage": {
+    "selected_images": 21,
+    "measured_images": 12,
+    "measured_checkpoints": 48,
+    "capture_failures": 0,
+    "measured": [
+      "brick",
+      "camera",
+      "cell",
+      "checkerboard",
+      "coins",
+      "colorwheel",
+      "grass",
+      "gravel",
+      "logo",
+      "page",
+      "stereo_motorcycle",
+      "text"
+    ],
+    "missing_historical_curves": [
+      "astronaut",
+      "chameleon",
+      "chelsea",
+      "coffee",
+      "hubble_deep_field",
+      "immunohistochemistry",
+      "moon",
+      "retina",
+      "rocket"
+    ]
+  },
+  "calibration": {
+    "ssim_overstatement": {
+      "min": 0.0,
+      "median": 0.0,
+      "p95": 0.0,
+      "max": 0.0
+    },
+    "psnr_overstatement_db": {
+      "min": 0.0,
+      "median": 0.0,
+      "p95": 0.0,
+      "max": 0.0
+    },
+    "direct_model_browser_ssim_srgb": {
+      "min": 1.0,
+      "median": 1.0,
+      "p95": 1.0,
+      "max": 1.0
+    },
+    "pixel_mae_linear": {
+      "min": 0.0,
+      "median": 0.0,
+      "p95": 0.0,
+      "max": 0.0
+    },
+    "pixel_max_abs_linear": {
+      "min": 0.0,
+      "median": 0.0,
+      "p95": 0.0,
+      "max": 0.0
+    },
+    "pixel_exact_checkpoints": 48,
+    "recommended_ssim_safety_margin": 0.0,
+    "recommended_psnr_safety_margin_db": 0.0,
+    "rounding": {
+      "ssim_quantum": 0.0001,
+      "psnr_quantum_db": 0.01,
+      "rule": "maximum positive model overstatement rounded upward"
+    }
+  },
+  "continuous_model_baseline": {
+    "direct_model_browser_ssim_srgb": {
+      "min": 0.9988100974989326,
+      "median": 0.9993440330938271,
+      "p95": 0.9998688345633264,
+      "max": 0.999877922458671
+    },
+    "ssim_overstatement": {
+      "min": -0.000029908589910809802,
+      "median": 0.0004684191140994498,
+      "p95": 0.0010641747452807715,
+      "max": 0.0011023015549977977
+    },
+    "recommended_ssim_safety_margin": 0.0012,
+    "recommended_psnr_safety_margin_db": 0.14
+  },
+  "continuous_model_per_image_ssim_overstatement": {
+    "brick": {"min": 0.000614727, "median": 0.000639691, "max": 0.000648695},
+    "camera": {"min": 0.000639794, "median": 0.000688754, "max": 0.000802598},
+    "cell": {"min": 0.001062779, "median": 0.001076216, "max": 0.001102302},
+    "checkerboard": {"min": -0.000029909, "median": 0.000001171, "max": 0.000278585},
+    "coins": {"min": 0.000474408, "median": 0.000494423, "max": 0.000580758},
+    "colorwheel": {"min": 0.000262426, "median": 0.000266666, "max": 0.000418471},
+    "grass": {"min": 0.000022174, "median": 0.000034026, "max": 0.000057274},
+    "gravel": {"min": 0.000030820, "median": 0.000050634, "max": 0.000066073},
+    "logo": {"min": 0.000598523, "median": 0.000613935, "max": 0.000668398},
+    "page": {"min": 0.000431459, "median": 0.000453690, "max": 0.000477530},
+    "stereo_motorcycle": {"min": 0.000238397, "median": 0.000305935, "max": 0.000319215},
+    "text": {"min": 0.000462430, "median": 0.000494583, "max": 0.000537152}
+  },
+  "controller_default": {
+    "requested_target_semantics": "desired Chrome artifact score",
+    "effective_model_ssim_threshold": "requested Chrome SSIM",
+    "effective_model_psnr_threshold_db": "requested Chrome PSNR",
+    "runtime_scorer": "canvas-image-data-byte-v1",
+    "calibrated_safety_margin": 0.0,
+    "status": "default-off"
+  },
+  "limitations": [
+    "Nine corpus images lack compatible historical full-frame stage artifacts.",
+    "The byte-exact calibration isolates runtime scoring and does not measure MLX optimizer variance.",
+    "A future browser or Canvas implementation change requires recalibration."
+  ]
+}

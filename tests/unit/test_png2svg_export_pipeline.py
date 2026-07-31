@@ -802,6 +802,73 @@ def test_canvas_checkpoint_selection_requires_gain_or_smaller_equivalent():
     )
 
 
+def test_canvas_adaptive_compute_stops_before_densification_and_residual(tmp_path):
+    img_path = tmp_path / "tiny.png"
+    rng = np.random.default_rng(0)
+    Image.fromarray(rng.integers(0, 256, size=(16, 16, 3), dtype=np.uint8)).save(
+        img_path
+    )
+    artifacts = tmp_path / "artifacts"
+    converter = PNG2SVGConverter(
+        max_splats=16,
+        stages=[1, 1, 1],
+        optimizer_backend="torch",
+        apple_silicon_splat_cap=None,
+        refinement_config={
+            "adaptive_compute_enabled": True,
+            "adaptive_compute_target_ssim_srgb": 0.0,
+            "adaptive_compute_min_checkpoints": 2,
+            "residual_detail_enabled": True,
+            "residual_detail_passes": 1,
+            "residual_detail_iters": 1,
+        },
+    )
+
+    converter.convert(
+        str(img_path),
+        output_path=str(tmp_path / "tiny.html"),
+        output_format="canvas",
+        artifacts_dir=str(artifacts),
+        verbose=False,
+    )
+
+    manifest = json.loads((artifacts / "run_manifest.json").read_text())
+    adaptive = next(
+        stage
+        for stage in manifest["stages"]
+        if stage.get("stage_type") == "canvas_adaptive_compute"
+    )
+    assert adaptive["stopped_early"] is True
+    assert adaptive["reason"] == "quality-target"
+    assert adaptive["checkpoints_observed"] == 2
+    assert adaptive["skipped_main_stages"] == 1
+    assert adaptive["skipped_main_stage_iterations"] == 1
+    assert adaptive["skipped_residual_detail"] is True
+    assert (artifacts / "iter-2.metrics.json").is_file()
+    assert not (artifacts / "iter-3.metrics.json").exists()
+    assert not (artifacts / "residual-1.metrics.json").exists()
+
+
+def test_adaptive_compute_rejects_non_canvas_output(tmp_path):
+    img_path = tmp_path / "tiny.png"
+    Image.fromarray(np.zeros((8, 8, 3), dtype=np.uint8)).save(img_path)
+    converter = PNG2SVGConverter(
+        max_splats=4,
+        stages=[1],
+        optimizer_backend="torch",
+        apple_silicon_splat_cap=None,
+        refinement_config={"adaptive_compute_enabled": True},
+    )
+
+    with pytest.raises(ValueError, match="only Canvas"):
+        converter.convert(
+            str(img_path),
+            output_path=str(tmp_path / "tiny.svg"),
+            output_format="svg",
+            verbose=False,
+        )
+
+
 def test_drawingml_blur_style_alpha_uses_peak_opacity_target():
     import re
 

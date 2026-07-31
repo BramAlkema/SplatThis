@@ -1,1138 +1,529 @@
-# ADR-003: Maximum-Fidelity Reconstruction and Export Stage
+# ADR-003: Artifact-Gated Fidelity Optimization
 
-**Status**: Proposed  
-**Date**: 2026-07-28  
-**Revision**: 2  
-**Authors**: SplatThis Development Team
+- **Status:** Accepted; roadmap active
+- **Date:** 2026-07-28
+- **Accepted on:** 2026-07-31
+- **Revision:** 4
+- **Authors:** SplatThis Development Team
+- **Supersedes:** Revision 3 of this ADR
 
-## Summary
+## Decision summary
 
-Add a first-class, opt-in **fidelity stage** after normal splat optimization and
-before final export. The stage generates bounded candidate corrections, renders
-the real deployment artifact where possible, and keeps a candidate only when it
-is measurably better and passes hard regression gates.
+SplatThis adopts artifact-gated, accept-or-revert optimization as the control
+plane for fidelity work after ordinary splat training.
 
-The stage combines:
+A candidate may be promoted only when it:
 
-1. multi-scale and local perceptual optimization;
-2. residual topology analysis;
-3. typed structural, photographic, and corrective splat proposals;
-4. split, merge, recolor, reshape, and local reorder operations;
-5. export-space post-fitting;
-6. actual SVG rasterization in the acceptance loop;
-7. calibrated PowerPoint proxy fitting plus offline real-PowerPoint calibration;
-8. optional mixed primitives and a strictly bounded raster residual in an
-   explicit hybrid mode.
+1. is evaluated with the compositor that users will actually receive, or with
+   an exact model of that compositor whose parity is separately verified;
+2. produces a meaningful measured gain;
+3. stays inside explicit quality, shape-count, file-size, and runtime gates;
+4. preserves the pre-fidelity baseline on protected metrics and regions; and
+5. records enough provenance to reproduce the decision.
 
-The core rule is:
+The ordinary converter remains the baseline and the fallback. An experiment
+that loses its gate is reverted rather than becoming a new default.
 
-> Every fidelity operation is speculative. Evaluate the resulting deployed
-> artifact, keep a proven gain, and otherwise restore the previous best state.
+This ADR accepts that architecture and the currently implemented bounded
+slices. It does **not** claim that the entire fidelity roadmap has shipped.
+In particular, predictive adaptive allocation and selective scaling, the
+broader operator portfolio, hybrid raster residuals, and full artifact search
+remain proposed. A narrower, default-off Canvas controller that stops on an
+absolute observed quality target is implemented, but its exact full-corpus
+replay missed the compute gate and will not be expanded in its current form.
 
 ## Context
 
-SplatThis already implements much of the foundation required for high fidelity:
+ADR-002 established a deterministic initialize, optimize, refine, and export
+pipeline over a shared 2D Gaussian representation. The same splat population
+is then deployed through three materially different compositors:
 
-- anisotropic `GaussianSplat` primitives;
-- content-adaptive and edge-aware initialization;
-- layered saliency and region-guidance maps;
-- staged optimization and residual-detail passes;
-- Torch and MLX renderers with parity tests;
-- OKLab L1, SSIM, gradient, and spatially weighted losses;
-- export-target-aware sRGB/source-over training;
-- SVG recipes and native DrawingML output;
-- actual SVG rasterization through CairoSVG or `rsvg-convert`;
-- run manifests, time-budget profiles, and quality metrics.
+- Canvas executes the project's linear-light alpha-over runtime.
+- SVG uses browser or library gradient, filter, and source-over semantics.
+- PowerPoint uses DrawingML primitives rendered by a specific Office viewer.
 
-Those capabilities remain the normal reconstruction path. This ADR does not
-replace them.
+Optimizing a Gaussian proxy is therefore not sufficient evidence that the
+emitted artifact improved. A better loss value can produce a worse browser
+canvas, SVG rasterization, or PowerPoint slide. More splats can also widen the
+train-to-deploy gap when the export primitive does not match the trained
+primitive.
 
-The remaining fidelity ceiling comes from gaps between ordinary differentiable
-training and the artifact a person finally sees:
+The full-corpus work also showed that SSIM alone is not a safe objective.
+Smoothing can raise SSIM while damaging foreground detail, edges, local
+structure, or perceptual similarity. Fidelity decisions need a guarded metric
+vector and fixed local regions, not one global score.
 
-1. The active structural term is global SSIM, which can miss local blur,
-   edge displacement, ringing, and small high-value features.
-2. Residual-detail logic distinguishes edges from general residuals, but does
-   not yet model the full residual topology or choose among correction
-   operators.
-3. Training proxies approximate browser and PowerPoint behavior; only SVG is
-   currently easy to rasterize in the normal pipeline.
-4. Gaussian-only correction can spend many shapes on a feature better
-   represented by a ridge, stroke, flat patch, or tiny residual tile.
-5. Compositing order is discrete and can remain locally wrong even when all
-   continuous splat parameters are well optimized.
-6. A scalar average metric can hide severe regressions in a face, silhouette,
-   text-like edge, or saturated accent.
-7. Profiles contain many hand-tuned thresholds, but candidate changes are not
-   governed by one monotonic, artifact-level accept-or-revert policy.
+## Evidence behind the decision
 
-## Decision Drivers
+The current reference corpus contains 21 complete images at a maximum edge of
+roughly 384 px. Seed-0 results are measured from deployed artifacts: the exact
+Chrome canvas pixel buffer, rasterized emitted SVG, and Microsoft PowerPoint
+slideshow captures.
 
-In descending priority:
+| Deployed artifact | Budget | Median final splats | Median SSIM | Median LPIPS | Median size | Median training |
+|---|---:|---:|---:|---:|---:|---:|
+| Canvas HTML | requested 2k | 1,395 | 0.7751 | 0.2443 | 226 KB | 3.6 min |
+| Canvas HTML | effective 4k | 2,382 | 0.8406 | 0.1612 | 391 KB | 9.9 min |
+| SVG | requested 2k | 1,389 | 0.6022 | 0.4002 | 765 KB | 4.2 min |
+| PowerPoint | requested 2k | 1,374 | 0.6091 | 0.3843 | 127 KB | 6.6 min |
 
-1. Fidelity of the **deployed artifact**, not merely the internal renderer.
-2. No silent visual regression.
-3. Preserve editable SVG and DrawingML as the default output contract.
-4. Deterministic, inspectable decisions and artifacts.
-5. Torch/MLX semantic parity.
-6. Bounded splat count, file size, memory, and runtime.
-7. Incremental integration with the current `PNG2SVGConverter`.
+All 21 Canvas images improved in both SSIM and LPIPS from requested 2k to
+effective 4k, but none reached 0.99 SSIM. Chameleon reached 0.9631 only at an
+effective 8k point. These results support scaling when the measured curve
+justifies it; they do not support a general near-0.99 promise at small budgets.
 
-Maximum fidelity is allowed to be slower. Performance remains a measured
-constraint, not the objective of this stage.
+The experiments also bound what may be promoted:
+
+- normalized Top-K teacher/student distillation showed positive median SVG
+  SSIM in some low-budget screens, but repeated image-level, edge, perceptual,
+  and size regressions; it is not a default converter stage;
+- residual native paths improved the selected SVG candidate on 18 of 21
+  images, but the translated PowerPoint candidates did not preserve the SVG
+  SSIM gain; mixed primitives remain target-specific experimental work; and
+- the combined Chameleon and Coffee portfolio demonstrated that artifact
+  search can recover better candidates, but also that the winning population,
+  recipe, and primitive family are image- and target-dependent.
 
 ## Decision
 
-### Pipeline placement
+### 1. The deployed artifact decides
 
-The canonical pipeline becomes:
-
-```text
-load and normalize
-  -> region guidance
-  -> initialize layers
-  -> staged differentiable optimization
-  -> densify and residual-detail passes
-  -> fidelity stage
-       1. establish deployed-artifact baseline
-       2. analyze residual topology
-       3. generate bounded candidate corrections
-       4. optimize continuous parameters
-       5. test discrete order and recipe candidates
-       6. emit and rasterize actual artifact
-       7. accept gain or restore previous best
-  -> final export
-  -> manifest and validation artifacts
-```
-
-The stage is disabled by default until its benchmark gates pass. It is enabled
-through a profile or explicit configuration:
+The canonical post-training flow is:
 
 ```text
---fidelity-stage off|balanced|max
+ordinary fitted baseline
+    -> deterministic candidate proposal
+    -> optional cheap proxy rejection
+    -> emit candidate through the real export path
+    -> render with the target compositor
+    -> guarded metric comparison
+    -> accept or revert
+    -> record decision and provenance
 ```
 
-`max` may consume the remaining time budget. It may not silently exceed explicit
-splat-count, file-size, or hybrid-output constraints.
-
-### Stage contract
-
-The fidelity stage receives immutable run context and a copy of the best splat
-state produced by the ordinary pipeline. It returns the winning state and a
-complete decision trace.
-
-```python
-from dataclasses import dataclass, field, replace
-from pathlib import Path
-from typing import Literal, Protocol, Sequence
-
-import numpy as np
-
-
-FidelityMode = Literal["off", "balanced", "max"]
-ExportTarget = Literal["canvas", "svg", "pptx-softedge"]
-
-
-@dataclass(frozen=True)
-class FidelityConfig:
-    mode: FidelityMode = "off"
-    export_target: ExportTarget = "svg"
-    max_passes: int = 4
-    max_candidates_per_pass: int = 12
-    max_added_splats: int = 0
-    max_file_size_bytes: int | None = None
-    min_lpips_gain: float = 0.001
-    max_ssim_regression: float = 0.002
-    max_edge_regression: float = 0.002
-    supersample: int = 2
-    allow_mixed_primitives: bool = False
-    allow_raster_residual: bool = False
-
-
-@dataclass(frozen=True)
-class FidelityContext:
-    target_linear_rgb: np.ndarray
-    guidance: dict[str, np.ndarray]
-    fixed_rois: tuple[tuple[int, int, int, int], ...]
-    output_format: str
-    recipe: str
-    seed: int
-    work_dir: Path
-
-
-@dataclass(frozen=True)
-class FidelityCandidate:
-    name: str
-    splats: tuple["GaussianSplat", ...]
-    recipe_overrides: dict[str, float] = field(default_factory=dict)
-    auxiliary_layers: tuple[object, ...] = ()
-
-
-@dataclass(frozen=True)
-class FidelityResult:
-    winner: FidelityCandidate
-    baseline_metrics: "FidelityMetrics"
-    final_metrics: "FidelityMetrics"
-    decisions: tuple[dict[str, object], ...]
-```
-
-The stage must not mutate the converter's persistent configuration. This follows
-the existing per-run state-isolation rule in `convert()`.
-
-### Monotonic candidate loop
-
-All operators use the same evaluator and gate:
-
-```python
-class CandidateOperator(Protocol):
-    name: str
-
-    def propose(
-        self,
-        best: FidelityCandidate,
-        analysis: "ResidualAnalysis",
-        context: FidelityContext,
-        limit: int,
-    ) -> Sequence[FidelityCandidate]: ...
-
-
-class FidelityStage:
-    def __init__(self, config, evaluator, operators):
-        self.config = config
-        self.evaluator = evaluator
-        self.operators = tuple(operators)
-
-    def run(self, baseline, context):
-        best = baseline
-        best_metrics = self.evaluator.evaluate(best, context)
-        baseline_metrics = best_metrics
-        decisions = []
-
-        for pass_index in range(self.config.max_passes):
-            analysis = analyze_residual(best, context, self.evaluator)
-            improved = False
-
-            for operator in self.operators:
-                proposals = operator.propose(
-                    best,
-                    analysis,
-                    context,
-                    limit=self.config.max_candidates_per_pass,
-                )
-                for candidate in proposals:
-                    metrics = self.evaluator.evaluate(candidate, context)
-                    accepted, reason = accept_candidate(
-                        baseline=baseline_metrics,
-                        incumbent=best_metrics,
-                        candidate=metrics,
-                        config=self.config,
-                    )
-                    decisions.append(
-                        {
-                            "pass": pass_index,
-                            "operator": operator.name,
-                            "candidate": candidate.name,
-                            "accepted": accepted,
-                            "reason": reason,
-                            "metrics": metrics.as_dict(),
-                        }
-                    )
-                    if accepted:
-                        best, best_metrics = candidate, metrics
-                        improved = True
-
-            if not improved:
-                break
-
-        return FidelityResult(
-            winner=best,
-            baseline_metrics=baseline_metrics,
-            final_metrics=best_metrics,
-            decisions=tuple(decisions),
-        )
-```
-
-Evaluation is intentionally outside each operator. An operator cannot redefine
-success to favor its own output.
-
-## Quality Model
-
-### Measure the right image
-
-The evaluator produces two metric sets:
-
-1. **proxy metrics** from the differentiable renderer, used for fast rejection;
-2. **deployed metrics** from the emitted and rasterized artifact, used for final
-   acceptance.
-
-For SVG, deployed metrics must use an actual rasterizer. A proxy fallback may
-be recorded, but a `max`-fidelity gain cannot be declared from a fallback.
-
-For PPTX, the normal run uses the calibrated soft-edge proxy. Real PowerPoint
-captures are maintained as offline calibration fixtures because PowerPoint is
-not a suitable runtime dependency. LibreOffice is not a visual oracle for PPTX.
-
-### Metric vector
-
-No single metric is authoritative. Track:
-
-```python
-@dataclass(frozen=True)
-class FidelityMetrics:
-    lpips: float                 # lower is better
-    psnr_srgb: float             # higher is better
-    ssim_srgb: float             # higher is better
-    ms_ssim_luma: float          # higher is better
-    delta_e_ok_mean: float       # lower is better
-    delta_e_ok_p95: float        # lower is better
-    edge_chamfer: float          # lower is better
-    edge_gradient_l1: float      # lower is better
-    salient_lpips: float         # lower is better
-    worst_roi_error: float       # lower is better
-    splat_count: int
-    file_size_bytes: int
-    render_method: str
-
-    def as_dict(self) -> dict[str, float | int | str]:
-        return self.__dict__.copy()
-```
-
-Interpretation:
-
-- LPIPS is the primary whole-image perceptual measure.
-- `salient_lpips` prevents broad easy areas from hiding foreground regressions.
-- local/windowed MS-SSIM catches blur that global SSIM may reward.
-- OKLab delta-E catches chroma and lightness drift.
-- edge chamfer catches displaced silhouettes even when pixel averages improve.
-- `worst_roi_error` protects the single worst important region.
-- file size and splat count are constraints, not fidelity rewards.
-
-### Region-of-interest evaluation
-
-Evaluate at least:
-
-- full image;
-- foreground;
-- edge band;
-- high-saliency regions;
-- background-safe regions;
-- the worst fixed-size residual windows.
-
-The worst windows are selected deterministically from the baseline and remain
-fixed while candidates are compared. Otherwise, each candidate could be judged
-on a different set of easy or hard crops.
-
-```python
-def select_fixed_rois(error_map, saliency, size=64, count=8):
-    priority = error_map * (1.0 + saliency)
-    rois = []
-    suppressed = priority.copy()
-    for _ in range(count):
-        y, x = np.unravel_index(np.argmax(suppressed), suppressed.shape)
-        rois.append(centered_crop(x=x, y=y, size=size, shape=priority.shape))
-        suppress_neighborhood(suppressed, x=x, y=y, radius=size // 2)
-    return tuple(rois)
-```
-
-### Acceptance gate
-
-The gate is Pareto-like: require a meaningful primary gain, forbid important
-regressions, and enforce resource limits.
-
-```python
-def accept_candidate(*, baseline, incumbent, candidate, config):
-    if candidate.render_method.startswith("proxy-fallback"):
-        return False, "no deployed-artifact render"
-    if config.max_file_size_bytes is not None:
-        if candidate.file_size_bytes > config.max_file_size_bytes:
-            return False, "file-size budget exceeded"
-    if candidate.ssim_srgb < baseline.ssim_srgb - config.max_ssim_regression:
-        return False, "SSIM hard gate"
-    if candidate.edge_chamfer > baseline.edge_chamfer + config.max_edge_regression:
-        return False, "edge hard gate"
-    if candidate.worst_roi_error > baseline.worst_roi_error * 1.01:
-        return False, "worst-ROI hard gate"
-
-    lpips_gain = incumbent.lpips - candidate.lpips
-    salient_gain = incumbent.salient_lpips - candidate.salient_lpips
-    delta_e_gain = incumbent.delta_e_ok_p95 - candidate.delta_e_ok_p95
-
-    meaningful_gain = (
-        lpips_gain >= config.min_lpips_gain
-        or salient_gain >= config.min_lpips_gain
-        or delta_e_gain >= 0.25
-    )
-    return (
-        (True, "measured fidelity gain")
-        if meaningful_gain
-        else (False, "gain below threshold")
-    )
-```
-
-Thresholds are benchmark parameters, not universal constants. They must be
-derived from repeatable rasterization noise and the reference corpus.
-
-## Fidelity Operations
-
-### 1. Multi-scale, local, export-aware optimization
-
-Retain OKLab L1, luminance gradients, and export-target compositing. Add local
-structure and a scale curriculum.
-
-The optimization objective is:
-
-```text
-L = w_color     * OKLab robust L1
-  + w_structure * local MS-SSIM on OKLab L
-  + w_edge      * multi-scale luminance-gradient loss
-  + w_laplacian * Laplacian-pyramid loss
-  + w_roi       * salient/worst-ROI loss
-  + w_regular   * parameter regularization
-```
-
-Global SSIM remains available as a cheap term but is not sufficient for the
-maximum-fidelity profile.
-
-```python
-import torch
-import torch.nn.functional as F
-
-
-def downsample_hwc(image: torch.Tensor, scale: int) -> torch.Tensor:
-    if scale == 1:
-        return image
-    nchw = image.permute(2, 0, 1).unsqueeze(0)
-    return F.interpolate(
-        nchw,
-        scale_factor=1.0 / scale,
-        mode="area",
-    )[0].permute(1, 2, 0)
-
-
-def pyramid_charbonnier(
-    rendered: torch.Tensor,
-    target: torch.Tensor,
-    scales=(8, 4, 2, 1),
-    weights=(0.10, 0.20, 0.30, 0.40),
-    epsilon=1e-3,
-) -> torch.Tensor:
-    total = rendered.new_zeros(())
-    for scale, weight in zip(scales, weights):
-        diff = downsample_hwc(rendered, scale) - downsample_hwc(target, scale)
-        total = total + weight * torch.sqrt(diff.square() + epsilon**2).mean()
-    return total
-```
-
-Optimization uses a curriculum:
-
-1. low-frequency/color correction;
-2. local structure and edges;
-3. full-resolution residual;
-4. short export-proxy post-fit;
-5. actual-artifact candidate evaluation.
-
-Do not enable all terms at full weight from iteration zero. That encourages
-small splats to chase texture before large forms and colors are correct.
-
-### 2. Supersampled training and downsampling
-
-For `max`, render at 2× resolution during the final polish and downsample with a
-known filter before loss evaluation. This reduces aliasing and makes subpixel
-position, scale, and rotation gradients more informative.
-
-```python
-def supersampled_forward(renderer_2x, splats, target_shape):
-    high = renderer_2x(splats)
-    nchw = high.permute(2, 0, 1).unsqueeze(0)
-    low = F.interpolate(
-        nchw,
-        size=target_shape,
-        mode="bicubic",
-        align_corners=False,
-        antialias=True,
-    )
-    return low[0].permute(1, 2, 0)
-```
-
-The downsampling filter used for training must be recorded in the manifest and
-matched in Torch and MLX. Supersampling is a late-stage option because it
-increases renderer cost and tile pressure.
-
-### 3. Residual topology analysis
-
-Analyze why a region is wrong before adding a splat. Produce a shared bundle:
-
-```python
-@dataclass(frozen=True)
-class ResidualAnalysis:
-    residual_oklab: np.ndarray
-    absolute_color_error: np.ndarray
-    low_frequency_error: np.ndarray
-    high_frequency_error: np.ndarray
-    target_edges: np.ndarray
-    rendered_edges: np.ndarray
-    edge_displacement: np.ndarray
-    coverage_error: np.ndarray
-    opacity_order_error: np.ndarray
-    priority: np.ndarray
-    fixed_rois: tuple[tuple[int, int, int, int], ...]
-```
-
-Classify high-priority components:
-
-| Residual type | Evidence | Preferred correction |
-| --- | --- | --- |
-| broad color field | low-frequency error, weak edge | recolor/grow/merge broad splats |
-| uncovered region | target mass with high transmittance | add coverage splat |
-| edge displacement | close parallel target/render edges | move/rotate/reshape structural splat |
-| missing edge | target edge without rendered match | add anisotropic tangent splat or ridge |
-| excess blur | edge present but gradient too weak | shrink/split/reduce alpha |
-| texture deficit | high-frequency residual inside object | micro-splats or texture primitive |
-| chroma drift | high OKLab a/b error, low L error | recolor local contributing splats |
-| halo | sign-changing residual around edge | adjust scale/alpha/export blur |
-| overlap/order error | correct colors, wrong occlusion pattern | local reorder or alpha rebalance |
-| exporter mismatch | proxy good, artifact bad | recipe/post-fit correction |
-
-This extends the current edge/general residual distinction. It must reuse the
-existing region-guidance maps instead of introducing a parallel segmentation
-system.
-
-### 4. Typed splat populations
-
-Use stage-local roles:
-
-```python
-SplatRole = Literal[
-    "base",
-    "mass",
-    "structural",
-    "texture",
-    "corrective",
-]
-```
-
-Roles control proposal and optimization behavior:
-
-| Role | Geometry | Main loss | Typical operations |
-| --- | --- | --- | --- |
-| base | broad, low anisotropy | low-frequency color | recolor, grow, merge |
-| mass | medium | silhouette and regional color | move, reshape, recolor |
-| structural | anisotropic, edge-tangent | edge distance and gradient | move, rotate, split |
-| texture | small | high-frequency/LPIPS | add, recolor, prune |
-| corrective | tightly bounded | actual export residual | local post-fit, remove if no gain |
-
-The first implementation stores roles only in fidelity-stage metadata. The raw
-`GaussianSplat` schema and current exporters remain unchanged.
-
-### 5. Operator portfolio
-
-The fidelity stage may propose:
-
-- **recolor** splats contributing to a chroma residual;
-- **move** a splat toward a matched target edge;
-- **rotate/reshape** an anisotropic splat along the edge tangent;
-- **split** one broad splat into two lower-error children;
-- **merge** redundant smooth-region splats and reuse the freed budget;
-- **add** a typed residual splat;
-- **prune** a low-contribution or harmful splat;
-- **alpha rebalance** overlapping splats while preserving center opacity;
-- **local reorder** splats in an overlap component;
-- **recipe tune** bounded exporter constants;
-- **compile primitive** into one or more exporter-compatible shapes;
-- **residual tile** only in explicit hybrid mode.
-
-Each operator is bounded. For example, split proposals preserve approximate
-mass and do not immediately double the total budget:
-
-```python
-def split_splat(parent: "RawSplat", offset_fraction=0.45):
-    tangent = np.array([np.cos(parent.theta), np.sin(parent.theta)])
-    offset = tangent * parent.sx * offset_fraction
-    child_sx = max(parent.sx * 0.65, 1e-4)
-    child_alpha = 0.5 * parent.a
-
-    return (
-        replace(
-            parent,
-            x=parent.x - float(offset[0]),
-            y=parent.y - float(offset[1]),
-            sx=child_sx,
-            a=float(child_alpha),
-        ),
-        replace(
-            parent,
-            x=parent.x + float(offset[0]),
-            y=parent.y + float(offset[1]),
-            sx=child_sx,
-            a=float(child_alpha),
-        ),
-    )
-```
-
-The example preserves approximate optical density: if the children were
-co-centered, their combined transmittance would match the parent because
-rendered layer opacity is `1 - exp(-alpha * G)`. The children still require
-post-fit after they are offset.
-
-### 6. Local overlap-graph ordering
-
-Do not attempt an all-pairs differentiable sort. Build an overlap graph and
-optimize only connected components that intersect important residual regions.
-
-```python
-def local_order_candidates(splats, component, max_swaps=16):
-    base_order = list(component)
-    yield base_order
-    ranked_pairs = rank_adjacent_swaps_by_occlusion_error(splats, component)
-    for left, right in ranked_pairs[:max_swaps]:
-        candidate = base_order.copy()
-        i, j = candidate.index(left), candidate.index(right)
-        candidate[i], candidate[j] = candidate[j], candidate[i]
-        yield candidate
-```
-
-The winning order must be encoded through existing stable importance ordering.
-Tied importance values remain stable and deterministic.
-
-### 7. Export-proxy post-fit
-
-Continuous post-fit is performed against the matching deployment proxy:
-
-- canvas: configured native renderer;
-- SVG: sRGB/source-over renderer matching the selected recipe;
-- PPTX: calibrated soft-edge or blur proxy.
-
-Only parameters supported by the target artifact may move. For example, do not
-optimize weighted compositing for an exporter that can only emit source-over.
-
-Recommended late-stage learning-rate hierarchy:
-
-```python
-FIDELITY_LEARNING_RATES = {
-    "position": 2e-4,
-    "scale": 1e-4,
-    "theta": 1e-4,
-    "color": 8e-4,
-    "alpha": 4e-4,
-}
-```
-
-These are starting values, not accepted defaults. Each backend must demonstrate
-matching direction and comparable gain on the benchmark corpus.
-
-### 8. Actual-artifact-in-the-loop search
-
-SVG is non-differentiably emitted and rasterized for final candidate selection.
-Use proxy metrics to reject most candidates before paying that cost.
-
-```python
-def evaluate_candidate(candidate, context):
-    proxy = evaluate_proxy(candidate, context)
-    if violates_fast_gates(proxy):
-        return proxy.with_status("proxy-rejected")
-
-    artifact_path = emit_candidate(candidate, context.work_dir)
-    deployed = rasterize_and_measure(
-        artifact_path,
-        target=context.target_linear_rgb,
-        fixed_rois=context.fixed_rois,
-    )
-    return deployed
-```
-
-Recipe parameters may be searched with deterministic bounded coordinate search:
-
-```python
-def recipe_candidates(base):
-    for alpha_scale in (base.alpha_scale * 0.95, base.alpha_scale, base.alpha_scale * 1.05):
-        for sigma_scale in (base.sigma_scale * 0.95, base.sigma_scale, base.sigma_scale * 1.05):
-            yield replace(
-                base,
-                alpha_scale=alpha_scale,
-                sigma_scale=sigma_scale,
-            )
-```
-
-Search per recipe and target. Do not learn one global constant from one image
-and silently apply it to all exporters.
-
-### 9. Cross-rasterizer robustness
-
-The fidelity lab, outside the normal conversion path, renders SVG fixtures with:
-
-- Chromium;
-- Safari/WebKit where available;
-- Firefox;
-- librsvg;
-- CairoSVG.
-
-Optimize for robust quality, not a single engine:
-
-```text
-robust_score = median(engine_scores)
-             + 0.5 * percentile_90(engine_scores)
-```
-
-Engine differences are recorded. A recipe may be target-specific when the user
-explicitly selects a target, but the general browser recipe must not overfit one
-rasterizer.
-
-### 10. Color-management pass
-
-Maximum fidelity requires one explicit color contract:
-
-1. honor or deliberately normalize the source ICC profile;
-2. decode input to linear-light working RGB;
-3. optimize perceptual terms in OKLab;
-4. composite in the deployment space;
-5. encode output colors as sRGB unless another supported profile is explicit;
-6. avoid accidental double transfer-function conversion;
-7. measure the final raster back in the same normalized linear space.
-
-Add small color patches to the calibration corpus: neutrals, skin-like tones,
-saturated primaries, dark gradients, and translucent overlaps.
-
-Color correction should first adjust contributing splats. A global 3×3 matrix
-is allowed only as a diagnostic because it can improve averages while damaging
-already-correct regions.
-
-### 11. Mixed primitive compiler
-
-Gaussians remain the canonical representation in the first slices. The
-maximum-fidelity research path may introduce a stage-local primitive dictionary:
-
-```python
-PrimitiveKind = Literal[
-    "gaussian",
-    "ridge",
-    "flat-ellipse",
-    "short-stroke",
-    "residual-tile",
-]
-```
-
-Target-specific lowering:
-
-| Primitive | SVG | DrawingML | Gaussian-only fallback |
-| --- | --- | --- | --- |
-| gaussian | gradient/blur recipe | soft edge/blur | native |
-| ridge | path/stroke with soft edge | line/freeform or ellipse chain | Gaussian chain |
-| flat ellipse | ellipse | ellipse | very broad Gaussian |
-| short stroke | path | line/freeform | anisotropic Gaussian chain |
-| residual tile | clipped image | picture fill | unsupported in pure-vector mode |
-
-Mixed primitives are accepted only if the actual artifact improves. A primitive
-that looks better in the internal preview but degrades PowerPoint is rejected.
-
-### 12. Optional sparse residual atlas
-
-Pure-vector output remains the default. Hybrid mode is explicit:
-
-```text
---fidelity-stage max --allow-raster-residual
-```
-
-The residual is not one full-canvas image. Extract sparse, non-overlapping
-patches only where splats have poor rate-distortion:
-
-```python
-@dataclass(frozen=True)
-class ResidualPatch:
-    x: int
-    y: int
-    rgba: np.ndarray
-    encoded_bytes: int
-    lpips_gain: float
-
-    @property
-    def gain_per_kib(self) -> float:
-        return self.lpips_gain / max(self.encoded_bytes / 1024.0, 1e-6)
-```
-
-Choose patches by measured gain per encoded KiB, apply a soft or exact mask that
-does not double-correct surrounding pixels, and stop at the configured byte and
-area budgets.
-
-Required safeguards:
-
-- disabled for pure-vector mode;
-- obvious manifest declaration;
-- total covered area and encoded bytes reported;
-- removable without corrupting the vector layer;
-- no quality claim that hides whether hybrid mode was used.
-
-### 13. Adaptive compute allocation
-
-Spend remaining time where expected fidelity gain is highest:
-
-```python
-def operator_priority(history):
-    return {
-        name: stats.accepted_gain / max(stats.runtime_sec, 1e-6)
-        for name, stats in history.items()
-    }
-```
-
-After an initial exploration round, prioritize operators by accepted deployed
-gain per second while retaining a small deterministic exploration quota.
-
-Stop when:
-
-- no candidate passes in a full round;
-- the time budget is exhausted;
-- quality gain falls below the noise threshold;
-- all hard budgets are consumed.
-
-## Configuration
-
-Proposed profile shape:
-
-```python
-MAX_FIDELITY_STAGE = {
-    "enabled": True,
-    "mode": "max",
-    "max_passes": 6,
-    "max_candidates_per_pass": 16,
-    "supersample": 2,
-    "loss": {
-        "oklab_charbonnier": 1.0,
-        "local_ms_ssim": 0.25,
-        "gradient_pyramid": 0.15,
-        "laplacian_pyramid": 0.10,
-        "salient_roi": 0.30,
-    },
-    "operators": {
-        "recolor": True,
-        "reshape": True,
-        "split_merge": True,
-        "typed_add": True,
-        "prune": True,
-        "local_reorder": True,
-        "recipe_search": True,
-    },
-    "acceptance": {
-        "min_lpips_gain": 0.001,
-        "max_ssim_regression": 0.002,
-        "max_edge_regression": 0.002,
-        "max_worst_roi_regression_fraction": 0.01,
-    },
-    "allow_mixed_primitives": False,
-    "allow_raster_residual": False,
-}
-```
-
-This belongs in a dedicated typed configuration object before becoming another
-large group of flat `refinement_config` keys.
-
-## Observability and Reproducibility
-
-Write fidelity artifacts under the run's selected artifact directory. For local
-experiments, use paths such as `./tmp/fidelity/<run-id>/`.
-
-Required artifacts:
-
-```text
-fidelity/
-  baseline/
-    artifact.svg|pptx
-    raster.png
-    metrics.json
-  pass-00/
-    analysis/
-      residual-oklab.png
-      edge-displacement.png
-      priority.png
-      rois.json
-    candidates.jsonl
-    accepted/
-      artifact.svg|pptx
-      raster.png
-      metrics.json
-  final/
-    artifact.svg|pptx
-    raster.png
-    metrics.json
-  decisions.jsonl
-```
-
-Manifest additions:
-
-```json
-{
-  "fidelity_stage": {
-    "enabled": true,
-    "mode": "max",
-    "seed": 42,
-    "baseline_metrics": {},
-    "final_metrics": {},
-    "passes_run": 3,
-    "candidates_evaluated": 27,
-    "accepted_operations": ["reshape", "typed-add", "recipe-search"],
-    "rejected_operations": 24,
-    "actual_artifact_rasterizer": "cairosvg",
-    "hybrid_residual": false,
-    "stop_reason": "no-accepted-candidate"
-  }
-}
-```
-
-Given identical input, seed, configuration, dependencies, and rasterizer
-version, candidate ordering and the winning result must be deterministic.
-
-## Implementation Architecture
-
-Add a focused module family:
-
-```text
-src/png2svg_gs/fidelity/
-  __init__.py
-  config.py          # typed config and profile resolution
-  stage.py           # candidate loop and state isolation
-  analysis.py        # residual topology and fixed ROIs
-  metrics.py         # local/perceptual/deployed metric vector
-  evaluator.py       # proxy and actual-artifact evaluation
-  operators.py       # split/merge/move/recolor/reorder proposals
-  primitives.py      # optional stage-local primitive dictionary
-  report.py          # manifest and artifact trace
-```
-
-Integration points:
-
-- `converter.py`: invoke the stage after current residual-detail passes;
-- `renderer.py`: Torch loss terms and supersampled forward;
-- `mlx_losses.py`: numerically matching MLX terms;
-- `io.py`: candidate emission and actual SVG evaluation;
-- `cli.py`: fidelity mode and explicit hybrid-output flags.
-
-The main converter orchestrates; it must not absorb all fidelity logic.
-
-## Delivery Plan
-
-### Phase 0: Benchmark truth
-
-- Freeze a small reference corpus spanning portrait, animal/fur, landscape,
-  graphic art, transparency, smooth gradients, tiny hard edges, and text-like
-  detail.
-- Store source hashes, fixed crops, commands, rasterizer versions, and baseline
-  artifacts.
-- Add repeatability measurements to determine metric noise floors.
-- Add actual SVG and real-PowerPoint calibration fixtures.
-
-Exit gate: baseline results reproduce before any algorithmic change.
-
-### Phase 1: Stage shell and monotonic evaluator
-
-- Add typed config, candidate/result contracts, decision trace, and
-  accept-or-revert gate.
-- Wrap the current splat result as the baseline candidate.
-- Emit/rasterize candidates without changing optimization behavior.
-- Add tests proving rejected candidates leave output byte-equivalent to the
-  baseline splat state.
-
-Exit gate: enabling a no-op fidelity stage cannot change output.
-
-### Phase 2: Better loss and supersampled polish
-
-- Implement local/windowed MS-SSIM or an equivalent local structural term.
-- Add Laplacian/gradient pyramids.
-- Add fixed ROI weighting.
-- Port exact semantics to MLX.
-- Add optional 2× final polish.
-
-Exit gate: actual SVG LPIPS improves on the corpus median and no hard gate fails.
-
-### Phase 3: Residual topology and operators
-
-- Add residual classification.
-- Implement recolor, move, reshape, split, merge, typed-add, and prune.
-- Add local overlap-graph reorder.
-- Record gain/runtime per operator.
-
-Exit gate: each enabled operator demonstrates at least one accepted gain and no
-unreverted regression.
-
-### Phase 4: Artifact-level recipe search
-
-- Search bounded SVG recipe parameters after proxy fitting.
-- Maintain cross-rasterizer fixture results.
-- Expand calibrated PPTX proxy fixtures using real PowerPoint captures.
-
-Exit gate: proxy direction correlates with deployed direction and actual SVG
-quality improves.
-
-### Phase 5: Mixed primitives
-
-- Introduce ridge and short-stroke proposals behind a research flag.
-- Lower unsupported primitives to Gaussian chains.
-- Add exporter-specific validation and editability checks.
-
-Exit gate: mixed primitives beat the Gaussian-only candidate under the same
-artifact-size budget on the feature classes they target.
-
-### Phase 6: Sparse residual atlas
-
-- Implement only for explicit hybrid mode.
-- Optimize patch selection by deployed gain per encoded KiB.
-- Add area, byte, and disclosure gates.
-
-Exit gate: hybrid results are clearly labeled and pure-vector output remains
-unchanged by default.
-
-### Phase 7: Learned proposal policy, only if justified
-
-A lightweight model may rank operators or predict proposal parameters from
-residual patches after enough accepted/rejected candidate data exists. It may
-not become the renderer or the authority on acceptance.
-
-Exit gate: it reduces search time without changing the deployed-artifact gate or
-hurting determinism under a fixed model version.
-
-## Validation Matrix
-
-Run every accepted implementation slice across:
-
-| Dimension | Values |
-| --- | --- |
-| backend | Torch, MLX |
-| export target | canvas, standard SVG, browser SVG, scripted SVG, PPTX |
-| rasterizer | CairoSVG, librsvg, browser lab; PowerPoint fixture for PPTX |
-| content | portrait, fur, landscape, graphic, gradients, transparency, edges |
-| budget | fixed splat count, fixed time, fixed artifact size |
-| mode | fidelity off, balanced, max |
-
-Required checks:
-
-1. actual-artifact metrics;
-2. fixed-ROI metrics;
-3. visual side-by-side and residual maps;
-4. splat count and file size;
-5. runtime and peak memory;
-6. determinism;
-7. Torch/MLX parity;
-8. native SVG/PPTX structure and editability;
-9. no raster media in pure-vector PPTX;
-10. no proxy-only claim presented as deployed fidelity.
-
-## Acceptance Criteria
-
-An implementation slice is accepted only when:
-
-1. median deployed LPIPS improves on the reference corpus;
-2. at least 60% of reference images improve by more than the measured noise
-   floor;
-3. no image violates worst-ROI, edge, SSIM, or color hard gates;
-4. pure-vector output remains pure vector unless hybrid mode is explicit;
-5. Torch and MLX remain semantically aligned;
-6. deterministic reruns select the same winner;
-7. added runtime and size are reported;
-8. the accepted gain survives a side-by-side visual review.
-
-Do not set a promised percentage or dB gain before Phase 0 establishes the
-baseline and noise floor.
+Candidate operators propose changes. They do not own evaluation thresholds and
+cannot redefine success in their favor.
+
+The untouched ordinary output is always retained until another candidate
+passes. A failure, unavailable renderer, time limit, or exhausted search budget
+must return the best already accepted candidate, never an unverified partial
+state.
+
+### 2. Evidence levels are explicit
+
+Not every target can be evaluated at the same cost during conversion. Reports
+must label the evidence used:
+
+| Evidence level | Meaning | Allowed use |
+|---|---|---|
+| Deployed artifact | The emitted file is rendered by its target runtime or viewer | Final acceptance and release claims |
+| Parity-verified deployed model | The same equations and ordering as the shipped runtime, with separate artifact parity checks | In-run safety and checkpoint selection |
+| Proxy | An approximation used for training or cheap rejection | Diagnostics and early rejection only |
+
+A proxy-only result may not be described as a rendered SVG, browser Canvas, or
+PowerPoint result.
+
+Current target handling is:
+
+| Target | In-converter gate | Deployed-artifact verification |
+|---|---|---|
+| Canvas | Exact NumPy counterpart of the emitted Canvas runtime | Chrome reads the emitted canvas pixel buffer in the corpus harness |
+| SVG | Emit the candidate SVG and rasterize it; proxy fallback is rejected | `rsvg-convert` or CairoSVG, with renderer identity recorded |
+| PowerPoint | No ADR-003 in-converter fidelity stage yet | Offline tooling captures the slideshow in Microsoft PowerPoint |
+
+PowerPoint capture is authoritative but currently too external and expensive
+to run inside every conversion. Internal PowerPoint previews remain proxies.
+
+### 3. Use a guarded metric vector
+
+The implemented fidelity evaluator records:
+
+- LPIPS and salient-region LPIPS when the optional dependency is available;
+- display-sRGB SSIM and PSNR;
+- multiscale windowed luma SSIM;
+- mean and p95 OKLab error;
+- edge chamfer and edge-gradient error;
+- the worst error over fixed residual ROIs;
+- splat count, emitted bytes, and renderer identity.
+
+ROIs are selected from the baseline residual and then frozen. A candidate
+cannot improve its result by moving the measurement region.
+
+Hard regression gates compare against the original pre-fidelity baseline.
+Meaningful gains compare against the current incumbent. This permits several
+small accepted improvements without allowing cumulative drift beyond the
+baseline contract.
+
+The current SVG defaults reject:
+
+- proxy-only renders;
+- candidates beyond the configured file-size limit;
+- any added splat when the added-splat budget is zero;
+- SSIM, edge, or worst-ROI regressions beyond their configured tolerance; and
+- candidates without a sufficient LPIPS, salient-LPIPS, or OKLab-p95 gain.
+
+These numerical defaults are benchmark parameters, not universal perceptual
+constants. Repeat-render noise floors are now calibrated for the current
+renderer versions. Promotion thresholds remain policy parameters, and
+cross-version calibration is still required when a renderer changes.
+
+### 4. Pure vector output remains the default contract
+
+SVG and PowerPoint outputs remain native, editable shapes unless the user
+explicitly selects a future hybrid mode. A bitmap must never be embedded
+silently to make a fidelity number look better.
+
+Native residual paths are mixed vector primitives, not hybrid raster
+residuals. They have their own visual-plausibility and target-renderer gates.
+
+### 5. Claims are full-frame and corpus-scoped
+
+A crop, foreground window, or selected image may diagnose a mechanism but may
+not stand in for the complete image or corpus.
+
+Promotion evidence must state:
+
+- source set and whether every full frame was scored;
+- budget, initialized population, peak population, and final population;
+- seed count and optimization schedule;
+- artifact renderer and capture method;
+- whole-frame and fixed-region metrics;
+- artifact bytes, training time, and deployed render time; and
+- failures and reverted candidates, not only winners.
+
+No output mode in the current corpus supports a general 0.99 SSIM claim.
+
+## Current implementation
+
+### Released control-plane pieces
+
+The following are implemented and are part of the accepted architecture:
+
+- a typed `FidelityConfig` and `off`, `balanced`, and `max` modes;
+- a bounded `FidelityStage` with baseline-versus-incumbent acceptance;
+- deterministic fixed-ROI residual analysis;
+- the guarded metric vector;
+- emitted-and-rasterized SVG candidate evaluation;
+- rejection when only an SVG proxy is available;
+- JSON decision traces, baseline/final metrics, and manifest provenance;
+- byte-identical fallback when no candidate is accepted;
+- Canvas stage-checkpoint selection against the deployed runtime model;
+- a Canvas postprocess gate that reverts destructive pruning; and
+- default-off Canvas early stopping after at least two observed checkpoints
+  meet an explicit absolute quality target.
+
+The Canvas gates are separate from the `--fidelity-stage` CLI stage. The
+monotonic checkpoint and postprocess gates are enabled by default; adaptive
+hard-target stopping remains default-off.
+
+### Current CLI contract
+
+`--fidelity-stage` defaults to `off` and currently applies only to SVG:
+
+| Mode | Current behavior | Status |
+|---|---|---|
+| `off` | Skip the ADR-003 post-optimization stage | Released default |
+| `balanced` | Run the evaluator/reporting shell with no proposal operators | Implemented no-op scaffold |
+| `max` | Try bounded single-splat recolor proposals, with zero added splats by default | Implemented opt-in; not a broad optimizer |
+
+For Canvas or PowerPoint, selecting this flag records an unsupported-target
+reason rather than pretending that SVG evaluation applies.
+
+`max` does not currently move, resize, rotate, split, merge, reorder, or add
+splats. It does not search export recipes. Its only proposal operator is
+bounded recoloring of a strong splat in a fixed high-error ROI.
+
+Canvas has a separate `--adaptive-compute` switch. It is off by default,
+Canvas-only, and currently stops only when the best observed deployed-model
+checkpoint reaches `--adaptive-target-ssim-srgb` after at least
+`--adaptive-min-checkpoints` stages. The user target denotes desired Chrome
+artifact quality. The scorer reproduces JavaScript double math, Float32Array
+accumulation, and the final 8-bit sRGB ImageData buffer. It does not stop on
+plateau or regression and does not predict an unseen higher-budget result.
+
+### Implemented experiments, not release paths
+
+The repository also contains working MVP code for:
+
+- normalized Top-K teacher/student training in Torch and MLX;
+- residual native SVG paths and editable DrawingML segments;
+- a combined population, post-fit, recipe, recolor, and residual-path
+  portfolio runner;
+- full-corpus actual-artifact scoring; and
+- real Microsoft PowerPoint slideshow capture.
+
+These tools generate evidence. They are not implicitly part of `splatlify`,
+and their presence does not make their algorithms production defaults.
+
+## Roadmap
+
+The roadmap closes cheap evidence and allocation questions before making the
+search space larger. The hard-target allocation question is now closed as a
+no-go; the next active slice is the broader deterministic operator portfolio.
+
+### A. Calibrate artifact gates
+
+**Status:** Baseline implemented; cross-version calibration remains
+
+1. Measure repeat-render noise floors for Chrome, each supported SVG
+   rasterizer, and Microsoft PowerPoint.
+2. Separate deterministic conversion variance from viewer capture variance.
+3. Calibrate hard regression and meaningful-gain thresholds per target.
+4. Add cross-rasterizer SVG checks where a candidate is sensitive to filter or
+   color semantics.
+
+The first full-corpus run is complete: every Canvas, SVG, and PowerPoint
+artifact was captured five times. Canvas and SVG were pixel-deterministic.
+The largest additional PowerPoint warm-up SSIM span was below `0.000001`, far
+below the current policy gates. The versioned result is
+`data/artifact-gates.json`; methodology and results are documented in
+`docs/artifact-gates-and-adaptive-compute.md`.
+
+Remaining exit gate: repeat the calibration when target renderer versions
+change and add cross-rasterizer SVG checks for sensitive candidates.
+
+### B. Adaptive compute and selective scaling
+
+**Status:** Bounded online slice implemented; hard-target expansion rejected;
+predictive allocation and selective scaling remain proposed
+
+The existing Canvas checkpoint gate can now stop before densification, later
+stages, and residual detail when an absolute observed quality target is met.
+Every decision records its policy, observed checkpoints, selected checkpoint,
+skipped stages and iterations, requested Chrome target, runtime-scorer identity,
+effective in-process threshold, and that no future evidence was used.
+
+The runtime scorer is calibrated against Chrome on 48 compatible historical
+full-frame checkpoints: four stages for each of 12 images. Every framebuffer
+matched byte-for-byte. The previous continuous scorer overstated SSIM by as
+much as `0.001102`; reproducing the deployed 8-bit boundary eliminates that
+gap, so the calibrated default safety margin is zero. The other nine images do
+not have matching historical Chrome captures, but their raw checkpoints do
+exist.
+
+All 84 raw checkpoints across all 21 images were therefore rescored with that
+byte-exact model. Targets `0.98` and `0.979` both stopped only Brick and
+Colorwheel, saved 162.3 of 12,841.7 recorded stage seconds (1.3%), and had zero
+observed SSIM and PSNR opportunity cost on those two curves. This misses the
+predeclared 5% compute gate, so the present hard-target controller remains
+default-off and will not receive fresh multi-seed A/B expansion. The governing
+record is `data/adaptive-exact-replay.json`.
+
+This is not the broader controller that decides from a measured quality
+slope whether to continue, densify, or move to an effective 4k or 8k budget.
+That future decision should also use predicted training time, tile overlap,
+browser time, and artifact bytes. It should be revisited only if a richer safe
+signal clears the retrospective 5% compute gate before expensive variance
+testing.
+
+The controller must distinguish requested splats from initialized, peak, and
+final populations. A nominal 4k cap with a 1,200 initialization ceiling is not
+an effective 4k experiment.
+
+Exit gate: on the full corpus, adaptive allocation matches or beats the fixed
+budget quality envelope while using less aggregate compute, with no protected
+image regression beyond calibrated noise.
+
+### C. Broader operator portfolio
+
+**Status:** Proposed, except bounded recolor
+
+Add one deterministic operator at a time:
+
+1. smaller recolor and alpha adjustment;
+2. bounded center movement;
+3. scale and rotation adjustment;
+4. split and merge;
+5. local draw-order repair;
+6. target-specific recipe or primitive substitution; and
+7. visually constrained residual native paths.
+
+Every operator must have its own budget, invariants, unit tests, artifact
+ablation, and accept-or-revert trace. Operators may not be enabled as a bundle
+until each one has shown an independent corpus benefit.
+
+Exit gate: positive actual-artifact benefit on the complete corpus and selected
+multi-seed reruns, without material per-image, ROI, edge, size, or runtime
+regression.
+
+### D. Full artifact search
+
+**Status:** Proposed; bounded MVP exists
+
+Promote the combined-portfolio idea into a reusable, bounded search over:
+
+- accepted training checkpoints or populations;
+- target-specific post-fit variants;
+- export recipes and safe optimizers;
+- operator sequences;
+- mixed native primitive candidates; and
+- explicit quality, size, shape-count, and time budgets.
+
+The search should retain a small lineage-diverse beam rather than selecting a
+single proxy winner too early. Cheap proxies may prune obvious losers, but the
+final rank must use the deployed artifact.
+
+SVG, Canvas, and PowerPoint require separate winners. A candidate selected by
+SVG may not be translated to DrawingML and called the PowerPoint winner
+without an actual PowerPoint gate.
+
+Exit gate: a deterministic converter integration with bounded cost, atomic
+fallback, complete decision traces, and target-specific corpus wins.
+
+### E. Optional hybrid residual atlas
+
+**Status:** Proposed
+
+Only after the pure-vector rate-distortion curve is measured, test an explicit
+hybrid mode that stores a sparse raster correction for residuals that are
+inefficient to express as native shapes.
+
+Requirements:
+
+- opt-in mode and visible manifest disclosure;
+- bounded residual area, bytes, and opacity;
+- deterministic atlas packing;
+- no bitmap in the pure-vector modes;
+- comparisons against an ordinary PNG or JPEG at matched bytes; and
+- actual SVG and PowerPoint rendering tests.
+
+Exit gate: a material fidelity-per-byte advantage over both pure vector and a
+normal matched-size bitmap for a documented use case.
+
+### F. Learned proposal policy
+
+**Status:** Deferred
+
+Only after the deterministic operators and full artifact search have produced
+enough accepted and rejected traces should the project consider learning which
+operator, region, recipe, or budget to try next. The learned component may
+rank proposals; it may not bypass the artifact gate.
+
+## Promotion and release gates
+
+A proposed fidelity feature may enter the normal converter only when:
+
+1. tests cover determinism, bounds, failure fallback, and output validity;
+2. a no-op or rejected run preserves the baseline output;
+3. every quality claim comes from a labeled deployed artifact or
+   parity-verified deployed model;
+4. the full 21-image frames are evaluated at seed 0;
+5. the best configuration is repeated across at least three seeds where
+   stochasticity matters;
+6. per-image results accompany medians and threshold counts;
+7. protected whole-frame, worst-ROI, edge, perceptual, and color metrics hold;
+8. shape count, bytes, training time, and render time are reported;
+9. target-specific viewer behavior is tested rather than inferred from another
+   format; and
+10. the feature is default-off until its corpus gates pass.
+
+Mixed primitives additionally require inspection at normal scale and enlarged
+scale so disconnected or implausible marks cannot win only through aggregate
+metrics.
 
 ## Consequences
 
 ### Positive
 
-- Optimizes the artifact users see rather than trusting only a proxy.
-- Turns risky fidelity experiments into reversible candidate operations.
-- Makes local defects visible instead of hiding them in global averages.
-- Provides a path beyond the Gaussian-only ceiling without forcing an immediate
-  schema rewrite.
-- Separates maximum fidelity from normal fast conversion.
-- Produces evidence for which operation, recipe, or primitive actually helped.
+- Fidelity work becomes monotonic within stated tolerances.
+- Proxy improvements cannot silently replace a better deployed artifact.
+- Canvas, SVG, and PowerPoint can evolve independently where their compositors
+  require different solutions.
+- Failed experiments remain useful because the decision traces expose which
+  metric, region, size, or target gate rejected them.
+- Future operators can reuse one evaluation and provenance contract.
 
 ### Negative
 
-- Maximum mode can be substantially slower.
-- Actual-artifact evaluation adds dependencies and rasterizer variance.
-- The metric and operator portfolio increases implementation and test surface.
-- Mixed primitives complicate exporter parity and editability.
-- Real PowerPoint remains an offline calibration workflow.
-- A hybrid residual, even when bounded, weakens pure-vector semantics and must
-  remain explicit.
+- Actual-artifact evaluation is slower than proxy-only optimization.
+- PowerPoint verification requires an installed external viewer and cannot yet
+  be a cheap in-process loop.
+- A metric vector and fixed ROIs make tuning more complex than maximizing one
+  score.
+- Keeping the ordinary baseline and candidate artifacts increases temporary
+  disk use.
 
-## Risks and Mitigations
+### Risks and mitigations
 
-| Risk | Mitigation |
-| --- | --- |
-| metric gaming | multi-metric hard gates plus visual review |
-| overfitting the reference corpus | holdout images and content-class reporting |
-| overfitting one SVG engine | cross-rasterizer robustness score |
-| proxy improves, artifact worsens | actual-artifact acceptance for SVG |
-| face/edge regression hidden by average | fixed ROI and worst-region gates |
-| splat explosion | explicit count and file-size budgets |
-| nondeterministic candidate search | stable ordering, fixed seed, recorded versions |
-| converter complexity | dedicated `fidelity/` module family |
-| MLX drifts from Torch | parity fixtures for every differentiable term |
-| hybrid mode becomes silent default | explicit flag, manifest disclosure, structural tests |
+- **Metric gaming:** use hard protected metrics, fixed ROIs, and visual
+  inspection for new primitive families.
+- **Renderer overfitting:** identify the renderer and run cross-renderer checks
+  for sensitive SVG changes.
+- **Search explosion:** bound operators, candidates, passes, beam width, and
+  wall time; implement adaptive allocation before broad search.
+- **Cumulative drift:** keep hard floors anchored to the original baseline,
+  not only the latest incumbent.
+- **Hidden rasterization:** keep hybrid residuals explicit and opt-in.
+- **Misleading aggregate wins:** publish per-image results and reverted cases.
 
-## Alternatives Considered
+## Non-goals
 
-### Only tune existing profile thresholds
+- promising universal or paper-level 0.99 fidelity;
+- treating a selected crop as a whole-image result;
+- forcing one splat population or export recipe to win for every target;
+- replacing real SVGs or native PowerPoint shapes with undisclosed PNGs;
+- enabling every experimental algorithm merely because an MVP exists; or
+- making Microsoft PowerPoint automation a mandatory runtime dependency.
 
-Rejected as the complete answer. Existing profiles already contain extensive
-content-specific thresholds. More tuning can help, but it does not add
-artifact-level monotonic acceptance or new corrective operations.
+## Implementation map
 
-### Replace the pipeline with a neural decoder
+- Fidelity stage: `src/png2svg_gs/fidelity/`
+- Converter integration and Canvas gates: `src/png2svg_gs/converter.py`
+- Top-K student/teacher experiment: `src/png2svg_gs/distillation.py`
+- Mixed native primitives: `src/png2svg_gs/mixed_primitives.py`
+- Corpus and capture tooling: `tools/corpus_benchmark.py`
+- Combined artifact portfolio: `tools/combined_portfolio_mvp.py`
+- Versioned artifact gates: `data/artifact-gates.json`
+- Repeat-render calibration: `src/png2svg_gs/artifact_gates.py` and
+  `tools/calibrate_artifact_noise.py`
+- Online and retrospective adaptive compute:
+  `src/png2svg_gs/adaptive_compute.py`, `src/png2svg_gs/converter.py`, and
+  `tools/simulate_adaptive_canvas.py`
+- Online adaptive MVP evidence: `data/adaptive-online-mvp.json`
+- Exact full-corpus hard-target replay: `data/adaptive-exact-replay.json`
+- Canvas checkpoint parity calibration: `src/png2svg_gs/canvas_parity.py`,
+  `tools/calibrate_canvas_checkpoint_parity.py`, and
+  `data/canvas-checkpoint-parity.json`
+- Fidelity tests: `tests/unit/test_fidelity_stage.py`
+- Canvas gate tests: `tests/unit/test_png2svg_export_pipeline.py`
 
-Rejected for the core product. It can raise raster fidelity but sacrifices the
-editable, inspectable vector representation and complicates deterministic
-export.
+## Current checklist
 
-### Use LPIPS alone
-
-Rejected. LPIPS can overlook edge displacement, color outliers, and a severe
-small-region defect. It remains the primary perceptual metric inside a guarded
-vector.
-
-### Optimize only the internal renderer
-
-Rejected for maximum fidelity. It cannot expose recipe- or application-specific
-rendering differences.
-
-### Always embed a raster residual
-
-Rejected. It would inflate quality numbers while concealing the vector model's
-actual fidelity. Sparse residuals are allowed only in explicit hybrid mode.
-
-### Immediately replace Gaussians with arbitrary paths
-
-Deferred. Typed Gaussian operators, local ordering, and artifact-level fitting
-should be exhausted first. Mixed primitives enter through a compiler and must
-earn their complexity under matched budgets.
-
-## Non-Goals
-
-- Guaranteeing identical output in every browser and PowerPoint version.
-- Making maximum mode fast enough for interactive conversion.
-- Hiding raster content inside a nominally pure-vector result.
-- Treating a lower proxy loss as proof of deployed quality.
-- Replacing the existing staged optimizer, region guidance, or residual-detail
-  pass in one rewrite.
-
-## Follow-up Actions
-
-- [ ] Complete Phase 0 and record metric noise floors.
-- [ ] Implement the no-op fidelity-stage shell and decision trace.
-- [ ] Add fixed-ROI and local structural metrics.
-- [ ] Add actual SVG artifact evaluation to candidate acceptance.
-- [ ] Implement multi-scale Torch loss and matching MLX loss.
-- [ ] Add residual topology fixtures.
-- [ ] Implement operators one at a time with ablation results.
-- [ ] Add bounded recipe search.
-- [ ] Decide on mixed primitives only after Gaussian operator results.
-- [ ] Decide on hybrid residuals only after pure-vector rate-distortion results.
+- [x] Establish a full-frame, deployed-artifact corpus baseline.
+- [x] Implement the bounded accept-or-revert stage contract.
+- [x] Implement actual emitted-SVG evaluation with honest proxy fallback.
+- [x] Freeze residual ROIs and use a guarded metric vector.
+- [x] Record candidate decisions and manifest provenance.
+- [x] Add default-on monotonic Canvas checkpoint and postprocess gates.
+- [x] Test Top-K distillation on full frames and keep the losing configuration
+      out of the default converter.
+- [x] Test mixed native paths against SVG and real PowerPoint and keep the
+      target-inconsistent result experimental.
+- [x] Calibrate current Chrome, `rsvg-convert`, and PowerPoint repeat-render
+      noise floors over the full corpus.
+- [x] Implement default-off Canvas hard-target stopping before densification
+      and residual detail.
+- [x] Calibrate the Canvas checkpoint scorer against 48 unchanged full-frame
+      Chrome captures and reproduce every deployed framebuffer byte-for-byte.
+- [x] Replay the exact hard-target policy over all 84 raw checkpoints and stop
+      expansion after its 1.3% saving missed the 5% compute gate.
+- [ ] Validate predictive adaptive compute and selective 8k allocation over the
+      full corpus and multiple seeds, only after a richer policy clears the
+      retrospective compute gate.
+- [ ] Expand the operator portfolio beyond bounded recolor.
+- [ ] Integrate deterministic, bounded full artifact search.
+- [ ] Decide on an explicit hybrid residual mode from matched-byte evidence.
+- [ ] Add an in-converter PowerPoint artifact gate if a robust automation
+      boundary becomes practical.
+- [ ] Consider learned proposal ranking only after enough traces exist.
 
 ## References
 
-- `docs/adr-002-png2splat-python-pipeline.md`
-- `docs/PROVENANCE_AND_BENCHMARKS.md` (layer-model semantics and the MLX/torch
-  benchmarks previously in LAYERED_SALIENCY_PASSES_SPEC.md and
-  MLX_RENDERER_OPTIMIZER_SPEC.md, both retired)
-- `docs/SVG_PPTX_GAUSSIAN_TRICKS.md`
-- `src/png2svg_gs/converter.py`
-- `src/png2svg_gs/renderer.py`
-- `src/png2svg_gs/mlx_losses.py`
-- `src/png2svg_gs/io.py`
+- [ADR-002: PNG to Gaussian Splat Pipeline in Python](adr-002-png2splat-python-pipeline.md)
+- [Canvas Scaling MVP](canvas-scaling-mvp.md)
+- [Top-K Teacher to Native Vector Student MVP](topk-distillation-mvp.md)
+- [Mixed-Primitives Fidelity MVP](mixed-primitives-mvp.md)
+- [Combined Artifact-Portfolio MVP](combined-portfolio-mvp.md)
+- [Artifact Gates and Adaptive Compute](artifact-gates-and-adaptive-compute.md)
+- [SVG and PowerPoint Gaussian Tricks](SVG_PPTX_GAUSSIAN_TRICKS.md)
+- [Provenance and Benchmarks](PROVENANCE_AND_BENCHMARKS.md)
