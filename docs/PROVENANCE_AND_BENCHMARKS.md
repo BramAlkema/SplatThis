@@ -160,7 +160,8 @@ Ordering is ascending (L0 back, L3 front) and is folded into the compositing key
 as `layer + local_importance`. The live budget split comes from
 `base_layer_fraction` in `budgets.py` (per time budget), **not** from the fixed
 table the retired spec proposed. The layers additionally collapse into three
-parallax planes in `generate_parallax_canvas_html` — a use the spec never had.
+parallax planes in `generate_native_canvas_html` and the historical
+`generate_parallax_pixel_runtime_html` — a use the spec never had.
 
 ---
 

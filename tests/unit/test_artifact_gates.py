@@ -24,29 +24,29 @@ def _observation(target, artifact, repeat, **metrics):
 def test_calibration_measures_spread_within_unchanged_artifacts():
     observations = [
         _observation(
-            "canvas",
-            "canvas:a",
+            "pixel-runtime",
+            "pixel-runtime:a",
             0,
             ssim_srgb=0.900,
             lpips=0.200,
         ),
         _observation(
-            "canvas",
-            "canvas:a",
+            "pixel-runtime",
+            "pixel-runtime:a",
             1,
             ssim_srgb=0.902,
             lpips=0.199,
         ),
         _observation(
-            "canvas",
-            "canvas:b",
+            "pixel-runtime",
+            "pixel-runtime:b",
             0,
             ssim_srgb=0.700,
             lpips=0.400,
         ),
         _observation(
-            "canvas",
-            "canvas:b",
+            "pixel-runtime",
+            "pixel-runtime:b",
             1,
             ssim_srgb=0.704,
             lpips=0.397,
@@ -56,13 +56,13 @@ def test_calibration_measures_spread_within_unchanged_artifacts():
         observations,
         required_repeats=2,
         noise_multiplier=2.0,
-        expected_targets=("canvas",),
+        expected_targets=("pixel-runtime",),
     )
-    canvas = calibration.targets["canvas"]
-    ssim = canvas.metrics["ssim_srgb"]
+    pixel_runtime = calibration.targets["pixel-runtime"]
+    ssim = pixel_runtime.metrics["ssim_srgb"]
 
-    assert canvas.complete
-    assert canvas.artifact_count == 2
+    assert pixel_runtime.complete
+    assert pixel_runtime.artifact_count == 2
     assert ssim.median_span == pytest.approx(0.003)
     assert ssim.p95_span == pytest.approx(0.0039)
     assert ssim.max_span == pytest.approx(0.004)
@@ -148,7 +148,7 @@ def test_gate_uses_stricter_of_policy_and_renderer_noise():
         policy_delta=0.001,
     )
     assert not calibration.meaningful_gain(
-        target="canvas",
+        target="pixel-runtime",
         metric="ssim_srgb",
         incumbent=0.80,
         candidate=0.80,
@@ -185,6 +185,7 @@ def test_versioned_release_calibration_is_loadable_and_complete():
     data = json.loads((root / "data" / "artifact-gates.json").read_text())
     calibration = ArtifactGateCalibration.from_dict(data)
 
-    assert set(calibration.targets) == {"canvas", "svg", "pptx"}
+    assert set(calibration.targets) == {"pixel-runtime", "svg", "pptx"}
     assert all(target.complete for target in calibration.targets.values())
     assert calibration.targets["pptx"].artifact_count == 21
+    assert data["provenance"]["svg_renderer"].startswith("Playwright Chromium ")

@@ -19,6 +19,7 @@ def test_capture_extra_owns_the_playwright_dependency() -> None:
         dependency.startswith("playwright>=")
         for dependency in metadata["project"]["optional-dependencies"]["capture"]
     )
+    assert "rasterize" not in metadata["project"]["optional-dependencies"]
 
 
 def test_release_documents_exist() -> None:

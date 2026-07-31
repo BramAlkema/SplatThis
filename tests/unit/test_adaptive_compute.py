@@ -1,4 +1,4 @@
-"""Retrospective adaptive Canvas checkpoint and scaling policies."""
+"""Retrospective adaptive pixel-runtime checkpoint and scaling policies."""
 
 import json
 from pathlib import Path

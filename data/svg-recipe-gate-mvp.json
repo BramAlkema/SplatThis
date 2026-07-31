@@ -1,0 +1,168 @@
+{
+  "schema": "splatthis.svg-recipe-gate-evidence/2",
+  "generated_at": "2026-07-31T17:44:17.704997+00:00",
+  "method": {
+    "population": "existing seed-0 requested-2k SVG final.raw.json per corpus image",
+    "baseline_recipe": "standard",
+    "candidate_recipes": [
+      "palette-quantized",
+      "blur"
+    ],
+    "renderer": "Chromium 140.0.7339.81",
+    "browser_executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "capture_method": "Playwright Chromium viewport-clipped PNG screenshot",
+    "device_scale_factor": 1,
+    "warmup_captures_per_artifact": 1,
+    "measured_repeats": 3,
+    "pixel_repeat_stability_required": true,
+    "full_frames": true,
+    "fixed_rois": "selected once from each standard baseline and reused",
+    "training_performed": false
+  },
+  "policy": {
+    "max_size_growth_fraction": 0.1,
+    "max_render_time_growth_fraction": 0.5,
+    "max_ssim_regression": 0.002,
+    "max_ms_ssim_regression": 0.003,
+    "max_lpips_regression": 0.005,
+    "max_delta_e_p95_regression": 0.005,
+    "max_edge_chamfer_regression": 0.5,
+    "max_edge_gradient_regression": 0.01,
+    "max_worst_roi_regression_fraction": 0.03,
+    "min_ssim_gain": 0.002,
+    "min_ms_ssim_gain": 0.002,
+    "min_lpips_gain": 0.005,
+    "min_delta_e_p95_gain": 0.005,
+    "min_edge_gradient_gain": 0.005,
+    "minimum_accepted_images": 5,
+    "maximum_median_size_growth_fraction": 0.1,
+    "maximum_median_render_time_growth_fraction": 0.2
+  },
+  "coverage": {
+    "expected_images": 21,
+    "completed_images": 21,
+    "failed_images": 0,
+    "artifacts_rasterized": 63,
+    "measured_captures": 189,
+    "pixel_stable_artifacts": 63
+  },
+  "outcome": {
+    "accepted_images": 7,
+    "accepted_fraction": 0.3333333333333333,
+    "candidate_acceptance": {
+      "palette-quantized": 7,
+      "blur": 0
+    },
+    "selected_recipe_counts": {
+      "standard": 14,
+      "palette-quantized": 7
+    },
+    "median_accepted_lpips_gain": 0.010138273239135742,
+    "median_accepted_delta_e_p95_gain": 0.011009275913238525,
+    "median_selected_size_growth_fraction": 0.0,
+    "median_selected_render_time_growth_fraction": 0.0,
+    "criteria": {
+      "complete_full_frame_corpus": true,
+      "minimum_accepted_images": true,
+      "accepted_median_perceptual_gain": true,
+      "median_size_growth_within_limit": true,
+      "median_render_time_growth_within_limit": true
+    },
+    "go_no_go": "integrate-recipe-selector"
+  },
+  "accepted": [
+    {
+      "image": "brick",
+      "recipe": "palette-quantized",
+      "ssim_gain": 0.013010578310904353,
+      "lpips_gain": 0.01795297861099243,
+      "delta_e_ok_p95_gain": 0.00256463885307312,
+      "size_growth_fraction": -0.6910466613829997,
+      "capture_time_growth_fraction": -0.1990185106036504
+    },
+    {
+      "image": "cell",
+      "recipe": "palette-quantized",
+      "ssim_gain": 0.020244707984951038,
+      "lpips_gain": 0.04032370448112488,
+      "delta_e_ok_p95_gain": 0.011009275913238525,
+      "size_growth_fraction": -0.6613872506935974,
+      "capture_time_growth_fraction": -0.19258597856745982
+    },
+    {
+      "image": "chameleon",
+      "recipe": "palette-quantized",
+      "ssim_gain": 0.01981071907429366,
+      "lpips_gain": 0.005144000053405762,
+      "delta_e_ok_p95_gain": 0.012220576405525208,
+      "size_growth_fraction": -0.7007498882616829,
+      "capture_time_growth_fraction": -0.1689593908842898
+    },
+    {
+      "image": "hubble_deep_field",
+      "recipe": "palette-quantized",
+      "ssim_gain": 0.00496597576352098,
+      "lpips_gain": 0.01526951789855957,
+      "delta_e_ok_p95_gain": 0.008000701665878296,
+      "size_growth_fraction": -0.6572523933503968,
+      "capture_time_growth_fraction": -0.11593522479327267
+    },
+    {
+      "image": "immunohistochemistry",
+      "recipe": "palette-quantized",
+      "ssim_gain": 0.003928620926127779,
+      "lpips_gain": 0.0029006004333496094,
+      "delta_e_ok_p95_gain": 0.029336556792259216,
+      "size_growth_fraction": -0.7087361328565878,
+      "capture_time_growth_fraction": -0.10195739573489937
+    },
+    {
+      "image": "retina",
+      "recipe": "palette-quantized",
+      "ssim_gain": 0.015110342936482168,
+      "lpips_gain": 0.010138273239135742,
+      "delta_e_ok_p95_gain": 0.0161188542842865,
+      "size_growth_fraction": -0.7016992318257425,
+      "capture_time_growth_fraction": -0.0344039526857276
+    },
+    {
+      "image": "rocket",
+      "recipe": "palette-quantized",
+      "ssim_gain": 0.006290619770343953,
+      "lpips_gain": 0.004578262567520142,
+      "delta_e_ok_p95_gain": 0.007315769791603088,
+      "size_growth_fraction": -0.6699209394010046,
+      "capture_time_growth_fraction": -0.07632783738399863
+    }
+  ],
+  "reverted_to_standard": [
+    "astronaut",
+    "camera",
+    "checkerboard",
+    "chelsea",
+    "coffee",
+    "coins",
+    "colorwheel",
+    "grass",
+    "gravel",
+    "logo",
+    "moon",
+    "page",
+    "stereo_motorcycle",
+    "text"
+  ],
+  "decision": {
+    "automatic_recipe_selector": "eligible-for-default-off-integration",
+    "reason": "Seven safe Chrome wins clear the predeclared minimum of five corpus images.",
+    "runtime_status": "not yet wired into splatlify",
+    "manual_recipe_availability": "palette-quantized remains an explicit target-specific option",
+    "next_operator": "default-off-browser-recipe-selection"
+  },
+  "limitations": [
+    "This replay uses one existing seed-0 splat population per image and does not measure optimizer variance.",
+    "Capture time is the median of three local Chromium screenshots after one warm-up and is not cross-machine calibration.",
+    "The result applies to Chromium 140.0.7339.81 and must not be transferred to librsvg or PowerPoint without their own target capture.",
+    "The earlier librsvg run accepted four images; it is historical cross-renderer evidence, not the governing browser result.",
+    "The full unabridged per-image and per-candidate trace remains in ./tmp/svg-recipe-gate-chromium/summary.json."
+  ]
+}

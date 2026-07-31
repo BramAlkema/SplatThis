@@ -64,7 +64,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 2. Install development dependencies:
 
 ```bash
-pip install -e ".[dev,rasterize,capture]"
+pip install -e ".[dev,capture]"
 ```
 
 3. Verify installation:

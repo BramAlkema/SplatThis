@@ -16,9 +16,9 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_canvas_demo_render_matches_recorded_html_and_source() -> None:
+def test_pixel_runtime_demo_render_matches_recorded_html_and_source() -> None:
     provenance = json.loads((DEMO / "canvas_render.json").read_text())
-    assert provenance["render_kind"] == "canvas-pixel-buffer"
+    assert provenance["render_kind"] == "pixel-runtime-buffer"
     assert provenance["is_deployed_artifact"] is True
     assert _sha256(DEMO / "canvas.html") == provenance["canvas_html_sha256"]
     assert _sha256(DEMO / "source.png") == provenance["source_png_sha256"]

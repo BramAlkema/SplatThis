@@ -138,7 +138,7 @@ def render_importance_for_raw(raw: RawSplat) -> float:
 
 
 def render_order_key(splat: "GaussianSplat") -> float:
-    """Back-to-front ordering key used by renderers and vector exporters."""
+    """Front-to-back alpha-over key used by renderers and export preparation."""
     return render_importance_for_raw(splat.to_raw_splat())
 
 

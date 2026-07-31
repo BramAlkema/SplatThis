@@ -1,5 +1,11 @@
 # Deployed-artifact fidelity by export format
 
+> **Historical snapshot.** The 2026-07-31 governing-browser pass supersedes
+> this document's earlier claim that librsvg is a safe stand-in for Chrome.
+> On the later Chameleon portfolio winner, librsvg reported 0.7618 SSIM while
+> Chrome reported 0.7193. Browser-delivered SVG must therefore be captured in
+> Playwright Chromium; the measurements below remain historical evidence only.
+
 Measured 2026-07-29 · chameleon (`docs/demo/source.png`, 476×502) · seed 42 ·
 default `max-fidelity` profile · MLX backend.
 
@@ -24,11 +30,10 @@ what the eye sees. The likely cause is format-aware training: `--format pptx`
 fits PowerPoint's compositor during optimization rather than converting to it
 afterwards. It costs ~2.3× the wall clock (192 s vs 82 s).
 
-**2. The SVG measurement is renderer-independent.** Chrome and rsvg-convert
-agree to four decimal places on LPIPS. So the SVG figure is the format's
-ceiling rather than a rasterizer artifact, and `rsvg-convert` is a legitimate
-stand-in for browser rendering when scoring SVG output — no browser needed in
-the measurement loop.
+**2. This particular SVG happened to agree across two renderers.** Chrome and
+rsvg-convert agreed to four decimal places on LPIPS for this artifact. Later
+artifacts did not preserve that agreement, so this observation cannot justify
+using `rsvg-convert` as a browser-rendering stand-in.
 
 ## Post-processing with svgo
 

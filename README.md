@@ -1,198 +1,368 @@
 # SplatThis
 
-Image to SVG, native PowerPoint, or self-contained HTML Canvas via 2D Gaussian
-splatting.
+Convert a bitmap into Gaussian splats and deploy them as browser-rendered SVG,
+scriptless CSS, browser-native Canvas primitives, an accelerated pixel runtime
+with exact CPU fallbacks, or native editable PowerPoint shapes.
 
-SplatThis fits anisotropic 2D Gaussians to a bitmap and deploys the result in
-three different compositors:
+SplatThis is target-aware. It does not pretend that native Canvas, CSS, SVG,
+PowerPoint, and a generated pixel framebuffer render the same primitives: each
+output is named and evaluated for what it actually does.
 
-- **Canvas HTML** reproduces the trained alpha-over model most closely and can
-  add layered mouse parallax.
-- **SVG** emits real vector gradients or blur primitives that remain editable.
-- **PPTX** emits native DrawingML shapes, not a PNG disguised as a slide.
+| Output | What you get | Governing evaluation | Best fit |
+|---|---|---|---|
+| Pixel runtime HTML | WebGL2 evaluates the splat formula; exact Worker/main-thread CPU fallbacks | Selected Chrome canvas pixel buffer | Highest fidelity; accelerated procedural bitmap output |
+| Canvas HTML | One Canvas 2D radial-gradient primitive per splat | Native-size Playwright Chromium capture | Fast browser-native splats and optional parallax |
+| CSS HTML | Scriptless DOM ellipses with CSS radial gradients | Native-size Playwright Chromium capture | No-script embedding and CSS-only hover parallax |
+| SVG | Real gradients, blur primitives, or compact scripted splats | Native-size Playwright Chromium capture | Browser delivery and vector editability |
+| PowerPoint | Native DrawingML shapes; no embedded preview PNG | Microsoft PowerPoint slideshow capture | Editable slides |
 
-These formats are not interchangeable. SVG and PowerPoint composite shapes
-differently from the linear-light Canvas runtime, so training and evaluation
-are target-aware.
+Chromium is the governing pixel-runtime, native Canvas, SVG, and CSS target. CairoSVG,
+librsvg, and the
+internal NumPy renderer cannot approve a browser-native candidate or support a
+deployed-fidelity claim.
 
-## Gallery
+## See it
 
-| Source | Canvas capture | SVG rasterization |
+| Source | Pixel runtime in Chrome | Live SVG |
 |---|---|---|
-| ![source](docs/demo/source.png) | ![canvas](docs/demo/canvas_render.png) | ![svg](docs/demo/svg_render.png) |
+| ![source image](docs/demo/source.png) | ![Canvas render](docs/demo/canvas_render.png) | ![Browser-rendered SVG](docs/demo/chameleon.svg) |
 
-Example artifacts:
-[chameleon.svg](docs/demo/chameleon.svg) and
-[canvas.html](docs/demo/canvas.html).
-The development history is recorded in [docs/journey](docs/journey/).
+Open the example [SVG](docs/demo/chameleon.svg) or the historical self-contained
+[pixel-runtime HTML](docs/demo/canvas.html). A larger corpus overview is available in
+[docs/index.html](docs/index.html).
 
 ## Install
 
-Python 3.13 or newer is required.
+SplatThis requires Python 3.13 or newer and an installed Google Chrome for
+governing pixel-runtime/Canvas/CSS/SVG capture.
 
 ```bash
 git clone https://github.com/BramAlkema/SplatThis.git
 cd SplatThis
 python3.13 -m venv venv
 source venv/bin/activate
-pip install -e ".[dev,rasterize,capture]"
+python -m pip install --upgrade pip
+pip install -e ".[capture]"
 ```
 
-The `capture` extra supplies Playwright for exact Canvas screenshots using an
-installed Google Chrome; it does not require the sibling `svg2pptx` project.
+The `capture` extra installs the Playwright client and uses the installed
+Chrome. It does not depend on the sibling `svg2pptx` repository.
 
-On Apple Silicon, install the optional MLX backend:
+On Apple Silicon, add MLX:
 
 ```bash
-pip install -e ".[mlx]"
+pip install -e ".[capture,mlx]"
 ```
 
-If MLX is absent, or the process has no Metal device, `splatlify` falls back to
-Torch before training starts. Use `--optimizer-backend torch` explicitly for
-CPU or CUDA runs.
+On CPU or CUDA machines, select Torch explicitly:
+
+```bash
+splatlify input.png --optimizer-backend torch
+```
+
+If Chrome is unavailable, pixel-runtime, native Canvas, SVG, and CSS exports
+can still be written, but their acceptance fails closed. Any internal proxy
+metrics are marked as diagnostics rather than deployed-artifact evidence.
 
 ## Quick start
 
+Create each supported output from the same image:
+
 ```bash
-# Highest-fidelity deploy target; self-contained HTML.
-splatlify input.png -o output.html --format canvas \
-  --splats 4000 --initial-splat-cap 4000
+# Highest-fidelity runtime; accelerated splat equations with exact CPU fallbacks.
+splatlify input.png --format pixel-runtime -o output-pixels.html
 
-# Optional: stop later Canvas stages once this run reaches the desired Chrome target.
-splatlify input.png -o output.html --format canvas \
-  --splats 4000 --initial-splat-cap 4000 \
-  --adaptive-compute --adaptive-target-ssim-srgb 0.98
+# Browser-native Canvas 2D gradient splats.
+splatlify input.png --format canvas -o output-canvas.html
 
-# Static editable SVG, trained for the SVG compositor.
-splatlify input.png -o output.svg --format svg --splats 2000
+# Scriptless DOM/CSS splats; no canvas, SVG, JavaScript, or embedded bitmap.
+splatlify input.png --format css -o output-css.html
 
-# Native editable PowerPoint shapes. Gradient is the conservative default.
-splatlify input.png -o output.pptx --format pptx \
-  --pptx-splat-style gradient --splats 2000
+# Static, editable SVG evaluated in Chromium.
+splatlify input.png --format svg -o output.svg
+
+# Native DrawingML splats; gradient is the conservative default.
+splatlify input.png --format pptx -o output.pptx
 ```
 
-`--training-export-target auto` is the default. It resolves to `svg` for SVG
-and to `canvas` for Canvas and PPTX. Use `pptx-softedge` only when deliberately
-training for the real-PowerPoint soft-edge primitive; it may look washed out in
-other viewers.
-
-## Full-corpus results
-
-The table below uses all 21 stored corpus images at a maximum edge of roughly
-384 px, seed 0. Canvas is scored from the exact Chrome canvas pixel buffer,
-SVG from the emitted and rasterized SVG, and PPTX from Microsoft PowerPoint
-slideshow captures. Values are medians, not a claim about every picture.
-
-| Deployed artifact | Budget | Final splats | SSIM ↑ | LPIPS ↓ | Size | Training |
-|---|---:|---:|---:|---:|---:|---:|
-| Canvas HTML | requested 2k | 1,395 | 0.7751 | 0.2443 | 226 KB | 3.6 min |
-| Canvas HTML | effective 4k | 2,382 | 0.8406 | 0.1612 | 391 KB | 9.9 min |
-| SVG | requested 2k | 1,389 | 0.6022 | 0.4002 | 765 KB | 4.2 min |
-| PowerPoint | requested 2k | 1,374 | 0.6091 | 0.3843 | 127 KB | 6.6 min |
-
-Effective-4k Canvas rendered in a median 105 ms in the capture browser. All 21
-images improved in both SSIM and LPIPS over requested-2k, but none reached
-0.99 SSIM. Chameleon improves from 0.9140 at 2k to 0.9438 at effective 4k and
-0.9631 at effective 8k. The project therefore does not promise near-0.99
-fidelity at small budgets.
-
-See [the Canvas scaling MVP](docs/canvas-scaling-mvp.md) for paired per-image
-statistics and [the format findings](docs/SVG_PPTX_GAUSSIAN_TRICKS.md) for the
-SVG and PowerPoint compositor analysis.
-
-If editability, target-specific animation, or the splat representation is not
-needed, a normal PNG/JPEG is usually smaller and more faithful. SplatThis is
-useful when those document-native properties matter.
-
-## Recommended use
-
-| Target | Practical starting point | Main trade-off |
-|---|---|---|
-| Canvas | 2k for speed, effective 4k for quality | Best fidelity; JS runtime and browser work |
-| SVG | 1k-2k, `standard` recipe | Fully editable; compositor imposes a visible ceiling |
-| PPTX | 1k-2k, `gradient` style | Native shapes; viewer-specific rendering |
-
-More splats help Canvas when the initialization population is also allowed to
-grow. A nominal `--splats 4000` with a low initial cap is not an effective 4k
-experiment.
-
-Layered Canvas parallax is available with:
+Keep a complete audit trail with `--artifacts-dir`:
 
 ```bash
-splatlify input.png -o parallax.html --format canvas \
+splatlify input.png --format svg -o output.svg \
+  --artifacts-dir ./tmp/input-svg-run
+```
+
+The directory contains the run manifest, stage checkpoints, metrics, renderer
+identity, and acceptance decision.
+
+## Choose a quality budget
+
+The default budget is 2,000 splats. More splats only help when initialization
+and training are allowed to use them.
+
+```bash
+# Practical larger pixel-runtime run.
+splatlify input.png --format pixel-runtime -o output-4k.html \
+  --splats 4000 --initial-splat-cap 4000
+
+# Bound resolution and let a preset choose the schedule and detail budget.
+splatlify input.png --format pixel-runtime -o output.html \
+  --max-edge 384 --time-budget 10m
+```
+
+For an explicit quality target, the default-off pixel-runtime controller can
+stop before later stages once an observed checkpoint reaches the desired exact
+CPU-boundary score; the selected final browser backend is graded separately:
+
+```bash
+splatlify input.png --format pixel-runtime -o output.html \
+  --splats 4000 --initial-splat-cap 4000 \
+  --adaptive-compute --adaptive-target-ssim-srgb 0.98
+```
+
+This controller does not predict future quality or stop on a plateau. It only
+acts on already-rendered checkpoints.
+
+Static pixel-runtime HTML selects one runtime in this order: RGBA32F WebGL2,
+RGBA16F WebGL2, exact Worker/OffscreenCanvas CPU, then exact main-thread CPU.
+The 16F path must also pass a cheap deterministic sample against the exact
+formula. The selected path and its compute/end-to-end timings are exposed in
+the document metadata, and governing Chromium capture grades that actual
+canvas buffer. `?splatthisPixelBackend=rgba32f|rgba16f|worker|main` is available
+for diagnostics. The current 21-image Chrome gate selected 32F everywhere,
+kept its worst source SSIM_sRGB change to -0.0000014, and found exact
+Worker/main parity. Cross-browser GPU qualification remains open; unsupported
+or rejected GPU paths fall back rather than preventing rendering.
+
+## SVG workflows
+
+The standard recipe is the safe static default. Other recipes are explicit:
+
+| Recipe | Characteristics |
+|---|---|
+| `standard` | One standards-based radial gradient per splat; static and editable |
+| `palette-quantized` | Shared color gradients; often much smaller, with possible color quantization |
+| `blur` | Native SVG blur primitives; compositor-sensitive |
+| `scripted-matrix` | Compact data expanded by JavaScript at load time; browser use only |
+| `browser-compatible` | Conservative browser-gradient encoding |
+
+```bash
+splatlify input.png --format svg -o compact.svg \
+  --svg-recipe palette-quantized
+
+splatlify input.png --format svg -o polished.svg \
+  --fidelity-stage max --artifacts-dir ./tmp/polished-svg-run
+
+# Force the stricter adaptive stop policy without artifact search.
+splatlify input.png --format svg -o high.svg \
+  --svg-gradient-quality high --no-svg-compositor-gate
+```
+
+SVG elements are emitted back-to-front so their painter's order matches the
+front-to-back transmittance renderer. The max-fidelity profile additionally
+browser-grades legacy order, corrected standard gradients, and corrected high
+gradients, then accepts or reverts the complete artifact. Its decision and
+fixed ROIs are stored under `svg_compositor_gate` in the manifest. See the
+[SVG compositor gate](docs/svg-compositor-gate.md).
+
+The separate fidelity stage emits every splat-parameter candidate and captures it in Chromium. A proxy
+may reject a cheap loser early, but only the browser artifact can promote a
+candidate. `--svg-optimize` can additionally run `svgo` when it is available on
+`PATH`.
+
+The bounded browser recipe study accepted palette quantization on 7 of 21
+corpus images, with 66–71% smaller accepted files and a median accepted LPIPS
+gain of 0.01014. This does not make it a universal default; see the
+[browser SVG recipe gate](docs/svg-recipe-gate-mvp.md).
+
+## Scriptless CSS compositor
+
+The CSS target represents every Gaussian as one absolutely positioned ellipse.
+Its background is a CSS `radial-gradient` with adaptive alpha stops matching
+the standard SVG Gaussian curve. The browser performs the final alpha-over
+composition; SplatThis does not pre-render a pixel buffer.
+
+```bash
+# Static CSS splats.
+splatlify input.png --format css -o splats.html
+
+# Scriptless 10x10 hover-grid parallax from saliency depth layers.
+splatlify input.png --format css -o parallax-css.html \
+  --layered-saliency --css-parallax-strength 28
+```
+
+The parallax output uses transparent hover cells and CSS sibling selectors to
+move the midground and foreground planes. It remains interactive with a strict
+no-script policy. The governing quality capture measures the neutral,
+non-hovered frame. This target trades runtime code for DOM size: one element
+per splat is convenient and inspectable, but thousands of DOM nodes can cost
+more layout and paint work than the single Canvas element.
+
+## PowerPoint workflows
+
+PowerPoint output contains native shapes rather than a bitmap masquerading as
+a slide:
+
+```bash
+# Recommended general-purpose PowerPoint output.
+splatlify input.png --format pptx -o output.pptx \
+  --pptx-splat-style gradient
+
+# Explicit corrected painter-order candidate; legacy remains the default.
+splatlify input.png --format pptx -o output-corrected.pptx \
+  --pptx-painter-order back-to-front
+
+# Deliberately target real PowerPoint's soft-edge compositor.
+splatlify input.png --format pptx -o output-softedge.pptx \
+  --pptx-splat-style soft-edge \
+  --training-export-target pptx-softedge
+```
+
+PowerPoint and LibreOffice do not render every DrawingML effect identically.
+The `pptx-softedge` target is calibrated for Microsoft PowerPoint and may look
+washed out elsewhere. In-converter PPTX previews remain proxies; benchmark
+claims use real PowerPoint slideshow captures.
+
+A same-population, 21-image PowerPoint corpus test found that corrected
+back-to-front shape order improved median SSIM by 0.02662 and median LPIPS by
+0.03346, but Hubble regressed. The strict artifact policy selected corrected
+order for 14 images and retained legacy for seven. The CLI therefore exposes
+both orders while retaining legacy as the default. The resumable external
+PowerPoint runner writes the accepted candidate atomically as `selected.pptx`;
+ordinary headless conversion never launches PowerPoint. See the
+[PowerPoint painter-order MVP](docs/pptx-order-compositor-mvp.md).
+
+## Layered Canvas parallax
+
+Splat layers can be displaced by mouse position to suggest depth:
+
+```bash
+splatlify input.png --format canvas -o parallax.html \
   --layered-saliency --canvas-parallax-strength 28
 ```
 
-Mouse-over or grid-triggered PowerPoint parallax is documented as an MVP idea;
-it is not part of the released PPTX exporter.
+This version draws every Gaussian through the Canvas 2D API before moving the
+three resulting Canvas planes. The software-rasterized equivalent is available
+explicitly with `--format pixel-runtime` and
+`--pixel-runtime-parallax-strength`.
+
+This changes presentation, not the underlying 2D reconstruction. PowerPoint
+hover/grid parallax remains an MVP design rather than a released exporter
+feature.
+
+## What quality to expect
+
+These are seed-0 medians over all 21 stored corpus images at a maximum edge of
+roughly 384 px. Each score comes from the deployed artifact: the historical
+Chrome ImageData pixel buffer, Chromium SVG, or Microsoft PowerPoint.
+
+| Artifact | Requested budget | Median final splats | SSIM ↑ | LPIPS ↓ | Median size | Median training |
+|---|---:|---:|---:|---:|---:|---:|
+| Pixel runtime HTML | 2k | 1,395 | 0.7751 | 0.2443 | 226 KB | 3.6 min |
+| Pixel runtime HTML | effective 4k | 2,382 | 0.8406 | 0.1612 | 391 KB | 9.9 min |
+| SVG, historical legacy order | 2k | 1,389 | 0.5973 | 0.4023 | 765 KB raw | 4.2 min |
+| SVG, compositor-gated | 2k | 1,389 | 0.7111 | 0.2439 | 1.23 MB raw / 93 KB gzip | 4.2 min + gate |
+| PowerPoint | 2k | 1,374 | 0.6091 | 0.3843 | 127 KB | 6.6 min |
+
+These historical Canvas-labelled results belong to the ImageData software
+renderer now named `pixel-runtime`. All 21 images improved from 2k to effective
+4k in both SSIM and LPIPS. The effective-4k runtime rendered in a median 105 ms
+in Chrome. None reached 0.99 SSIM.
+
+An initial same-population Chameleon check makes the distinction concrete. The
+population contains 1,615 SVG-trained splats. Historical forward DOM order
+scored 0.7076 SSIM, corrected standard order scored 0.8494, and corrected
+adaptive high gradients scored 0.8665. Native Canvas scored 0.7072 under its
+historical order. Replaying the same parameters through the mathematical pixel
+runtime scored 0.9045, demonstrating the remaining vector-to-pixel-runtime
+gap. The older internal preview
+scored 0.8803 but was not an SVG render and must not be compared as one. Native
+Canvas rendered the gradients in about 11 ms and produced 156 KB of HTML; the
+CPU pixel runtime took roughly 80-102 ms and produced about 290 KB. These are
+one-image MVP measurements, not corpus guarantees.
+
+On a separate 1,788-splat, 476 x 502 Chameleon checkpoint, the selected 32F
+runtime completed in roughly 16-19 ms after warm-up versus roughly 127-140 ms
+for exact main-thread CPU. It differed on six pixels by one byte and preserved
+source SSIM_sRGB at 0.90494. The quality-gated 16F path completed in about
+20 ms; its source SSIM_sRGB was 0.90486. These remain local Chrome measurements,
+not a cross-browser guarantee.
+
+SplatThis is also not a replacement for PNG, JPEG, WebP, or AVIF compression.
+If editability, animation, or the splat representation is unnecessary, a
+normal bitmap will usually be smaller and more faithful.
+
+See [historical pixel-runtime scaling](docs/canvas-scaling-mvp.md) for paired
+per-image results and
+[SVG/PPTX compositor findings](docs/SVG_PPTX_GAUSSIAN_TRICKS.md) for the
+format-specific analysis.
 
 ## How it works
 
-1. Content-adaptive initialization places splats where the image needs them.
+1. Content-adaptive initialization places anisotropic splats.
 2. Torch or MLX optimizes position, scale, rotation, color, and alpha.
-3. Progressive densification adds detail while pruning low-impact splats.
-4. Target-aware post-fit stages approximate the deploy compositor.
-5. Monotonic gates retain a candidate only when deployed-model quality holds.
-6. SVG, Canvas, or native DrawingML is written atomically.
+3. Densification adds detail and pruning removes low-impact splats.
+4. Target-aware post-fit stages approximate the deployment compositor.
+5. Monotonic gates keep only measured improvements.
+6. The final SVG, CSS/Canvas/pixel-runtime HTML, or DrawingML package is written atomically.
 
-The MLX renderer default is eight tiles per batch. On Chameleon, Retina, and
-Grass checkpoints this reduced median forward-and-backward latency by 12-34%
-versus a 16-tile batch; the Chameleon converter-default comparison was 23%
-faster than 128 tiles. Render math is unchanged. The emitted Canvas and corpus
-overview also avoid repeated browser-side sorting; the overview lazily renders
-cards near the viewport.
+Pixel-runtime and SVG repeat-render noise is currently zero in the calibrated
+corpus captures. Native Canvas and CSS still need their own full-corpus noise
+calibration. The versioned target floors and PowerPoint capture provenance live
+in [`data/artifact-gates.json`](data/artifact-gates.json).
 
-## Important flags
+## Main flags
 
-| Flag | Meaning |
+| Flag | Purpose |
 |---|---|
-| `--format {svg,pptx,canvas}` | Output container and compositor |
-| `--training-export-target {auto,canvas,svg,pptx-softedge}` | Optimization target |
-| `--optimizer-backend {mlx,torch}` | Optimizer implementation |
-| `--splats N` | Maximum splat population |
-| `--initial-splat-cap N` | Initial population ceiling |
-| `--stages a,b,c` | Per-stage iteration schedule |
-| `--svg-recipe {standard,blur,palette-quantized,...}` | SVG primitive family |
-| `--pptx-splat-style {gradient,soft-edge,blur}` | DrawingML primitive family |
-| `--fidelity-stage {off,balanced,max}` | Accept-or-revert SVG artifact polish |
-| `--adaptive-compute` | Default-off Canvas hard-target early stopping |
-| `--adaptive-target-ssim-srgb X` | Desired Chrome SSIM, scored with the byte-exact runtime model |
-| `--artifacts-dir DIR` | Manifest and stage checkpoints |
+| `--format {svg,pptx,canvas,css,pixel-runtime}` | Select the deployed container and compositor |
+| `--splats N` | Set the maximum splat population |
+| `--time-budget PRESET` | Select a content-aware schedule and detail budget |
+| `--max-edge N` | Bound the input resolution while preserving aspect ratio |
+| `--optimizer-backend {mlx,torch}` | Select the optimizer implementation |
+| `--training-export-target {auto,pixel-runtime,browser-gradient,svg,pptx-softedge}` | Select the training compositor (`canvas` is a legacy alias for `pixel-runtime`) |
+| `--svg-recipe RECIPE` | Select the emitted SVG primitive family |
+| `--svg-gradient-quality {standard,high}` | Select compact or stricter adaptive SVG gradients |
+| `--svg-painter-order {back-to-front,legacy}` | Select corrected or historical SVG element order |
+| `--[no-]svg-compositor-gate` | Accept or revert complete browser SVG compositor candidates |
+| `--pptx-splat-style STYLE` | Select DrawingML gradient, soft-edge, or blur splats |
+| `--pptx-painter-order {legacy,back-to-front}` | Emit the historical or corrected DrawingML shape stack |
+| `--fidelity-stage {off,balanced,max}` | Enable accept-or-revert browser SVG polish |
+| `--layered-saliency` | Export base, mass, detail, and edge layers |
+| `--canvas-parallax-strength PX` | Enable native Canvas plane parallax |
+| `--pixel-runtime-parallax-strength PX` | Enable ImageData-runtime plane parallax |
+| `--css-parallax-strength PX` | Enable scriptless CSS hover parallax |
+| `--artifacts-dir DIR` | Retain the manifest and intermediate checkpoints |
 
-Top-K distillation and mixed primitives live in experimental modules and MVP
-tools. They are not default release paths because their gains are not yet
-robust across the full corpus.
+Run `splatlify --help` for the full research and backend surface.
 
-Artifact-repeat noise has been calibrated over all 21 images for Chrome
-Canvas, `rsvg-convert`, and real Microsoft PowerPoint. The versioned floors
-live in `data/artifact-gates.json`. Canvas also has a default-off online
-controller that can skip later stages after an observed checkpoint reaches an
-explicit Chrome quality target. Its deployed scorer now mirrors JavaScript
-double math, Float32Array accumulation, and 8-bit sRGB ImageData packing. All
-48 browser-captured full-frame checkpoints were byte-for-byte identical to
-Chrome, eliminating the former `0.001102` continuous-model overstatement and
-the need for a default safety margin. It does not predict higher budgets or
-stop on a plateau. An exact replay then rescored all 84 raw checkpoints across
-all 21 images. Targets 0.98 and 0.979 both stopped only Brick and Colorwheel and
-saved 1.3% of aggregate stage time with zero observed opportunity cost, below
-the 5% gate for further hard-target A/B expansion. The earlier single
-Colorwheel arm that saved 27% remains mechanism evidence, not the governing
-speed claim. See
-[artifact gates and adaptive compute](docs/artifact-gates-and-adaptive-compute.md).
+## Project status
 
-## Development and release verification
+The supported path includes target-aware training, native Canvas/CSS/SVG,
+explicit pixel-runtime and PPTX export, browser pixel-runtime/Canvas/SVG/CSS
+grading, native
+PowerPoint generation, reproducible manifests, and full-corpus reporting.
+
+Top-K teacher/student distillation, mixed native primitives, automatic SVG
+recipe selection, adaptive compute, and PowerPoint hover parallax remain
+default-off or experimental. Their current evidence is retained under
+[`docs/`](docs/) rather than presented as release guarantees. The architecture
+and acceptance roadmap are in [ADR-003](docs/adr-003-fidelity-roadmap.md).
+
+## Development
 
 ```bash
-source venv/bin/activate
+pip install -e ".[dev,capture]"
+
 isort --check-only src tests tools
 black --check src tests tools
 flake8 src tests tools
-pytest tests/unit --cov=src/png2svg_gs --cov-report=term-missing
+pytest -q
 python -m build
 python -m twine check dist/*
 ```
 
-Strict mypy is run in CI as an informational migration check. See
+CI launches the installed Chrome before running the suite. See
 [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## License

@@ -14,6 +14,7 @@ import hashlib
 import json
 import statistics
 from pathlib import Path
+from urllib.parse import urlencode
 
 
 def main() -> int:
@@ -25,6 +26,12 @@ def main() -> int:
         default="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     )
     parser.add_argument("--timeout-ms", type=int, default=120_000)
+    parser.add_argument(
+        "--pixel-backend",
+        choices=["auto", "rgba32f", "rgba16f", "worker", "main"],
+        default="auto",
+        help="Force a static pixel-runtime backend for diagnostics",
+    )
     parser.add_argument(
         "--repeats",
         type=int,
@@ -57,13 +64,25 @@ def main() -> int:
         try:
             page = browser.new_page(viewport={"width": 1280, "height": 1000})
             render_samples = []
+            compute_samples = []
+            execution_samples = []
             png_samples = []
             sample_outputs = []
+            gpu_quality_samples = []
+            fast_path_failures_samples = []
             data_url = ""
             canvas = None
+            backend_queries = {"auto": ""}
+            backend_queries.update(
+                {
+                    backend: "?" + urlencode({"splatthisPixelBackend": backend})
+                    for backend in ("rgba32f", "rgba16f", "worker", "main")
+                }
+            )
+            html_uri = html_path.as_uri() + backend_queries[args.pixel_backend]
             for repeat in range(args.repeats):
                 page.goto(
-                    html_path.as_uri(),
+                    html_uri,
                     wait_until="domcontentloaded",
                     timeout=args.timeout_ms,
                 )
@@ -93,6 +112,18 @@ def main() -> int:
                     match = re.search(r"\bin ([0-9.]+)ms\b", status_text)
                     render_ms = float(match.group(1)) if match else 0.0
                 render_samples.append(float(render_ms))
+                compute_ms = page.evaluate("() => window.__SPLATTHIS_COMPUTE_MS")
+                if compute_ms is not None:
+                    compute_samples.append(float(compute_ms))
+                execution = page.evaluate("() => window.__SPLATTHIS_RENDER_MODE")
+                if execution is not None:
+                    execution_samples.append(str(execution))
+                gpu_quality_samples.append(
+                    page.evaluate("() => window.__SPLATTHIS_GPU_QUALITY ?? null")
+                )
+                fast_path_failures_samples.append(
+                    page.evaluate("() => window.__SPLATTHIS_FAST_PATH_FAILURES ?? []")
+                )
 
             assert canvas is not None
             output_path.write_bytes(png_samples[-1])
@@ -102,8 +133,25 @@ def main() -> int:
                 "output": str(output_path),
                 "browser": browser.version,
                 "capture_method": "browser canvas.toDataURL",
+                "compositor": canvas.get_attribute("data-compositor"),
+                "execution": (
+                    execution_samples[-1]
+                    if execution_samples
+                    else canvas.get_attribute("data-execution")
+                ),
+                "requested_pixel_backend": args.pixel_backend,
+                "gpu_quality": gpu_quality_samples[-1],
+                "gpu_quality_samples": gpu_quality_samples,
+                "fast_path_failures": fast_path_failures_samples[-1],
+                "fast_path_failures_samples": fast_path_failures_samples,
                 "render_ms": float(statistics.median(render_samples)),
                 "render_ms_samples": render_samples,
+                "compute_ms": (
+                    float(statistics.median(compute_samples))
+                    if compute_samples
+                    else None
+                ),
+                "compute_ms_samples": compute_samples,
                 "sample_sha256": [
                     hashlib.sha256(payload).hexdigest() for payload in png_samples
                 ],

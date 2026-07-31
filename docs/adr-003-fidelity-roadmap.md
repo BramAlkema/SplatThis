@@ -3,9 +3,9 @@
 - **Status:** Accepted; roadmap active
 - **Date:** 2026-07-28
 - **Accepted on:** 2026-07-31
-- **Revision:** 4
+- **Revision:** 8
 - **Authors:** SplatThis Development Team
-- **Supersedes:** Revision 3 of this ADR
+- **Supersedes:** Revision 7 of this ADR
 
 ## Decision summary
 
@@ -28,7 +28,7 @@ This ADR accepts that architecture and the currently implemented bounded
 slices. It does **not** claim that the entire fidelity roadmap has shipped.
 In particular, predictive adaptive allocation and selective scaling, the
 broader operator portfolio, hybrid raster residuals, and full artifact search
-remain proposed. A narrower, default-off Canvas controller that stops on an
+remain proposed. A narrower, default-off pixel-runtime controller that stops on an
 absolute observed quality target is implemented, but its exact full-corpus
 replay missed the compute gate and will not be expanded in its current form.
 
@@ -36,17 +36,19 @@ replay missed the compute gate and will not be expanded in its current form.
 
 ADR-002 established a deterministic initialize, optimize, refine, and export
 pipeline over a shared 2D Gaussian representation. The same splat population
-is then deployed through three materially different compositors:
+can now be deployed through five materially different paths:
 
-- Canvas executes the project's linear-light alpha-over runtime.
+- Pixel runtime software-rasterizes the exact formula into `ImageData`.
+- Native Canvas submits Canvas 2D radial-gradient primitives.
+- CSS uses DOM ellipses with CSS radial gradients.
 - SVG uses browser or library gradient, filter, and source-over semantics.
 - PowerPoint uses DrawingML primitives rendered by a specific Office viewer.
 
 Optimizing a Gaussian proxy is therefore not sufficient evidence that the
 emitted artifact improved. A better loss value can produce a worse browser
-canvas, SVG rasterization, or PowerPoint slide. More splats can also widen the
-train-to-deploy gap when the export primitive does not match the trained
-primitive.
+gradient, generated framebuffer, SVG rasterization, or PowerPoint slide. More
+splats can also widen the train-to-deploy gap when the export primitive does
+not match the trained primitive.
 
 The full-corpus work also showed that SSIM alone is not a safe objective.
 Smoothing can raise SSIM while damaging foreground detail, edges, local
@@ -57,17 +59,17 @@ vector and fixed local regions, not one global score.
 
 The current reference corpus contains 21 complete images at a maximum edge of
 roughly 384 px. Seed-0 results are measured from deployed artifacts: the exact
-Chrome canvas pixel buffer, rasterized emitted SVG, and Microsoft PowerPoint
-slideshow captures.
+Chrome ImageData pixel-runtime buffer, native-dimension Playwright Chromium
+captures of the emitted SVG, and Microsoft PowerPoint slideshow captures.
 
 | Deployed artifact | Budget | Median final splats | Median SSIM | Median LPIPS | Median size | Median training |
 |---|---:|---:|---:|---:|---:|---:|
-| Canvas HTML | requested 2k | 1,395 | 0.7751 | 0.2443 | 226 KB | 3.6 min |
-| Canvas HTML | effective 4k | 2,382 | 0.8406 | 0.1612 | 391 KB | 9.9 min |
-| SVG | requested 2k | 1,389 | 0.6022 | 0.4002 | 765 KB | 4.2 min |
+| Pixel runtime HTML | requested 2k | 1,395 | 0.7751 | 0.2443 | 226 KB | 3.6 min |
+| Pixel runtime HTML | effective 4k | 2,382 | 0.8406 | 0.1612 | 391 KB | 9.9 min |
+| SVG | requested 2k | 1,389 | 0.5973 | 0.4023 | 765 KB | 4.2 min |
 | PowerPoint | requested 2k | 1,374 | 0.6091 | 0.3843 | 127 KB | 6.6 min |
 
-All 21 Canvas images improved in both SSIM and LPIPS from requested 2k to
+All 21 pixel-runtime images improved in both SSIM and LPIPS from requested 2k to
 effective 4k, but none reached 0.99 SSIM. Chameleon reached 0.9631 only at an
 effective 8k point. These results support scaling when the measured curve
 justifies it; they do not support a general near-0.99 promise at small budgets.
@@ -120,15 +122,17 @@ must label the evidence used:
 | Parity-verified deployed model | The same equations and ordering as the shipped runtime, with separate artifact parity checks | In-run safety and checkpoint selection |
 | Proxy | An approximation used for training or cheap rejection | Diagnostics and early rejection only |
 
-A proxy-only result may not be described as a rendered SVG, browser Canvas, or
-PowerPoint result.
+A proxy-only result may not be described as a rendered SVG, browser CSS/Canvas,
+or PowerPoint result.
 
 Current target handling is:
 
 | Target | In-converter gate | Deployed-artifact verification |
 |---|---|---|
-| Canvas | Exact NumPy counterpart of the emitted Canvas runtime | Chrome reads the emitted canvas pixel buffer in the corpus harness |
-| SVG | Emit the candidate SVG and rasterize it; proxy fallback is rejected | `rsvg-convert` or CairoSVG, with renderer identity recorded |
+| Pixel runtime | Exact NumPy counterpart of the emitted ImageData software renderer | Chrome reads the emitted canvas pixel buffer in the corpus harness |
+| Canvas | Emit Canvas 2D radial-gradient splats and capture the neutral scene; proxy fallback is rejected and acceptance fails closed | Native-dimension Playwright Chromium only |
+| CSS | Emit scriptless DOM/CSS gradient splats and capture the neutral scene; proxy fallback is rejected and acceptance fails closed | Native-dimension Playwright Chromium only |
+| SVG | Emit the candidate SVG and capture it; proxy fallback is rejected and acceptance fails closed | Native-dimension Playwright Chromium only; no implicit library-rasterizer fallback |
 | PowerPoint | No ADR-003 in-converter fidelity stage yet | Offline tooling captures the slideshow in Microsoft PowerPoint |
 
 PowerPoint capture is authoritative but currently too external and expensive
@@ -207,12 +211,12 @@ The following are implemented and are part of the accepted architecture:
 - rejection when only an SVG proxy is available;
 - JSON decision traces, baseline/final metrics, and manifest provenance;
 - byte-identical fallback when no candidate is accepted;
-- Canvas stage-checkpoint selection against the deployed runtime model;
-- a Canvas postprocess gate that reverts destructive pruning; and
-- default-off Canvas early stopping after at least two observed checkpoints
+- pixel-runtime stage-checkpoint selection against the deployed runtime model;
+- a pixel-runtime postprocess gate that reverts destructive pruning; and
+- default-off pixel-runtime early stopping after at least two observed checkpoints
   meet an explicit absolute quality target.
 
-The Canvas gates are separate from the `--fidelity-stage` CLI stage. The
+The pixel-runtime gates are separate from the `--fidelity-stage` CLI stage. The
 monotonic checkpoint and postprocess gates are enabled by default; adaptive
 hard-target stopping remains default-off.
 
@@ -226,15 +230,15 @@ hard-target stopping remains default-off.
 | `balanced` | Run the evaluator/reporting shell with no proposal operators | Implemented no-op scaffold |
 | `max` | Try bounded single-splat recolor proposals, with zero added splats by default | Implemented opt-in; not a broad optimizer |
 
-For Canvas or PowerPoint, selecting this flag records an unsupported-target
-reason rather than pretending that SVG evaluation applies.
+For Canvas, CSS, pixel-runtime, or PowerPoint, selecting this flag records an
+unsupported-target reason rather than pretending that SVG evaluation applies.
 
 `max` does not currently move, resize, rotate, split, merge, reorder, or add
 splats. It does not search export recipes. Its only proposal operator is
 bounded recoloring of a strong splat in a fixed high-error ROI.
 
-Canvas has a separate `--adaptive-compute` switch. It is off by default,
-Canvas-only, and currently stops only when the best observed deployed-model
+Pixel runtime has a separate `--adaptive-compute` switch. It is off by default,
+pixel-runtime-only, and currently stops only when the best observed deployed-model
 checkpoint reaches `--adaptive-target-ssim-srgb` after at least
 `--adaptive-min-checkpoints` stages. The user target denotes desired Chrome
 artifact quality. The scorer reproduces JavaScript double math, Float32Array
@@ -265,29 +269,30 @@ no-go; the next active slice is the broader deterministic operator portfolio.
 
 **Status:** Baseline implemented; cross-version calibration remains
 
-1. Measure repeat-render noise floors for Chrome, each supported SVG
-   rasterizer, and Microsoft PowerPoint.
+1. Measure repeat-render noise floors for the Chrome pixel runtime, Playwright
+   Chromium SVG, and Microsoft PowerPoint.
 2. Separate deterministic conversion variance from viewer capture variance.
 3. Calibrate hard regression and meaningful-gain thresholds per target.
-4. Add cross-rasterizer SVG checks where a candidate is sensitive to filter or
-   color semantics.
+4. Treat optional library-rasterizer comparisons as portability diagnostics,
+   never as browser-SVG acceptance evidence.
 
-The first full-corpus run is complete: every Canvas, SVG, and PowerPoint
-artifact was captured five times. Canvas and SVG were pixel-deterministic.
+The first full-corpus run is complete: every pixel-runtime, SVG, and PowerPoint
+artifact was captured five times. Pixel runtime and SVG were pixel-deterministic.
 The largest additional PowerPoint warm-up SSIM span was below `0.000001`, far
 below the current policy gates. The versioned result is
 `data/artifact-gates.json`; methodology and results are documented in
 `docs/artifact-gates-and-adaptive-compute.md`.
 
 Remaining exit gate: repeat the calibration when target renderer versions
-change and add cross-rasterizer SVG checks for sensitive candidates.
+change. Optional cross-renderer diagnostics may explain portability but cannot
+override the governing Chromium decision.
 
 ### B. Adaptive compute and selective scaling
 
 **Status:** Bounded online slice implemented; hard-target expansion rejected;
 predictive allocation and selective scaling remain proposed
 
-The existing Canvas checkpoint gate can now stop before densification, later
+The existing pixel-runtime checkpoint gate can now stop before densification, later
 stages, and residual detail when an absolute observed quality target is met.
 Every decision records its policy, observed checkpoints, selected checkpoint,
 skipped stages and iterations, requested Chrome target, runtime-scorer identity,
@@ -326,7 +331,8 @@ image regression beyond calibrated noise.
 
 ### C. Broader operator portfolio
 
-**Status:** Proposed, except bounded recolor
+**Status:** Bounded recolor implemented; automatic browser SVG recipe
+selection cleared for default-off integration
 
 Add one deterministic operator at a time:
 
@@ -341,6 +347,19 @@ Add one deterministic operator at a time:
 Every operator must have its own budget, invariants, unit tests, artifact
 ablation, and accept-or-revert trace. Operators may not be enabled as a bundle
 until each one has shown an independent corpus benefit.
+
+The first isolated recipe ablation is complete. The existing seed-0 SVG splat
+population for every corpus image was emitted as standard, palette-quantized,
+and native-blur SVG, producing 63 native-dimension Playwright Chromium
+artifacts. Seven of 21 images safely selected palette-quantized and none
+selected blur. The wins had median LPIPS gain `0.01014`, median OKLab-p95 gain
+`0.01101`, and 66-71% smaller SVGs. They clear the predeclared minimum of five
+accepted images. Automatic browser recipe selection is therefore eligible for
+a separate default-off integration slice; it is not yet wired into
+`splatlify`. The earlier librsvg run accepted four images and remains
+cross-renderer evidence rather than the governing browser result. Bounded
+center movement remains the next independent geometry operator after selector
+integration.
 
 Exit gate: positive actual-artifact benefit on the complete corpus and selected
 multi-seed reruns, without material per-image, ROI, edge, size, or runtime
@@ -363,9 +382,10 @@ The search should retain a small lineage-diverse beam rather than selecting a
 single proxy winner too early. Cheap proxies may prune obvious losers, but the
 final rank must use the deployed artifact.
 
-SVG, Canvas, and PowerPoint require separate winners. A candidate selected by
-SVG may not be translated to DrawingML and called the PowerPoint winner
-without an actual PowerPoint gate.
+SVG, CSS, native Canvas, pixel runtime, and PowerPoint require separate winners.
+A candidate selected by SVG may not be translated to CSS, Canvas, ImageData, or
+DrawingML and called that target's winner without its actual deployed-artifact
+gate.
 
 Exit gate: a deterministic converter integration with bounded cost, atomic
 fallback, complete decision traces, and target-specific corpus wins.
@@ -427,7 +447,7 @@ metrics.
 
 - Fidelity work becomes monotonic within stated tolerances.
 - Proxy improvements cannot silently replace a better deployed artifact.
-- Canvas, SVG, and PowerPoint can evolve independently where their compositors
+- Pixel runtime, native Canvas, CSS, SVG, and PowerPoint can evolve independently where their compositors
   require different solutions.
 - Failed experiments remain useful because the decision traces expose which
   metric, region, size, or target gate rejected them.
@@ -468,7 +488,7 @@ metrics.
 ## Implementation map
 
 - Fidelity stage: `src/png2svg_gs/fidelity/`
-- Converter integration and Canvas gates: `src/png2svg_gs/converter.py`
+- Converter integration and pixel-runtime gates: `src/png2svg_gs/converter.py`
 - Top-K student/teacher experiment: `src/png2svg_gs/distillation.py`
 - Mixed native primitives: `src/png2svg_gs/mixed_primitives.py`
 - Corpus and capture tooling: `tools/corpus_benchmark.py`
@@ -481,11 +501,13 @@ metrics.
   `tools/simulate_adaptive_canvas.py`
 - Online adaptive MVP evidence: `data/adaptive-online-mvp.json`
 - Exact full-corpus hard-target replay: `data/adaptive-exact-replay.json`
-- Canvas checkpoint parity calibration: `src/png2svg_gs/canvas_parity.py`,
+- Pixel-runtime checkpoint parity calibration: `src/png2svg_gs/canvas_parity.py`,
   `tools/calibrate_canvas_checkpoint_parity.py`, and
   `data/canvas-checkpoint-parity.json`
+- SVG recipe gate: `src/png2svg_gs/svg_recipe_gate.py`,
+  `tools/evaluate_svg_recipe_gate.py`, and `data/svg-recipe-gate-mvp.json`
 - Fidelity tests: `tests/unit/test_fidelity_stage.py`
-- Canvas gate tests: `tests/unit/test_png2svg_export_pipeline.py`
+- Pixel-runtime gate tests: `tests/unit/test_png2svg_export_pipeline.py`
 
 ## Current checklist
 
@@ -494,19 +516,24 @@ metrics.
 - [x] Implement actual emitted-SVG evaluation with honest proxy fallback.
 - [x] Freeze residual ROIs and use a guarded metric vector.
 - [x] Record candidate decisions and manifest provenance.
-- [x] Add default-on monotonic Canvas checkpoint and postprocess gates.
+- [x] Add default-on monotonic pixel-runtime checkpoint and postprocess gates.
 - [x] Test Top-K distillation on full frames and keep the losing configuration
       out of the default converter.
 - [x] Test mixed native paths against SVG and real PowerPoint and keep the
       target-inconsistent result experimental.
-- [x] Calibrate current Chrome, `rsvg-convert`, and PowerPoint repeat-render
-      noise floors over the full corpus.
-- [x] Implement default-off Canvas hard-target stopping before densification
+- [x] Calibrate current Chrome pixel-runtime, Playwright Chromium SVG, and PowerPoint
+      repeat-render noise floors over the full corpus.
+- [x] Implement default-off pixel-runtime hard-target stopping before densification
       and residual detail.
-- [x] Calibrate the Canvas checkpoint scorer against 48 unchanged full-frame
+- [x] Calibrate the pixel-runtime checkpoint scorer against 48 unchanged full-frame
       Chrome captures and reproduce every deployed framebuffer byte-for-byte.
 - [x] Replay the exact hard-target policy over all 84 raw checkpoints and stop
       expansion after its 1.3% saving missed the 5% compute gate.
+- [x] Gate standard, palette-quantized, and blur SVG recipes in Chromium over
+      all 21 images; 7 wins clear the 5-image evidence gate for a default-off
+      integration slice.
+- [x] Test PPTX painter order over all 21 images in real PowerPoint, expose both
+      orders explicitly, and materialize the external gate winner atomically.
 - [ ] Validate predictive adaptive compute and selective 8k allocation over the
       full corpus and multiple seeds, only after a richer policy clears the
       retrospective compute gate.
@@ -524,6 +551,7 @@ metrics.
 - [Top-K Teacher to Native Vector Student MVP](topk-distillation-mvp.md)
 - [Mixed-Primitives Fidelity MVP](mixed-primitives-mvp.md)
 - [Combined Artifact-Portfolio MVP](combined-portfolio-mvp.md)
+- [Full-Corpus SVG Recipe Gate MVP](svg-recipe-gate-mvp.md)
 - [Artifact Gates and Adaptive Compute](artifact-gates-and-adaptive-compute.md)
 - [SVG and PowerPoint Gaussian Tricks](SVG_PPTX_GAUSSIAN_TRICKS.md)
 - [Provenance and Benchmarks](PROVENANCE_AND_BENCHMARKS.md)

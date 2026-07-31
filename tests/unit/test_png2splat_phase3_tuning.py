@@ -47,6 +47,10 @@ def test_quality_profiles_provide_distinct_tuning_defaults():
         > fast.refinement_config["densify_fraction"]
     )
     assert max_fid.svg_export_recipe == "standard"
+    assert max_fid.svg_gradient_quality == "standard"
+    assert balanced.svg_gradient_quality == "standard"
+    assert max_fid.svg_compositor_gate is True
+    assert balanced.svg_compositor_gate is False
     assert max_fid.stages == [1000, 500, 250]
     assert fast.mlx_tile_plan == "static"
     assert fast.mlx_trainable_groups == ("color", "alpha")
@@ -123,6 +127,15 @@ def test_converter_manifest_includes_roundtrip_validation_when_enabled(tmp_path:
         (artifacts_path / "run_manifest.json").read_text(encoding="utf-8")
     )
     assert manifest["config"]["quality_profile"] == "max-fidelity"
+    assert manifest["config"]["selected_svg_painter_order"] in {
+        "back-to-front",
+        "legacy",
+    }
+    assert manifest["config"]["selected_svg_gradient_quality"] in {
+        "standard",
+        "high",
+    }
+    assert manifest["svg_compositor_gate"]["enabled"] is True
     assert (tmp_path / "output_splat_proxy.png").exists()
     assert manifest["artifacts"]["splat_proxy"]["render_kind"] == (
         "internal-splat-proxy"
@@ -131,20 +144,24 @@ def test_converter_manifest_includes_roundtrip_validation_when_enabled(tmp_path:
     export_quality = manifest["export_quality"]
     artifact_evaluation = manifest["artifact_evaluation"]
     if export_quality["used_fallback"]:
-        # Bare CI runners may have neither a usable CairoSVG backend nor
-        # rsvg-convert. The manifest must then identify the internal proxy
-        # honestly instead of claiming that the deployed SVG was measured.
+        # Bare CI runners may not have Playwright plus Chrome. The manifest
+        # must then identify the internal proxy honestly instead of claiming
+        # that the deployed browser SVG was measured.
         assert export_quality["method"] == "proxy-fallback"
         assert artifact_evaluation == {
-            "render_kind": "internal-proxy",
-            "renderer": "internal-splat-renderer",
+            "render_kind": "svg-browser-unavailable",
+            "renderer": export_quality["governing_method"],
             "is_deployed_artifact": False,
-            "metric_source": "internal",
+            "metric_source": "unavailable",
         }
+        assert manifest["acceptance"]["pass"] is False
+        assert manifest["acceptance"]["reason"] == (
+            "governing-browser-render-unavailable"
+        )
     else:
-        # When an actual rasterizer is available, keep enforcing deployed-SVG
-        # evaluation rather than allowing a silent proxy regression.
-        assert export_quality["method"] in {"cairosvg", "rsvg-convert"}
+        # When Chrome is available, keep enforcing deployed-browser evaluation
+        # rather than allowing a silent library-renderer or proxy regression.
+        assert export_quality["method"].startswith("playwright-chromium/")
         assert artifact_evaluation == {
             "render_kind": "svg-rasterization",
             "renderer": export_quality["method"],

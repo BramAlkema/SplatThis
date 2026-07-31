@@ -81,7 +81,9 @@ def test_acceptance_manifest_contains_threshold_checks(tmp_path: Path):
         "ssim",
         "runtime_sec",
         "splat_count",
+        "governing_browser_render",
     }
+    assert manifest["acceptance"]["checks"]["governing_browser_render"] is True
 
 
 def test_fixed_image_regression_suite_passes_thresholds(tmp_path: Path):
@@ -93,14 +95,14 @@ def test_fixed_image_regression_suite_passes_thresholds(tmp_path: Path):
     }
 
     # Honest BREAKAGE floors, not quality targets. Acceptance grades the actual
-    # rasterized SVG with standard windowed SSIM in perceptual space. The
+    # rasterized SVG with standard windowed SSIM in perceptual sRGB. The
     # adversarial 2px checker at 32x32 with 64 splats is pathological for
     # Gaussian splatting and lands around psnr~7 / ssim~0.2, and is sensitive to
     # loss-function changes, so floors are set well below that to catch only
     # gross pipeline breakage rather than to chase the loss.
     acceptance = {
         "min_psnr": 5.0,
-        "min_ssim": 0.15,
+        "min_ssim_srgb": 0.15,
         "max_runtime_sec": 5.0,
         "max_splats": 64.0,
     }

@@ -16,19 +16,19 @@ candidates and lets the deployed artifact decide.
 4. Apply both SVG-gradient-aware and native-blur-aware color/alpha post-fit as
    separate proposals.
 5. Run one bounded deployed-artifact recolor pass on each population.
-6. Emit standard, browser-compatible, palette-quantized, and blur SVG
-   recipes. Standard and palette outputs also get a safe precision-2 SVGO
-   branch.
+6. Emit standard, browser-compatible, palette-quantized, blur, and scripted
+   matrix SVG recipes. Standard and palette outputs also get a safe
+   precision-2 SVGO branch.
 7. Keep a lineage-diverse beam and add residual native paths to each retained
    candidate.
-8. Score every retained SVG through an actual `rsvg-convert` render. Build a
-   separate native-PPTX shortlist, capture it in real Microsoft PowerPoint,
-   and choose its winner independently.
+8. Score every retained SVG through a native-dimension Playwright Chromium
+   capture. Build a separate native-PPTX shortlist, capture it in real
+   Microsoft PowerPoint, and choose its winner independently.
 
 The normalized Top-K teacher is intentionally not emitted: it is a
 non-alpha-over optimization ceiling. Its student is the exportable proposal.
-The scripted-matrix SVG is also excluded from the artifact gate because it
-needs JavaScript and `rsvg-convert` cannot execute it.
+The scripted-matrix SVG now enters the browser artifact gate because Chromium
+executes its self-contained JavaScript before capture.
 
 ## MVP gate
 
@@ -78,6 +78,11 @@ The resulting comparison is written to
 overview at `./tmp/chameleon-combined-mvp/portfolio/index.html`.
 
 ## Early Chameleon observations
+
+**Historical renderer note:** the measurements in this section used
+`rsvg-convert` before Chromium became the governing browser target. The runner
+now uses Playwright Chromium and includes scripted-matrix SVG, so these numbers
+must not be presented as current browser-selection results without a rerun.
 
 The fresh SVG-target-aware run reached the full 4,096-splat optimization cap,
 then the existing postprocess pruned it to 3,036 exported splats. Training took

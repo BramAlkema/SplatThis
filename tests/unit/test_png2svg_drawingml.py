@@ -4,6 +4,7 @@ from pathlib import Path
 
 from png2svg_gs.io import (
     EMU_PER_PX,
+    PPTX_PAINTER_ORDER_BACK_TO_FRONT,
     generate_drawingml_slide_content,
     px_to_emu,
     save_drawingml,
@@ -112,6 +113,54 @@ def test_generate_drawingml_slide_content_gradient_style():
     assert 'val="FF0000"' in content  # splat color baked into gradient stops
     assert "<a:alpha val=" in content  # per-stop opacity present
     assert "<a:softEdge" not in content
+
+
+def test_drawingml_painter_order_reverses_shape_emission() -> None:
+    """Corrected DrawingML must emit the front-to-back input in reverse."""
+
+    red = create_isotropic_splat(
+        center=[20.0, 20.0], sigma=5.0, color=[1.0, 0.0, 0.0], alpha=0.7
+    )
+    blue = create_isotropic_splat(
+        center=[30.0, 30.0], sigma=5.0, color=[0.0, 0.0, 1.0], alpha=0.7
+    )
+
+    legacy = generate_drawingml_slide_content([red, blue], width=64, height=64)
+    corrected = generate_drawingml_slide_content(
+        [red, blue],
+        width=64,
+        height=64,
+        painter_order=PPTX_PAINTER_ORDER_BACK_TO_FRONT,
+    )
+
+    assert legacy.index('val="FF0000"') < legacy.index('val="0000FF"')
+    assert corrected.index('val="0000FF"') < corrected.index('val="FF0000"')
+
+
+def test_corrected_drawingml_reverses_within_layers_not_layer_groups() -> None:
+    """Depth groups stay back-to-front while splats reverse inside each group."""
+
+    red = create_isotropic_splat(
+        center=[10.0, 10.0], sigma=3.0, color=[1.0, 0.0, 0.0], alpha=0.7
+    )
+    blue = create_isotropic_splat(
+        center=[20.0, 20.0], sigma=3.0, color=[0.0, 0.0, 1.0], alpha=0.7
+    )
+    green = create_isotropic_splat(
+        center=[30.0, 30.0], sigma=3.0, color=[0.0, 1.0, 0.0], alpha=0.7
+    )
+    red.layer = blue.layer = 0
+    green.layer = 1
+
+    corrected = generate_drawingml_slide_content(
+        [red, blue, green],
+        width=64,
+        height=64,
+        painter_order=PPTX_PAINTER_ORDER_BACK_TO_FRONT,
+    )
+
+    assert corrected.index('val="0000FF"') < corrected.index('val="FF0000"')
+    assert corrected.index('val="FF0000"') < corrected.index('val="00FF00"')
 
 
 def test_save_drawingml_writes_file(tmp_path: Path):

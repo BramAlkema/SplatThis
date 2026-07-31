@@ -37,26 +37,36 @@ from .features import (
 from .io import (
     DEFAULT_PPTX_SPLAT_STYLE,
     PPTX_GRADIENT_ALPHA_SCALE,
+    PPTX_PAINTER_ORDER_LEGACY,
     PPTX_SOFT_EDGE_ALPHA_SCALE,
     PPTX_SOFT_EDGE_K_SIGMA_SCALE,
     SVG_BACKGROUND_ALPHA_CAP,
     SVG_BROWSER_COMPAT_RECIPE,
+    SVG_PAINTER_ORDER_BACK_TO_FRONT,
     SVG_PALETTE_QUANTIZED_RECIPE,
     SVG_SCRIPTED_MATRIX_RECIPE,
+    _normalize_pptx_painter_order,
     _normalize_svg_export_recipe,
+    _normalize_svg_gradient_quality,
+    _normalize_svg_painter_order,
+    _sort_splats_for_export,
     atomic_write_text,
     compute_quality_metrics,
+    evaluate_css_export_quality,
+    evaluate_native_canvas_export_quality,
+    evaluate_pixel_runtime_export_quality,
     evaluate_svg_export_quality,
-    generate_canvas_html,
+    generate_css_splat_html,
     generate_drawingml_slide_content,
-    generate_parallax_canvas_html,
+    generate_native_canvas_html,
+    generate_parallax_pixel_runtime_html,
+    generate_webgl_pixel_runtime_html,
     load_png,
     render_splats_preview_png,
     save_drawingml,
     save_pptx_with_splats,
     save_side_by_side_html,
     save_splats_json,
-    save_svg,
     validate_export_roundtrip,
 )
 from .mlx_losses import MlxLossConfig
@@ -119,6 +129,7 @@ class PNG2SVGConverter:
         apple_silicon_splat_cap: Optional[int] = 2000,
         layered_saliency: bool = False,
         pptx_splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
+        pptx_painter_order: str = PPTX_PAINTER_ORDER_LEGACY,
     ):
         self.requested_max_splats = int(max_splats)
         self.max_splats = int(max_splats)
@@ -174,6 +185,7 @@ class PNG2SVGConverter:
         self.time_budget = self._normalize_time_budget(time_budget)
         self.layered_saliency = bool(layered_saliency)
         self.pptx_splat_style = str(pptx_splat_style).strip().lower().replace("_", "-")
+        self.pptx_painter_order = _normalize_pptx_painter_order(pptx_painter_order)
         self.time_budget_plan: Optional[Dict[str, Any]] = None
         self._time_budget_deadline: Optional[float] = None
         self._platform_splat_cap: Optional[Dict[str, Any]] = None
@@ -193,6 +205,9 @@ class PNG2SVGConverter:
         self.learning_rates = self._normalize_learning_rates(self.learning_rates)
 
         self.refinement_config = profile_defaults["refinement"].copy()
+        self._training_export_target_explicit = bool(
+            refinement_config and "training_export_target" in refinement_config
+        )
         if refinement_config:
             self.refinement_config.update(refinement_config)
         self.adaptive_compute_config = resolve_online_adaptive_config(
@@ -207,6 +222,19 @@ class PNG2SVGConverter:
         self.svg_export_recipe = _normalize_svg_export_recipe(
             self.refinement_config.get("svg_export_recipe", "standard")
         )
+        self.svg_gradient_quality = _normalize_svg_gradient_quality(
+            self.refinement_config.get("svg_gradient_quality", "standard")
+        )
+        self.svg_painter_order = _normalize_svg_painter_order(
+            self.refinement_config.get(
+                "svg_painter_order", SVG_PAINTER_ORDER_BACK_TO_FRONT
+            )
+        )
+        self.svg_compositor_gate = bool(
+            self.refinement_config.get(
+                "svg_compositor_gate", self.quality_profile == "max-fidelity"
+            )
+        )
         self.svg_optimize = bool(self.refinement_config.get("svg_optimize", False))
         self.svg_optimize_precision = int(
             self.refinement_config.get("svg_optimize_precision", 2)
@@ -216,7 +244,7 @@ class PNG2SVGConverter:
 
         self.fidelity_config = resolve_fidelity_config(self.refinement_config)
         self.training_export_target = self._normalize_training_export_target(
-            self.refinement_config.get("training_export_target", "canvas")
+            self.refinement_config.get("training_export_target", "pixel-runtime")
         )
         self.mlx_loss = (
             str(self.refinement_config.get("mlx_loss", "oklab-l1-ssim"))
@@ -733,9 +761,24 @@ class PNG2SVGConverter:
     @staticmethod
     def _normalize_training_export_target(value: Any) -> str:
         normalized = str(value).strip().lower().replace("_", "-")
-        if normalized in {"", "canvas", "native", "renderer", "linear"}:
-            return "canvas"
-        if normalized in {"svg", "svg-browser", "browser-svg"}:
+        if normalized in {
+            "",
+            "pixel-runtime",
+            "pixel",
+            "image-data",
+            "imagedata",
+            "canvas",  # Legacy name for the pre-0.3 ImageData runtime.
+            "renderer",
+            "linear",
+        }:
+            return "pixel-runtime"
+        if normalized in {
+            "svg",
+            "svg-browser",
+            "browser-svg",
+            "browser-gradient",
+            "native-canvas",
+        }:
             return "svg"
         if normalized in {
             "pptx",
@@ -918,6 +961,7 @@ class PNG2SVGConverter:
             copy.deepcopy(self.refinement_config),
             copy.deepcopy(self.acceptance_criteria),
             self._time_budget_deadline,
+            self.training_export_target,
         )
         try:
             return self._convert_impl(
@@ -940,6 +984,7 @@ class PNG2SVGConverter:
                 self.refinement_config,
                 self.acceptance_criteria,
                 self._time_budget_deadline,
+                self.training_export_target,
             ) = state_snapshot
 
     def _convert_impl(
@@ -957,14 +1002,15 @@ class PNG2SVGConverter:
         preview_png_path: Optional[str] = None,
     ) -> str:
         """
-        Convert PNG to SVG or DrawingML.
+        Convert a raster image to the selected splat deployment format.
 
         Args:
             input_path: Path to input PNG.
             output_path: Path for output file (optional).
             save_json: Whether to save splats as canonical raw JSON.
             verbose: Whether to log progress.
-            output_format: Output format ("svg", "drawingml", or "pptx").
+            output_format: One of SVG, DrawingML/PPTX, native Canvas, CSS, or
+                the historical ImageData pixel runtime.
             seed: Optional run seed overriding converter seed.
             artifacts_dir: Optional directory for stage artifacts + run manifest.
             acceptance_criteria: Optional run-level acceptance thresholds override.
@@ -975,16 +1021,27 @@ class PNG2SVGConverter:
         Returns:
             Generated vector content as string.
         """
-        if output_format not in {"svg", "drawingml", "pptx", "canvas"}:
+        if output_format not in {
+            "svg",
+            "drawingml",
+            "pptx",
+            "canvas",
+            "css",
+            "pixel-runtime",
+        }:
             raise ValueError(f"Unsupported output format: {output_format}")
+        if not self._training_export_target_explicit:
+            self.training_export_target = (
+                "svg" if output_format in {"svg", "css", "canvas"} else "pixel-runtime"
+            )
         if self.adaptive_compute_config.enabled:
-            if output_format != "canvas":
+            if output_format != "pixel-runtime":
                 raise ValueError(
-                    "adaptive compute currently supports only Canvas output"
+                    "adaptive compute currently supports only pixel-runtime output"
                 )
-            if self.training_export_target != "canvas":
+            if self.training_export_target != "pixel-runtime":
                 raise ValueError(
-                    "adaptive compute requires training_export_target='canvas'"
+                    "adaptive compute requires training_export_target='pixel-runtime'"
                 )
             if not bool(
                 self.refinement_config.get(
@@ -1058,6 +1115,7 @@ class PNG2SVGConverter:
                     "drawingml-splats" if output_format == "pptx" else None
                 ),
                 "pptx_splat_style": self.pptx_splat_style,
+                "pptx_painter_order": self.pptx_painter_order,
                 "quality_profile": self.quality_profile,
                 "loss_weights": self.loss_weights,
                 "learning_rates": self.learning_rates,
@@ -1065,6 +1123,9 @@ class PNG2SVGConverter:
                 "schedule_config": self.schedule_config,
                 "region_weighting_enabled": self.region_weighting_enabled,
                 "svg_export_recipe": self.svg_export_recipe,
+                "svg_gradient_quality": self.svg_gradient_quality,
+                "svg_painter_order": self.svg_painter_order,
+                "svg_compositor_gate": self.svg_compositor_gate,
                 "time_budget": self.time_budget,
                 "time_budget_plan": self.time_budget_plan,
                 "platform_splat_cap": self._platform_splat_cap,
@@ -1255,7 +1316,7 @@ class PNG2SVGConverter:
             structure_primary=structure_primary,
             structure_anisotropy=structure_anisotropy,
             monotonic_stage_selection=(
-                output_format == "canvas"
+                output_format == "pixel-runtime"
                 and bool(
                     self.refinement_config.get(
                         "canvas_monotonic_stage_selection_enabled", True
@@ -1279,7 +1340,7 @@ class PNG2SVGConverter:
         postprocessed_splats = self._postprocess_splats(
             splats=splats, image=image, rng=rng
         )
-        if output_format == "canvas" and bool(
+        if output_format == "pixel-runtime" and bool(
             self.refinement_config.get("canvas_monotonic_postprocess_enabled", True)
         ):
             splats, postprocess_gate = self._select_monotonic_canvas_postprocess(
@@ -1463,14 +1524,38 @@ class PNG2SVGConverter:
             parallax_strength = float(
                 self.refinement_config.get("canvas_parallax_strength", 0.0)
             )
+            if verbose:
+                logger.info(
+                    "Generating native Canvas-API HTML with %s splats "
+                    "(parallax=%.1f)...",
+                    len(splats),
+                    parallax_strength,
+                )
+            output_content = generate_native_canvas_html(
+                splats,
+                width,
+                height,
+                background_linear_rgb=self._background_linear_rgb,
+                title=Path(input_path).stem,
+                parallax_strength=parallax_strength,
+                k_sigma=self.k_sigma,
+            )
+        elif output_format == "pixel-runtime":
+            parallax_strength = float(
+                self.refinement_config.get(
+                    "pixel_runtime_parallax_strength",
+                    self.refinement_config.get("canvas_parallax_strength", 0.0),
+                )
+            )
             if parallax_strength > 0.0:
                 if verbose:
                     logger.info(
-                        "Generating PARALLAX canvas HTML with %s splats (strength=%.1f)...",
+                        "Generating parallax ImageData pixel runtime with %s "
+                        "splats (strength=%.1f)...",
                         len(splats),
                         parallax_strength,
                     )
-                output_content = generate_parallax_canvas_html(
+                output_content = generate_parallax_pixel_runtime_html(
                     splats,
                     width,
                     height,
@@ -1480,8 +1565,11 @@ class PNG2SVGConverter:
                 )
             else:
                 if verbose:
-                    logger.info("Generating canvas HTML with %s splats...", len(splats))
-                output_content = generate_canvas_html(
+                    logger.info(
+                        "Generating ImageData pixel runtime with %s splats...",
+                        len(splats),
+                    )
+                output_content = generate_webgl_pixel_runtime_html(
                     splats,
                     width,
                     height,
@@ -1489,10 +1577,70 @@ class PNG2SVGConverter:
                     title=Path(input_path).stem,
                     compositing_space=self._deployed_compositing_space(),
                 )
+        elif output_format == "css":
+            parallax_strength = float(
+                self.refinement_config.get("css_parallax_strength", 0.0)
+            )
+            hover_grid_size = int(self.refinement_config.get("css_hover_grid_size", 10))
+            if verbose:
+                logger.info(
+                    "Generating scriptless CSS HTML with %s splats "
+                    "(parallax=%.1f, grid=%sx%s)...",
+                    len(splats),
+                    parallax_strength,
+                    hover_grid_size,
+                    hover_grid_size,
+                )
+            output_content = generate_css_splat_html(
+                splats,
+                width,
+                height,
+                background_linear_rgb=self._background_linear_rgb,
+                title=Path(input_path).stem,
+                parallax_strength=parallax_strength,
+                hover_grid_size=hover_grid_size,
+                k_sigma=self.k_sigma,
+            )
         else:
             if verbose:
                 logger.info("Generating SVG with %s splats...", len(splats))
-            output_content = self._generate_svg(splats, width, height)
+            if self.svg_compositor_gate:
+                output_content, compositor_gate = self._select_svg_compositor(
+                    splats=splats,
+                    image=image,
+                    width=width,
+                    height=height,
+                    artifacts_path=artifacts_path,
+                )
+                manifest["svg_compositor_gate"] = compositor_gate
+                if compositor_gate.get("available"):
+                    selected_svg = compositor_gate["selection"]["selected"]
+                    manifest["config"]["selected_svg_painter_order"] = selected_svg[
+                        "painter_order"
+                    ]
+                    manifest["config"]["selected_svg_gradient_quality"] = selected_svg[
+                        "gradient_quality"
+                    ]
+                else:
+                    manifest["config"]["selected_svg_painter_order"] = compositor_gate[
+                        "fallback_painter_order"
+                    ]
+                    manifest["config"]["selected_svg_gradient_quality"] = (
+                        compositor_gate["fallback_gradient_quality"]
+                    )
+            else:
+                output_content = self._generate_svg(splats, width, height)
+                manifest["svg_compositor_gate"] = {
+                    "enabled": False,
+                    "selected_painter_order": self.svg_painter_order,
+                    "selected_gradient_quality": self.svg_gradient_quality,
+                }
+                manifest["config"][
+                    "selected_svg_painter_order"
+                ] = self.svg_painter_order
+                manifest["config"][
+                    "selected_svg_gradient_quality"
+                ] = self.svg_gradient_quality
         timings["generate_output"] = float(time.perf_counter() - phase_t0)
         if verbose:
             logger.info(
@@ -1512,6 +1660,7 @@ class PNG2SVGConverter:
                     k_sigma=self.k_sigma,
                     background_linear_rgb=self._background_linear_rgb,
                     splat_style=self.pptx_splat_style,
+                    painter_order=self.pptx_painter_order,
                 )
                 if verbose:
                     logger.info("Saved DrawingML: %s", output_path)
@@ -1524,26 +1673,18 @@ class PNG2SVGConverter:
                     k_sigma=self.k_sigma,
                     background_linear_rgb=self._background_linear_rgb,
                     splat_style=self.pptx_splat_style,
+                    painter_order=self.pptx_painter_order,
                 )
                 if verbose:
                     logger.info("Saved PPTX: %s", output_path)
-            elif output_format == "canvas":
+            elif output_format in {"canvas", "css", "pixel-runtime"}:
                 atomic_write_text(output_path, output_content)
                 if verbose:
-                    logger.info("Saved canvas HTML: %s", output_path)
+                    logger.info("Saved %s HTML: %s", output_format, output_path)
             else:
-                save_svg(
-                    splats,
-                    width,
-                    height,
-                    output_path,
-                    k_sigma=self.k_sigma,
-                    background_linear_rgb=self._background_linear_rgb,
-                    export_recipe=self.svg_export_recipe,
-                    foreground_mask=self._region_foreground_mask,
-                    background_safe_mask=self._region_background_safe_mask,
-                    edge_band_mask=self._region_edge_band_mask,
-                )
+                # Write the exact content selected above. Regenerating through
+                # save_svg would silently discard an artifact-gate decision.
+                atomic_write_text(output_path, output_content)
                 if verbose:
                     logger.info("Saved SVG: %s", output_path)
                 if self.svg_optimize:
@@ -1612,25 +1753,51 @@ class PNG2SVGConverter:
                 float(proxy_metrics.get("psnr_srgb", 0.0)),
             )
 
-        if (
-            output_format == "svg"
-            and output_path
-            and self.svg_export_recipe
-            not in {
-                "scripted",
-                "scripted-matrix",
-                "scripted-standard",
-            }
-        ):
-            phase_t0 = time.perf_counter()
-            svg_quality = evaluate_svg_export_quality(
-                target_linear_rgb=image[:, :, :3],
-                svg_path=output_path,
-                fallback_linear_rgb=preview_linear,
+        static_pixel_runtime = (
+            output_format == "pixel-runtime"
+            and float(
+                self.refinement_config.get(
+                    "pixel_runtime_parallax_strength",
+                    self.refinement_config.get("canvas_parallax_strength", 0.0),
+                )
             )
-            timings["svg_export_quality"] = float(time.perf_counter() - phase_t0)
-            if svg_quality.get("available"):
-                export_quality = svg_quality
+            <= 0.0
+        )
+        browser_native_output = output_format in {"svg", "css", "canvas"} or (
+            static_pixel_runtime
+        )
+        if browser_native_output and output_path:
+            phase_t0 = time.perf_counter()
+            if output_format == "svg":
+                browser_quality = evaluate_svg_export_quality(
+                    target_linear_rgb=image[:, :, :3],
+                    svg_path=output_path,
+                    fallback_linear_rgb=preview_linear,
+                )
+            elif output_format == "css":
+                browser_quality = evaluate_css_export_quality(
+                    target_linear_rgb=image[:, :, :3],
+                    html_path=output_path,
+                    fallback_linear_rgb=preview_linear,
+                )
+            elif output_format == "canvas":
+                browser_quality = evaluate_native_canvas_export_quality(
+                    target_linear_rgb=image[:, :, :3],
+                    html_path=output_path,
+                    fallback_linear_rgb=preview_linear,
+                )
+            else:
+                browser_quality = evaluate_pixel_runtime_export_quality(
+                    target_linear_rgb=image[:, :, :3],
+                    html_path=output_path,
+                    fallback_linear_rgb=preview_linear,
+                )
+            timings[f"{output_format}_export_quality"] = float(
+                time.perf_counter() - phase_t0
+            )
+            # Keep an unavailable browser result visible rather than silently
+            # retaining the initial proxy as if it were export evidence.
+            export_quality = browser_quality
 
         export_method = str(export_quality.get("method", ""))
         use_export_for_acceptance = bool(
@@ -1661,6 +1828,15 @@ class PNG2SVGConverter:
         acceptance_result = self._evaluate_acceptance(
             final_metrics, effective_acceptance
         )
+        if browser_native_output:
+            acceptance_result["checks"]["governing_browser_render"] = bool(
+                use_export_for_acceptance
+            )
+            acceptance_result["pass"] = bool(
+                acceptance_result["pass"] and use_export_for_acceptance
+            )
+            if not use_export_for_acceptance:
+                acceptance_result["reason"] = "governing-browser-render-unavailable"
         roundtrip_result: Optional[Dict[str, Any]] = None
         if validate_roundtrip:
             phase_t0 = time.perf_counter()
@@ -1734,19 +1910,57 @@ class PNG2SVGConverter:
         manifest["internal_metrics"] = internal_metrics
         manifest["export_quality"] = export_quality
         manifest["acceptance_metric_source"] = (
-            "export" if use_export_for_acceptance else "internal"
+            "export"
+            if use_export_for_acceptance
+            else ("unavailable" if browser_native_output else "internal")
         )
         if output_format == "svg" and use_export_for_acceptance:
             evaluation_kind = "svg-rasterization"
+            evaluation_renderer = export_method
+            is_deployed_artifact = True
+        elif output_format == "css" and use_export_for_acceptance:
+            evaluation_kind = "css-browser-capture"
+            evaluation_renderer = export_method
+            is_deployed_artifact = True
+        elif output_format == "canvas" and use_export_for_acceptance:
+            evaluation_kind = "canvas-api-browser-capture"
+            evaluation_renderer = export_method
+            is_deployed_artifact = True
+        elif output_format == "pixel-runtime" and use_export_for_acceptance:
+            evaluation_kind = "pixel-runtime-browser-capture"
             evaluation_renderer = export_method
             is_deployed_artifact = True
         elif output_format == "pptx":
             evaluation_kind = "pptx-proxy"
             evaluation_renderer = "internal-splat-renderer"
             is_deployed_artifact = False
-        elif output_format == "canvas":
-            evaluation_kind = "canvas-runtime-model"
+        elif output_format == "pixel-runtime" and not static_pixel_runtime:
+            evaluation_kind = "pixel-runtime-model"
             evaluation_renderer = "internal-splat-renderer"
+            is_deployed_artifact = False
+        elif output_format == "svg":
+            evaluation_kind = "svg-browser-unavailable"
+            evaluation_renderer = str(
+                export_quality.get("governing_method", export_method)
+            )
+            is_deployed_artifact = False
+        elif output_format == "css":
+            evaluation_kind = "css-browser-unavailable"
+            evaluation_renderer = str(
+                export_quality.get("governing_method", export_method)
+            )
+            is_deployed_artifact = False
+        elif output_format == "canvas":
+            evaluation_kind = "canvas-api-browser-unavailable"
+            evaluation_renderer = str(
+                export_quality.get("governing_method", export_method)
+            )
+            is_deployed_artifact = False
+        elif output_format == "pixel-runtime":
+            evaluation_kind = "pixel-runtime-browser-unavailable"
+            evaluation_renderer = str(
+                export_quality.get("governing_method", export_method)
+            )
             is_deployed_artifact = False
         else:
             evaluation_kind = "internal-proxy"
@@ -2947,8 +3161,8 @@ class PNG2SVGConverter:
         )
         # Mirror the torch path (_create_training_renderer): when the
         # training_export_target is svg or pptx-softedge, composite in sRGB
-        # so the trained splats match what browsers/rsvg produce when the
-        # SVG is rendered. Pure linear-light training (canvas runtime) keeps
+        # so the trained splats match what the governing browser produces when
+        # the SVG is rendered. Pure linear-light pixel-runtime training keeps
         # compositing_space="linear". For pptx-softedge, also apply the
         # sigma/alpha proxy transform that compensates for PowerPoint's
         # brighter-than-Gaussian soft-edge rendering.
@@ -3082,9 +3296,8 @@ class PNG2SVGConverter:
         # Use the honest shared metric: standard windowed SSIM plus perceptual
         # (sRGB-display) variants. The old path used L1SSIMLoss._global_ssim, a
         # global single-window SSIM that over-reports, and omitted the
-        # psnr_srgb/ssim_srgb keys the acceptance gate checks -- so on machines
-        # without an SVG rasterizer the perceptual gates read 0.0 and always
-        # failed even good runs.
+        # psnr_srgb/ssim_srgb keys the acceptance gate checks, so the internal
+        # diagnostic metrics were incomplete when browser capture was absent.
         with torch.no_grad():
             target_np = target.detach().cpu().numpy()
             rendered_np = rendered.detach().cpu().numpy()
@@ -4701,14 +4914,21 @@ class PNG2SVGConverter:
         )
 
     def _generate_svg(
-        self, splats: List[GaussianSplat], width: int, height: int
+        self,
+        splats: List[GaussianSplat],
+        width: int,
+        height: int,
+        *,
+        gradient_quality: Optional[str] = None,
+        painter_order: Optional[str] = None,
     ) -> str:
         """Generate SVG content."""
         from .io import generate_svg_content
 
         palette_size = self.refinement_config.get("svg_palette_size")
+        ordered_splats = _sort_splats_for_export(splats)
         return generate_svg_content(
-            splats,
+            ordered_splats,
             width,
             height,
             self.k_sigma,
@@ -4718,7 +4938,173 @@ class PNG2SVGConverter:
             background_safe_mask=self._region_background_safe_mask,
             edge_band_mask=self._region_edge_band_mask,
             palette_size=None if palette_size is None else int(palette_size),
+            gradient_quality=(
+                self.svg_gradient_quality
+                if gradient_quality is None
+                else gradient_quality
+            ),
+            painter_order=(
+                self.svg_painter_order if painter_order is None else painter_order
+            ),
         )
+
+    def _select_svg_compositor(
+        self,
+        *,
+        splats: List[GaussianSplat],
+        image: np.ndarray,
+        width: int,
+        height: int,
+        artifacts_path: Optional[Path],
+    ) -> Tuple[str, Dict[str, Any]]:
+        """Accept or revert SVG order/stop candidates using real Chromium.
+
+        The historical forward DOM order is the incumbent for monotonicity,
+        not the semantic ideal. Correct back-to-front standard and high-stop
+        candidates may replace it only when the full guarded metric vector,
+        compressed size, and browser latency pass the artifact gate.
+        """
+
+        import gzip
+        import tempfile
+
+        from .browser_capture import get_shared_svg_renderer
+        from .fidelity.analysis import analyze_residual
+        from .fidelity.metrics import compute_fidelity_metrics
+        from .io import atomic_write_text, srgb_to_linear
+        from .svg_recipe_gate import SvgRecipeGatePolicy, select_recipe_candidate
+
+        candidate_specs = [
+            ("legacy-standard", "standard", "legacy"),
+            ("corrected-standard", "standard", "back-to-front"),
+        ]
+        if self.svg_export_recipe in {
+            "standard",
+            SVG_BROWSER_COMPAT_RECIPE,
+            SVG_SCRIPTED_MATRIX_RECIPE,
+        }:
+            candidate_specs.append(("corrected-high", "high", "back-to-front"))
+
+        contents = {
+            name: self._generate_svg(
+                splats,
+                width,
+                height,
+                gradient_quality=quality,
+                painter_order=order,
+            )
+            for name, quality, order in candidate_specs
+        }
+        requested_content = self._generate_svg(splats, width, height)
+        temporary: Optional[tempfile.TemporaryDirectory[str]] = None
+        if artifacts_path is None:
+            temporary = tempfile.TemporaryDirectory(prefix="splatthis-svg-gate-")
+            candidate_dir = Path(temporary.name)
+        else:
+            candidate_dir = artifacts_path / "svg-compositor-candidates"
+            candidate_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            renderer = get_shared_svg_renderer()
+            repeats = int(
+                max(1, self.refinement_config.get("svg_compositor_gate_repeats", 1))
+            )
+            rendered_by_name: Dict[str, np.ndarray] = {}
+            captures: Dict[str, Any] = {}
+            for name, _, _ in candidate_specs:
+                svg_path = candidate_dir / f"{name}.svg"
+                png_path = candidate_dir / f"{name}.png"
+                atomic_write_text(svg_path, contents[name])
+                capture = renderer.capture(
+                    svg_path,
+                    png_path,
+                    width=width,
+                    height=height,
+                    repeats=repeats,
+                )
+                with Image.open(png_path) as raster:
+                    srgb = np.asarray(raster.convert("RGB"), dtype=np.float32) / 255.0
+                rendered_by_name[name] = srgb_to_linear(srgb)
+                captures[name] = capture
+
+            baseline_name = candidate_specs[0][0]
+            fixed_rois = analyze_residual(
+                image[:, :, :3],
+                rendered_by_name[baseline_name],
+                roi_size=min(64, height, width),
+                roi_count=8,
+            ).fixed_rois
+            measurements = []
+            for name, quality, order in candidate_specs:
+                content = contents[name]
+                metrics = compute_fidelity_metrics(
+                    image[:, :, :3],
+                    rendered_by_name[name],
+                    fixed_rois=fixed_rois,
+                    splat_count=len(splats),
+                    file_size_bytes=len(
+                        gzip.compress(content.encode("utf-8"), compresslevel=9)
+                    ),
+                    render_method=renderer.renderer_label,
+                ).as_dict()
+                measurements.append(
+                    {
+                        "recipe": name,
+                        "painter_order": order,
+                        "gradient_quality": quality,
+                        "raw_size_bytes": len(content.encode("utf-8")),
+                        "render_time_sec": captures[name].capture_time_ms / 1000.0,
+                        "pixel_stable": captures[name].pixel_stable,
+                        **{
+                            key: (
+                                None
+                                if isinstance(value, float) and not np.isfinite(value)
+                                else value
+                            )
+                            for key, value in metrics.items()
+                        },
+                    }
+                )
+
+            policy = SvgRecipeGatePolicy(
+                max_size_growth_fraction=1.0,
+                max_render_time_growth_fraction=0.50,
+                max_ssim_regression=0.002,
+                max_ms_ssim_regression=0.003,
+                max_lpips_regression=0.005,
+                maximum_median_size_growth_fraction=1.0,
+                maximum_median_render_time_growth_fraction=0.25,
+            )
+            selection = select_recipe_candidate(
+                measurements[0], measurements[1:], policy
+            )
+            selected_name = str(selection["selected_recipe"])
+            return contents[selected_name], {
+                "enabled": True,
+                "available": True,
+                "renderer": renderer.renderer_label,
+                "policy": policy.as_dict(),
+                "fixed_rois": [list(roi) for roi in fixed_rois],
+                "candidates": measurements,
+                "selection": selection,
+            }
+        except Exception as exc:
+            logger.warning(
+                "SVG compositor gate unavailable; using requested corrected "
+                "export (%s: %s)",
+                type(exc).__name__,
+                exc,
+            )
+            return requested_content, {
+                "enabled": True,
+                "available": False,
+                "reason": f"{type(exc).__name__}: {exc}",
+                "fallback_painter_order": self.svg_painter_order,
+                "fallback_gradient_quality": self.svg_gradient_quality,
+            }
+        finally:
+            if temporary is not None:
+                temporary.cleanup()
 
     def _run_fidelity_stage(
         self,
@@ -4789,13 +5175,15 @@ class PNG2SVGConverter:
         self, splats: List[GaussianSplat], width: int, height: int
     ) -> str:
         """Generate DrawingML slide XML content."""
+        ordered_splats = _sort_splats_for_export(splats)
         return generate_drawingml_slide_content(
-            splats,
+            ordered_splats,
             width,
             height,
             self.k_sigma,
             background_linear_rgb=self._background_linear_rgb,
             splat_style=self.pptx_splat_style,
+            painter_order=self.pptx_painter_order,
         )
 
     def _write_stage_artifact(

@@ -73,8 +73,9 @@ def _latest_canvas_budget_points(
         image = record.get("image")
         budget = record.get("splats_requested")
         if (
-            record.get("format") != "canvas"
-            or record.get("render_kind") != "canvas-pixel-buffer"
+            record.get("format") not in {"canvas", "pixel-runtime"}
+            or record.get("render_kind")
+            not in {"canvas-pixel-buffer", "pixel-runtime-buffer"}
             or not isinstance(image, str)
             or not isinstance(budget, int)
             or (selected_images is not None and image not in selected_images)
@@ -112,7 +113,7 @@ def _candidate_manifest_paths(
         image = record.get("image")
         artifacts = record.get("artifacts_path")
         if (
-            record.get("format") != "canvas"
+            record.get("format") not in {"canvas", "pixel-runtime"}
             or not isinstance(image, str)
             or not isinstance(artifacts, str)
             or (selected_images is not None and image not in selected_images)

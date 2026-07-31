@@ -62,7 +62,7 @@ class OnlineAdaptiveConfig:
     """Conservative online policy that only stops on an absolute quality target.
 
     Plateau, regression, and higher-budget prediction remain retrospective
-    experiments. The online controller sees only completed Canvas checkpoints
+    experiments. The online controller sees only completed pixel-runtime checkpoints
     and cannot use a future result to justify a stop.
     """
 
@@ -158,7 +158,7 @@ class OnlineAdaptiveConfig:
 
 @dataclass(frozen=True)
 class OnlineAdaptiveDecision:
-    """Decision made from the Canvas checkpoints observed so far."""
+    """Decision made from the pixel-runtime checkpoints observed so far."""
 
     stop: bool
     reason: str

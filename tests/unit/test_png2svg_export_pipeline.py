@@ -1,6 +1,7 @@
 """Tests for SVG/PPTX export pipeline helpers."""
 
 import json
+import re
 import zipfile
 from pathlib import Path
 
@@ -8,6 +9,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+import png2svg_gs.browser_capture as browser_capture
 from png2svg_gs.converter import PNG2SVGConverter
 from png2svg_gs.io import (
     PPTX_GRADIENT_ALPHA_SCALE,
@@ -39,6 +41,86 @@ def test_generate_svg_content_emits_per_splat_gradients():
     svg = generate_svg_content(splats, width=32, height=24, k_sigma=2.5)
     assert svg.count("<radialGradient") == 2
     assert svg.count('fill="url(#splat_grad_') == 2
+
+
+def _overlapping_ordered_splats():
+    front = create_isotropic_splat(
+        center=np.array([8.0, 8.0]),
+        sigma=3.0,
+        color=np.array([1.0, 0.0, 0.0]),
+        alpha=0.85,
+    )
+    back = create_isotropic_splat(
+        center=np.array([18.0, 8.0]),
+        sigma=3.0,
+        color=np.array([0.0, 0.0, 1.0]),
+        alpha=0.75,
+    )
+    front.importance = 0.1
+    back.importance = 0.9
+    return [front, back]
+
+
+@pytest.mark.parametrize("recipe", ["standard", "browser-compatible"])
+def test_static_svg_emits_front_to_back_input_in_reverse_painter_order(recipe):
+    """The first alpha-over splat must be the last painted SVG element."""
+    svg = generate_svg_content(
+        _overlapping_ordered_splats(), width=26, height=16, export_recipe=recipe
+    )
+
+    ellipse_ids = re.findall(r'<ellipse id="(splat_\d+)"', svg)
+
+    assert ellipse_ids == ["splat_1", "splat_0"]
+
+
+def test_static_svg_can_reproduce_legacy_forward_order_explicitly():
+    svg = generate_svg_content(
+        _overlapping_ordered_splats(),
+        width=26,
+        height=16,
+        painter_order="legacy",
+    )
+
+    ellipse_ids = re.findall(r'<ellipse id="(splat_\d+)"', svg)
+
+    assert ellipse_ids == ["splat_0", "splat_1"]
+
+
+def test_scripted_svg_stores_rows_in_reverse_painter_order():
+    svg = generate_svg_content(
+        _overlapping_ordered_splats(),
+        width=26,
+        height=16,
+        export_recipe="scripted-matrix",
+    )
+
+    payload = re.search(r'<script id="splat-data"[^>]*>([^<]+)</script>', svg).group(1)
+    centers = [float(row.split(",")[4]) for row in payload.split(";")]
+
+    assert centers == [18.0, 8.0]
+
+
+@pytest.mark.parametrize("recipe", ["palette-quantized", "blur"])
+def test_compact_svg_recipes_emit_reverse_painter_order(recipe):
+    svg = generate_svg_content(
+        _overlapping_ordered_splats(), width=26, height=16, export_recipe=recipe
+    )
+
+    centers = [float(value) for value in re.findall(r'<ellipse cx="([\d.]+)"', svg)]
+
+    assert centers == [18.0, 8.0]
+
+
+def test_high_svg_gradient_quality_is_stricter_but_bounded():
+    splats = _overlapping_ordered_splats()
+    standard = generate_svg_content(splats, width=26, height=16)
+    high = generate_svg_content(splats, width=26, height=16, gradient_quality="high")
+
+    standard_stops = standard.count("<stop ")
+    high_stops = high.count("<stop ")
+
+    assert standard_stops < high_stops <= 9 * len(splats)
+    assert re.search(r'stop-opacity="\d\.\d{4}"', high)
 
 
 def test_generate_svg_content_can_embed_background_rect():
@@ -81,6 +163,8 @@ def test_max_fidelity_default_svg_is_static_not_scripted():
     svg = converter._generate_svg(splats, width=32, height=24)
 
     assert converter.svg_export_recipe == "standard"
+    assert converter.svg_gradient_quality == "standard"
+    assert converter.svg_compositor_gate is True
     assert 'id="splat-data"' not in svg
     assert "<script" not in svg
     assert "<radialGradient" in svg
@@ -298,6 +382,7 @@ def test_converter_exports_pptx_and_comparison_artifacts(tmp_path: Path):
     assert "export_quality" in manifest
     assert manifest["config"]["pptx_export_mode"] == "drawingml-splats"
     assert manifest["config"]["pptx_splat_style"] == "gradient"
+    assert manifest["config"]["pptx_painter_order"] == "legacy"
     assert manifest["config"]["layered_saliency"] is True
     assert manifest["layered_saliency"]["enabled"] is True
     assert manifest["artifact_evaluation"] == {
@@ -353,6 +438,50 @@ def test_converter_can_postfit_scripted_svg_proxy(tmp_path: Path):
         stage.get("stage_type") == "svg_proxy_postfit" for stage in manifest["stages"]
     )
     assert (artifacts_path / "svg-postfit.raw.json").exists()
+    assert manifest["export_quality"]["method"].startswith("playwright-chromium/")
+
+
+def test_svg_acceptance_fails_closed_when_browser_capture_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    image = np.zeros((8, 8, 3), dtype=np.uint8)
+    image[:, :4, 0] = 220
+    input_path = tmp_path / "input.png"
+    output_path = tmp_path / "output.svg"
+    artifacts_path = tmp_path / "artifacts"
+    Image.fromarray(image).save(input_path)
+    monkeypatch.setattr(
+        browser_capture,
+        "render_svg_in_browser_to_linear_rgb",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("test")),
+    )
+
+    converter = PNG2SVGConverter(
+        max_splats=4,
+        stages=[1],
+        target_size=(8, 8),
+        seed=37,
+        quality_profile="fast",
+        device="cpu",
+        apple_silicon_splat_cap=None,
+    )
+    converter.convert(
+        input_path=str(input_path),
+        output_path=str(output_path),
+        output_format="svg",
+        verbose=False,
+        artifacts_dir=str(artifacts_path),
+    )
+
+    manifest = json.loads((artifacts_path / "run_manifest.json").read_text())
+    assert output_path.exists()
+    assert manifest["export_quality"]["available"] is False
+    assert manifest["export_quality"]["method"] == "proxy-fallback"
+    assert manifest["acceptance_metric_source"] == "unavailable"
+    assert manifest["artifact_evaluation"]["render_kind"] == ("svg-browser-unavailable")
+    assert manifest["acceptance"]["checks"]["governing_browser_render"] is False
+    assert manifest["acceptance"]["pass"] is False
+    assert manifest["acceptance"]["reason"] == ("governing-browser-render-unavailable")
 
 
 def test_converter_can_postfit_pptx_proxy(tmp_path: Path):
@@ -672,11 +801,132 @@ def test_parallax_canvas_html_embeds_strength_and_canvas():
     assert "splats.sort" not in html
 
 
+def test_css_compositor_is_scriptless_and_uses_dom_gradient_splats():
+    from png2svg_gs.io import generate_css_splat_html
+
+    splats = _demo_splats(4)
+    html = generate_css_splat_html(
+        list(reversed(splats)),
+        width=32,
+        height=24,
+        title='unsafe <title> & "quote"',
+    )
+
+    assert '<main id="scene" data-compositor="css-splats"' in html
+    assert 'data-splat-count="4"' in html
+    assert html.count('class="splat"') == 4
+    assert "radial-gradient(ellipse 50% 50% at center" in html
+    assert "background:transparent}#scene{" in html
+    assert "background:transparent}}#scene{" not in html
+    assert "<script" not in html.lower()
+    assert "<canvas" not in html.lower()
+    assert "<svg" not in html.lower()
+    assert "<title>unsafe &lt;title&gt; &amp; &quot;quote&quot;</title>" in html
+
+
+def test_css_compositor_parallax_uses_10x10_hover_grid_without_script():
+    from png2svg_gs.io import generate_css_splat_html
+
+    splats = _demo_splats(4)
+    for splat, layer in zip(splats, (0, 1, 2, 3)):
+        splat.layer = layer
+    html = generate_css_splat_html(
+        splats,
+        width=32,
+        height=24,
+        parallax_strength=10.0,
+        hover_grid_size=10,
+    )
+
+    assert 'data-grid="10"' in html
+    assert html.count('class="depth-hit h') == 100
+    assert ".h0:hover~.plane-midground" in html
+    assert ".h99:hover~.plane-foreground" in html
+    assert html.count('class="plane plane-') == 3
+    assert "<script" not in html.lower()
+
+
+def test_native_canvas_compositor_submits_gradient_splats_not_imagedata():
+    from png2svg_gs.io import generate_native_canvas_html
+
+    splats = _demo_splats(4)
+    html = generate_native_canvas_html(splats, width=32, height=24)
+
+    assert 'data-compositor="canvas-api-splats"' in html
+    assert 'data-splat-count="4"' in html
+    assert "createRadialGradient" in html
+    assert "ctx.arc(0, 0, 1" in html
+    assert "globalCompositeOperation = 'source-over'" in html
+    assert "createImageData" not in html
+    assert "putImageData" not in html
+
+
+def test_native_canvas_parallax_uses_three_browser_drawn_planes():
+    from png2svg_gs.io import generate_native_canvas_html
+
+    splats = _demo_splats(4)
+    for splat, layer in zip(splats, (0, 1, 2, 3)):
+        splat.layer = layer
+    html = generate_native_canvas_html(
+        splats, width=32, height=24, parallax_strength=10.0
+    )
+
+    assert 'data-parallax="true"' in html
+    assert '"name":"background"' in html
+    assert '"name":"midground"' in html
+    assert '"name":"foreground"' in html
+    assert "canvas.style.transform" in html
+    assert "putImageData" not in html
+
+
+def test_pixel_runtime_has_accelerated_and_exact_fallback_chain():
+    from png2svg_gs.io import generate_webgl_pixel_runtime_html
+
+    html = generate_webgl_pixel_runtime_html(_demo_splats(4), width=32, height=24)
+
+    assert 'data-compositor="pixel-runtime"' in html
+    assert "EXT_color_buffer_float" in html
+    assert "EXT_float_blend" in html
+    assert "gl.RGBA32F" in html
+    assert "gl.RGBA16F" in html
+    assert "gl.blendFuncSeparate(gl.DST_ALPHA,gl.ONE" in html
+    assert "gl.drawArraysInstanced" in html
+    assert "webglcontextlost" in html
+    assert "document.createElement('canvas')" in html
+    assert "OffscreenCanvas" in html
+    assert "main-thread-fallback" in html
+    assert "splatthisPixelBackend" in html
+    assert "checkHalfFloatQuality" in html
+    assert "maxError<=2 && meanError<=0.5" in html
+    assert "__SPLATTHIS_GPU_QUALITY" in html
+    assert "createImageData" in html
+    assert "putImageData" in html
+
+
+def test_pixel_runtime_rejects_unknown_backend():
+    from png2svg_gs.io import generate_webgl_pixel_runtime_html
+
+    with pytest.raises(ValueError, match="Unsupported pixel runtime backend"):
+        generate_webgl_pixel_runtime_html(
+            _demo_splats(1), width=32, height=24, backend="webgpu"
+        )
+
+
 @pytest.mark.parametrize("width,height", [(0, 32), (32, 0), (-1, 32)])
 def test_canvas_html_rejects_non_positive_dimensions(width, height):
-    from png2svg_gs.io import generate_canvas_html, generate_parallax_canvas_html
+    from png2svg_gs.io import (
+        generate_canvas_html,
+        generate_css_splat_html,
+        generate_native_canvas_html,
+        generate_parallax_canvas_html,
+    )
 
-    for generator in (generate_canvas_html, generate_parallax_canvas_html):
+    for generator in (
+        generate_canvas_html,
+        generate_parallax_canvas_html,
+        generate_css_splat_html,
+        generate_native_canvas_html,
+    ):
         with pytest.raises(ValueError, match="must be positive"):
             generator([], width=width, height=height)
 
@@ -725,6 +975,11 @@ def test_canvas_html_compositing_space_flag_and_color_encoding():
     )
     assert "const SRGB_IN = false;" in html_lin
     assert "const SRGB_IN = true;" in html_srgb
+    assert "new Worker(workerUrl)" in html_lin
+    assert "new OffscreenCanvas" in html_lin
+    assert "new Uint8ClampedArray(event.data.pixels)" in html_lin
+    assert "main-thread-fallback" in html_lin
+    assert 'data-execution="pending"' in html_lin
     assert "dataset.splatthisRenderDone = 'true'" in html_lin
     assert "Math.sqrt((sx*ct)*(sx*ct) + (sy*st)*(sy*st))" in html_lin
     encoded = float(linear_to_srgb(np.array([0.2], dtype=np.float32))[0])
@@ -802,7 +1057,9 @@ def test_canvas_checkpoint_selection_requires_gain_or_smaller_equivalent():
     )
 
 
-def test_canvas_adaptive_compute_stops_before_densification_and_residual(tmp_path):
+def test_pixel_runtime_adaptive_compute_stops_before_densification_and_residual(
+    tmp_path,
+):
     img_path = tmp_path / "tiny.png"
     rng = np.random.default_rng(0)
     Image.fromarray(rng.integers(0, 256, size=(16, 16, 3), dtype=np.uint8)).save(
@@ -827,7 +1084,7 @@ def test_canvas_adaptive_compute_stops_before_densification_and_residual(tmp_pat
     converter.convert(
         str(img_path),
         output_path=str(tmp_path / "tiny.html"),
-        output_format="canvas",
+        output_format="pixel-runtime",
         artifacts_dir=str(artifacts),
         verbose=False,
     )
@@ -849,7 +1106,7 @@ def test_canvas_adaptive_compute_stops_before_densification_and_residual(tmp_pat
     assert not (artifacts / "residual-1.metrics.json").exists()
 
 
-def test_adaptive_compute_rejects_non_canvas_output(tmp_path):
+def test_adaptive_compute_rejects_non_pixel_runtime_output(tmp_path):
     img_path = tmp_path / "tiny.png"
     Image.fromarray(np.zeros((8, 8, 3), dtype=np.uint8)).save(img_path)
     converter = PNG2SVGConverter(
@@ -860,7 +1117,7 @@ def test_adaptive_compute_rejects_non_canvas_output(tmp_path):
         refinement_config={"adaptive_compute_enabled": True},
     )
 
-    with pytest.raises(ValueError, match="only Canvas"):
+    with pytest.raises(ValueError, match="only pixel-runtime"):
         converter.convert(
             str(img_path),
             output_path=str(tmp_path / "tiny.svg"),

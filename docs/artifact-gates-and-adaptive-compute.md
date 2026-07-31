@@ -11,7 +11,7 @@ The ADR-003 measurement foundation now has:
 - one shared target-specific calibration schema in
   `src/png2svg_gs/artifact_gates.py`;
 - a versioned current calibration in `data/artifact-gates.json`;
-- repeated Canvas, SVG, and PowerPoint capture in
+- repeated pixel-runtime, SVG, and PowerPoint capture in
   `tools/calibrate_artifact_noise.py`;
 - optional retention of every Chrome canvas repeat in
   `tools/capture_canvas_html.py`;
@@ -20,7 +20,7 @@ The ADR-003 measurement foundation now has:
 - a full-corpus replay tool in `tools/simulate_adaptive_canvas.py`;
 - a resumable full-frame checkpoint parity calibrator in
   `tools/calibrate_canvas_checkpoint_parity.py`;
-- a default-off, Canvas-only online hard-target controller in the converter;
+- a default-off, pixel-runtime-only online hard-target controller in the converter;
   and
 - content-addressed adaptive options in `tools/corpus_benchmark.py`, with the
   first deployed-artifact evidence versioned in
@@ -58,8 +58,8 @@ of those captures differed by a few pixel values.
 
 | Target | Artifacts | Main observations | Repeat result |
 |---|---:|---:|---|
-| Chrome Canvas | 21 | 105 | Byte-identical within every artifact |
-| `rsvg-convert` SVG | 21 | 105 | Byte-identical within every artifact |
+| Chrome pixel runtime (`ImageData` via Canvas) | 21 | 105 | Byte-identical within every artifact |
+| Playwright Chromium SVG | 21 | 105 | Byte-identical within every artifact |
 | Microsoft PowerPoint | 21 | 105 | Byte-identical within every artifact |
 
 The extra PowerPoint warm-up produced these largest observed metric spans:
@@ -73,19 +73,19 @@ The extra PowerPoint warm-up produced these largest observed metric spans:
 | Edge-gradient L1 | 0.0000004340 |
 
 These floors are orders of magnitude below the existing algorithm gates. The
-current `0.0005` Canvas SSIM checkpoint tolerance and `0.002` SVG SSIM
+current `0.0005` pixel-runtime SSIM checkpoint tolerance and `0.002` SVG SSIM
 regression tolerance therefore remain policy choices, not accommodations for
 repeat-render noise.
 
 This run does not establish cross-version or cross-machine stability. The
-recorded environment is Chrome canvas capture, `rsvg-convert` 2.62.3,
-PowerPoint 16.89.1, and macOS 26.5.2 on arm64.
+recorded environment is Chrome pixel-runtime canvas capture, Playwright Chromium
+140.0.7339.81, PowerPoint 16.89.1, and macOS 26.5.2 on arm64.
 
-## Adaptive Canvas replay
+## Adaptive pixel-runtime replay
 
 The simulator consumes two evidence sets and keeps them separate:
 
-1. canonical raw Canvas stage checkpoints, rescored with the byte-exact
+1. canonical raw pixel-runtime stage checkpoints, rescored with the byte-exact
    deployed runtime model;
 2. final 2k and 4k pixel buffers captured from Chrome.
 
@@ -124,7 +124,7 @@ same choice from the 2k state.
 
 ## Online hard-target controller
 
-`--adaptive-compute` evaluates the deployed Canvas model after each completed
+`--adaptive-compute` evaluates the deployed pixel-runtime model after each completed
 main stage, at the existing monotonic checkpoint boundary. After at least two
 checkpoints, it stops only when the selected checkpoint reaches the explicit
 SSIM target. The stop occurs before the next densification step and skips all
@@ -135,7 +135,7 @@ The controller deliberately does not:
 - stop on a plateau or one regressing checkpoint;
 - infer an unseen 4k or 8k result;
 - use a future checkpoint to justify a decision; or
-- run for SVG or PowerPoint.
+- run for native Canvas, CSS, SVG, or PowerPoint.
 
 The run manifest records the policy, every observed decision, selected
 checkpoint, skipped stage count, skipped scheduled iterations, and whether
@@ -174,9 +174,9 @@ aggregate recorded stage time.
 
 ## Checkpoint model-to-Chrome calibration
 
-The parity calibrator reconstructed unchanged, self-contained Canvas HTML for
-every available full-frame stage artifact and captured its exact canvas pixel
-buffer with Chrome. It compared both the former continuous NumPy renderer and
+The parity calibrator reconstructed unchanged, self-contained pixel-runtime
+HTML for every available full-frame stage artifact and captured its exact
+canvas pixel buffer with Chrome. It compared both the former continuous NumPy renderer and
 the deployed runtime scorer with those pixels. No checkpoint was retrained, so
 optimizer variance is outside this measurement.
 
@@ -219,14 +219,14 @@ Capture and calibrate the complete corpus:
 
 ```bash
 PYTHONPATH=src venv/bin/python tools/calibrate_artifact_noise.py \
-  --capture --targets canvas,svg,pptx --repeats 5 \
+  --capture --targets pixel-runtime,svg,pptx --repeats 5 \
   --output-dir ./tmp/artifact-noise
 ```
 
 PowerPoint capture opens the real application and controls its slideshow UI.
-Canvas requires a Python environment containing Playwright.
+Pixel-runtime capture requires a Python environment containing Playwright.
 
-Calibrate the available Canvas checkpoint curves against Chrome:
+Calibrate the available pixel-runtime checkpoint curves against Chrome:
 
 ```bash
 PYTHONPATH=src venv/bin/python tools/calibrate_canvas_checkpoint_parity.py \
@@ -260,7 +260,7 @@ PYTHONPATH=src venv/bin/python tools/corpus_benchmark.py \
   --root ./tmp/adaptive-online-mvp --materialize
 
 PYTHONPATH=src venv/bin/python tools/corpus_benchmark.py \
-  --root ./tmp/adaptive-online-mvp --run --formats canvas --seeds 0 \
+  --root ./tmp/adaptive-online-mvp --run --formats pixel-runtime --seeds 0 \
   --splats 4000 --initial-splat-cap 4000 --only colorwheel,brick \
   --profile max-fidelity --optimizer-backend mlx \
   --canvas-capture-python venv/bin/python \
@@ -273,9 +273,17 @@ Do not make adaptive stopping default-on or spend a fresh multi-seed benchmark
 on the current hard-target rule. Its 1.3% retrospective saving misses the 5%
 compute gate before optimizer-variance validation is even charged.
 
-The next slice moves to algorithmic fidelity improvement: add and artifact-gate
-one broader deterministic operator or target-specific recipe at a time. Revisit
-adaptive allocation only when a richer safe signal, such as a calibrated
-perceptual proxy or quality-slope model, clears the same retrospective compute
-gate. Only then measure same-seed MLX variation and run an interleaved,
-multi-seed adaptive-versus-fixed benchmark.
+The first target-specific follow-up is now complete. A full-corpus
+native-dimension Playwright Chromium gate accepted palette-quantized on Brick,
+Cell, Chameleon, Hubble deep field, Immunohistochemistry, Retina, and Rocket.
+Its 7/21 wins clear the predeclared minimum of five; automatic browser recipe
+selection is eligible for a separate default-off integration slice but is not
+yet in `splatlify`. See `docs/svg-recipe-gate-mvp.md` and
+`data/svg-recipe-gate-mvp.json`.
+
+That selector integration is the next slice. Bounded center adjustment remains
+the next independent geometry operator. Revisit adaptive allocation only when
+a richer safe signal, such as a calibrated perceptual proxy or quality-slope
+model, clears the same retrospective compute gate. Only then measure same-seed
+MLX variation and run an interleaved, multi-seed adaptive-versus-fixed
+benchmark.

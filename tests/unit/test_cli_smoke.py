@@ -116,6 +116,7 @@ def test_cli_smoke_mlx_svg(tmp_path):
 def test_cli_smoke_torch_pptx(tmp_path):
     img = _write_fixture_image(tmp_path)
     out_pptx = tmp_path / "out.pptx"
+    artifacts = tmp_path / "pptx-artifacts"
     code = _run_cli(
         [
             str(img),
@@ -129,6 +130,10 @@ def test_cli_smoke_torch_pptx(tmp_path):
             "2,1",
             "--splats",
             "16",
+            "--pptx-painter-order",
+            "back-to-front",
+            "--artifacts-dir",
+            str(artifacts),
         ]
     )
     assert code in (0, None)
@@ -137,9 +142,50 @@ def test_cli_smoke_torch_pptx(tmp_path):
         names = zf.namelist()
     assert "[Content_Types].xml" in names
     assert any(name.startswith("ppt/slides/") for name in names)
+    manifest = json.loads((artifacts / "run_manifest.json").read_text())
+    assert manifest["config"]["pptx_painter_order"] == "back-to-front"
 
 
-def test_cli_smoke_canvas_adaptive_compute(tmp_path):
+def test_cli_smoke_scriptless_css_compositor(tmp_path):
+    img = _write_fixture_image(tmp_path)
+    out_html = tmp_path / "out.html"
+    artifacts = tmp_path / "artifacts"
+    code = _run_cli(
+        [
+            str(img),
+            "-o",
+            str(out_html),
+            "--format",
+            "css",
+            "--optimizer-backend",
+            "torch",
+            "--stages",
+            "2,1",
+            "--splats",
+            "16",
+            "--layered-saliency",
+            "--css-parallax-strength",
+            "8",
+            "--artifacts-dir",
+            str(artifacts),
+        ]
+    )
+
+    assert code in (0, None)
+    html = out_html.read_text(encoding="utf-8")
+    assert 'data-compositor="css-splats"' in html
+    assert 'data-grid="10"' in html
+    assert "<script" not in html.lower()
+    assert "<canvas" not in html.lower()
+    manifest = json.loads((artifacts / "run_manifest.json").read_text())
+    assert manifest["config"]["training_export_target"] == "svg"
+    assert manifest["artifact_evaluation"]["render_kind"] in {
+        "css-browser-capture",
+        "css-browser-unavailable",
+    }
+
+
+def test_cli_smoke_native_canvas_compositor(tmp_path):
     img = _write_fixture_image(tmp_path)
     out_html = tmp_path / "out.html"
     artifacts = tmp_path / "artifacts"
@@ -150,6 +196,41 @@ def test_cli_smoke_canvas_adaptive_compute(tmp_path):
             str(out_html),
             "--format",
             "canvas",
+            "--optimizer-backend",
+            "torch",
+            "--stages",
+            "2,1",
+            "--splats",
+            "16",
+            "--artifacts-dir",
+            str(artifacts),
+        ]
+    )
+
+    assert code in (0, None)
+    html = out_html.read_text(encoding="utf-8")
+    assert 'data-compositor="canvas-api-splats"' in html
+    assert "createRadialGradient" in html
+    assert "putImageData" not in html
+    manifest = json.loads((artifacts / "run_manifest.json").read_text())
+    assert manifest["config"]["training_export_target"] == "svg"
+    assert manifest["artifact_evaluation"]["render_kind"] in {
+        "canvas-api-browser-capture",
+        "canvas-api-browser-unavailable",
+    }
+
+
+def test_cli_smoke_pixel_runtime_adaptive_compute(tmp_path):
+    img = _write_fixture_image(tmp_path)
+    out_html = tmp_path / "out.html"
+    artifacts = tmp_path / "artifacts"
+    code = _run_cli(
+        [
+            str(img),
+            "-o",
+            str(out_html),
+            "--format",
+            "pixel-runtime",
             "--optimizer-backend",
             "torch",
             "--stages",
@@ -168,6 +249,11 @@ def test_cli_smoke_canvas_adaptive_compute(tmp_path):
 
     assert code in (0, None)
     assert out_html.is_file()
+    html = out_html.read_text(encoding="utf-8")
+    assert 'data-compositor="pixel-runtime"' in html
+    assert "gl.RGBA32F" in html
+    assert "worker-offscreen" in html
+    assert "putImageData" in html
     manifest = json.loads((artifacts / "run_manifest.json").read_text())
     adaptive = next(
         stage
@@ -179,3 +265,7 @@ def test_cli_smoke_canvas_adaptive_compute(tmp_path):
     assert adaptive["policy"]["chrome_ssim_safety_margin"] == 0.0
     assert adaptive["policy"]["effective_model_ssim_threshold"] == 0.0
     assert adaptive["policy"]["runtime_scorer"] == "canvas-image-data-byte-v1"
+    assert manifest["artifact_evaluation"]["render_kind"] in {
+        "pixel-runtime-browser-capture",
+        "pixel-runtime-browser-unavailable",
+    }

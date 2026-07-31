@@ -1,0 +1,78 @@
+{
+  "schema": "splatthis.svg-compositor-corpus/1",
+  "date": "2026-07-31",
+  "browser": "Chromium 140.0.7339.81",
+  "scope": {
+    "images": 21,
+    "populations": 33,
+    "seeds": "all stored canonical SVG seeds",
+    "capture_repeats": 1,
+    "successful_captures": 33
+  },
+  "variants": [
+    "legacy-order",
+    "corrected-standard",
+    "corrected-high"
+  ],
+  "all_population_deltas": {
+    "corrected_standard_vs_legacy": {
+      "median_ssim_srgb": 0.08512800336743731,
+      "median_lpips": -0.09096719324588776,
+      "median_gzip_growth_fraction": -0.001755665397185524,
+      "median_capture_time_growth_fraction": 0.025721342397846847,
+      "ssim_improvements_over_0_002": 30,
+      "ssim_regressions_over_0_002": [
+        "gravel_svg_s0_art",
+        "hubble_deep_field_svg_s0_art"
+      ]
+    },
+    "corrected_high_vs_corrected_standard": {
+      "median_ssim_srgb": 0.010187785766780921,
+      "median_lpips": -0.00440526008605957,
+      "median_gzip_growth_fraction": 0.5675335003976532,
+      "median_capture_time_growth_fraction": 0.04343266822377401,
+      "ssim_improvements_over_0_01": 17,
+      "ssim_regressions_over_0_002": [
+        "colorwheel_svg_s1_art",
+        "colorwheel_svg_s2_art"
+      ]
+    }
+  },
+  "seed0_medians": {
+    "legacy_order": {
+      "ssim_srgb": 0.5973170586494896,
+      "lpips": 0.40225687623023987,
+      "gzip_size_bytes": 62955,
+      "capture_time_ms": 227.4131670128554
+    },
+    "corrected_standard": {
+      "ssim_srgb": 0.7403957369993059,
+      "lpips": 0.24327030777931213,
+      "gzip_size_bytes": 62771,
+      "capture_time_ms": 232.95654193498194
+    },
+    "corrected_high": {
+      "ssim_srgb": 0.74830271912954,
+      "lpips": 0.24388223886489868,
+      "gzip_size_bytes": 96350,
+      "capture_time_ms": 254.84024989418685
+    },
+    "artifact_gate_selection": {
+      "selected_counts": {
+        "corrected-high": 17,
+        "legacy-order": 4,
+        "corrected-standard": 0
+      },
+      "ssim_srgb": 0.7111388916780162,
+      "lpips": 0.24388223886489868,
+      "gzip_size_bytes": 93494,
+      "capture_time_ms": 234.38654211349785
+    }
+  },
+  "notes": [
+    "Metrics grade complete native-size Chromium frames, not crops.",
+    "The production gate recomputes fixed worst-error ROIs per artifact.",
+    "Single-repeat capture timing is directional; corpus medians, not individual timings, govern the performance claim.",
+    "SVG masks and linearRGB were excluded after the Chameleon MVP failed their quality or cost gates."
+  ]
+}

@@ -63,7 +63,7 @@ Add an experimental runner that:
 8. trains the student with teacher guidance decaying from 25% to zero;
 9. applies the same existing SVG proxy post-fit to the direct and distilled
    arms so exporter mismatch is not mistaken for a representation gain;
-10. emits and rasterizes the actual SVG;
+10. emits the actual SVG and captures it at native dimensions in Chromium;
 11. emits PPTX and captures a real PowerPoint slide image;
 12. writes one comparison record and visual panel per source image.
 
@@ -154,8 +154,11 @@ to 384 px), not crops. Deployed direct baselines were the existing MLX-trained
 artifacts. The experimental Top-K teacher/student arms ran in Torch on MPS with
 the tiled batched renderer. Each arm used 20 teacher plus 20 student
 iterations. The 1,024-splat arm ran seeds 0, 1, and 2; the 256-splat arm ran
-seed 0. Every reported SVG metric comes from rasterizing the emitted SVG with
-`rsvg-convert`.
+seed 0. The recorded SVG metrics in the table below were produced by
+`rsvg-convert` before Chromium became the governing browser target. They are
+retained as historical evidence and are not sufficient for promotion. The
+runner now uses native-dimension Playwright Chromium capture; this experiment
+must be rerun before making a new browser-SVG decision.
 
 This is a screening configuration, not a paper-level quality ceiling. The
 deployed corpus contains 959-1,714 splats after pruning (median 1,389) from a

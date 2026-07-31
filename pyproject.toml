@@ -55,14 +55,10 @@ test = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0"
 ]
-# In-process SVG rasterization for honest export-quality metrics. Without it
-# the pipeline falls back to the rsvg-convert CLI if present, then to a proxy.
-rasterize = [
-    "cairosvg>=2.5.0"
-]
-# Exact Chrome canvas capture. The tools launch an installed Chrome executable,
-# so this installs the Python automation client without requiring a bundled
-# browser download.
+# Governing native Canvas, CSS, pixel-runtime, and SVG capture. The tools launch
+# an installed Chrome executable, so this installs the Python automation client
+# without requiring a bundled browser download. Library SVG rasterizers are not
+# implicit fallbacks because they are not the deployed browser target.
 capture = [
     "playwright>=1.55"
 ]

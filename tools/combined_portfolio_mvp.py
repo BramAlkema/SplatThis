@@ -23,6 +23,7 @@ from typing import Any, Iterable
 import numpy as np
 from PIL import Image
 
+from png2svg_gs.browser_capture import render_svg_in_browser_to_linear_rgb
 from png2svg_gs.converter import PNG2SVGConverter
 from png2svg_gs.fidelity import (
     FidelityCandidate,
@@ -34,7 +35,6 @@ from png2svg_gs.fidelity import (
 )
 from png2svg_gs.fidelity.metrics import _np_linear_to_srgb, linear_rgb_to_oklab_np
 from png2svg_gs.io import (
-    _try_rasterize_svg_to_linear_rgb,
     compute_quality_metrics,
     generate_svg_content,
     load_png,
@@ -57,6 +57,7 @@ RECIPE_NAMES = (
     "browser-compatible",
     "palette-quantized",
     "blur",
+    "scripted-matrix",
 )
 HIGHER_IS_BETTER = {"psnr_srgb", "ssim_srgb", "ms_ssim_luma"}
 LOWER_IS_BETTER = {
@@ -195,9 +196,7 @@ def evaluate_svg(
     shape_count: int,
     foreground_mask: np.ndarray | None = None,
 ) -> dict[str, Any]:
-    rendered, renderer = _try_rasterize_svg_to_linear_rgb(str(path), width, height)
-    if rendered is None:
-        raise RuntimeError(f"could not rasterize {path}: {renderer}")
+    rendered, renderer = render_svg_in_browser_to_linear_rgb(str(path), width, height)
     metrics = _finite_metrics(
         compute_fidelity_metrics(
             target,
@@ -682,11 +681,9 @@ def _mixed_winner(
     width: int,
     height: int,
 ) -> Candidate | None:
-    parent_render, renderer = _try_rasterize_svg_to_linear_rgb(
+    parent_render, renderer = render_svg_in_browser_to_linear_rgb(
         str(parent.svg), width, height
     )
-    if parent_render is None:
-        raise RuntimeError(f"could not rasterize {parent.svg}: {renderer}")
     parent_quality = compute_quality_metrics(target, parent_render)
     base_content = parent.svg.read_text()
     scratch = output_dir / f"{parent.name}--mixed-scratch.svg"
@@ -709,11 +706,9 @@ def _mixed_winner(
                         base_content, edge_paths_to_svg_group(paths)
                     )
                     scratch.write_text(content)
-                    rendered, actual_renderer = _try_rasterize_svg_to_linear_rgb(
+                    rendered, actual_renderer = render_svg_in_browser_to_linear_rgb(
                         str(scratch), width, height
                     )
-                    if rendered is None:
-                        continue
                     metrics = compute_quality_metrics(target, rendered)
                     ssim_gain = float(metrics["ssim_srgb"]) - float(
                         parent_quality["ssim_srgb"]
@@ -942,7 +937,7 @@ def _emit_and_capture_pptx(
                 background_linear_rgb=background,
                 splat_style="gradient",
             )
-        parent_render, renderer = _try_rasterize_svg_to_linear_rgb(
+        parent_render, renderer = render_svg_in_browser_to_linear_rgb(
             str(
                 next(
                     candidate.svg
@@ -953,8 +948,6 @@ def _emit_and_capture_pptx(
             width,
             height,
         )
-        if parent_render is None:
-            raise RuntimeError(f"could not reconstruct mixed PPTX residual: {renderer}")
         spec = mixed_parent.mixed
         paths = propose_residual_edge_paths(
             target,
@@ -1325,10 +1318,6 @@ def main() -> int:
         "background_linear_rgb": [float(value) for value in background],
         "beam_width": args.beam_width,
         "excluded": {
-            "scripted-matrix": (
-                "Packaging-only recipe requiring JavaScript; rsvg cannot execute "
-                "it, so it cannot enter an actual-artifact SVG gate."
-            ),
             "top-k-teacher": (
                 "Teacher is a non-exportable optimization ceiling; its exportable "
                 "student population enters through --population."

@@ -11,7 +11,7 @@ Examples:
       --capture --targets svg --only chameleon
 
     PYTHONPATH=src python tools/calibrate_artifact_noise.py \
-      --capture --targets canvas,svg,pptx --repeats 5
+      --capture --targets pixel-runtime,svg,pptx --repeats 5
 """
 
 from __future__ import annotations
@@ -21,7 +21,6 @@ import hashlib
 import importlib
 import json
 import platform
-import shutil
 import subprocess
 import sys
 import time
@@ -38,8 +37,12 @@ from png2svg_gs.artifact_gates import (
     ArtifactGateCalibration,
     calibrate_artifact_observations,
 )
+from png2svg_gs.browser_capture import (
+    get_shared_svg_renderer,
+    render_svg_in_browser_to_linear_rgb,
+)
 from png2svg_gs.fidelity.metrics import compute_fidelity_metrics
-from png2svg_gs.io import _try_rasterize_svg_to_linear_rgb, linear_to_srgb, load_png
+from png2svg_gs.io import linear_to_srgb, load_png
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_CORPUS = REPO / "result" / "corpus"
@@ -111,8 +114,9 @@ def _artifact_path(
     recorded = run.get("output_path") if run is not None else None
     if isinstance(recorded, str) and recorded:
         return root / recorded
-    extension = {"canvas": "html", "svg": "svg", "pptx": "pptx"}[target]
-    return root / "runs" / f"{image}_{target}_s0.{extension}"
+    extension = {"pixel-runtime": "html", "svg": "svg", "pptx": "pptx"}[target]
+    artifact_target = "canvas" if target == "pixel-runtime" else target
+    return root / "runs" / f"{image}_{artifact_target}_s0.{extension}"
 
 
 def _grid_rois(
@@ -162,29 +166,6 @@ def _save_linear_png(path: Path, linear_rgb: FloatArray) -> None:
     pixels = np.rint(srgb * 255.0).astype(np.uint8)
     path.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(pixels, mode="RGB").save(path)
-
-
-def _renderer_version(renderer: str) -> str:
-    if renderer == "cairosvg":
-        try:
-            import cairosvg  # type: ignore
-
-            return str(cairosvg.__version__)
-        except Exception:
-            return "unknown"
-    if renderer == "rsvg-convert":
-        executable = shutil.which("rsvg-convert")
-        if executable is None:
-            return "unavailable"
-        result = subprocess.run(
-            [executable, "--version"],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
-        return result.stdout.strip()
-    return "unknown"
 
 
 def _powerpoint_version() -> str:
@@ -239,7 +220,9 @@ def _observation(
 def _display_path(path: Path) -> str:
     resolved = path.resolve()
     try:
-        return str(resolved.relative_to(REPO))
+        relative = resolved.relative_to(REPO)
+        rendered = str(relative)
+        return f"./{rendered}" if relative.parts[:1] == ("tmp",) else rendered
     except ValueError:
         return str(resolved)
 
@@ -257,25 +240,32 @@ def _capture_svg(
     source_linear = np.asarray(load_png(str(source))[..., :3], dtype=np.float32)
     height, width = source_linear.shape[:2]
     records = []
-    renderer_version = "unknown"
+    renderer_version = get_shared_svg_renderer().browser_version
+    renderer = f"playwright-chromium/{renderer_version}"
+    renderer_cache_key = f"chromium-{renderer_version.replace('.', '-')}"
     for repeat in range(repeats):
-        capture_path = output_dir / "captures" / "svg" / image / f"{repeat:03d}.png"
+        capture_path = (
+            output_dir
+            / "captures"
+            / "svg"
+            / renderer_cache_key
+            / image
+            / f"{repeat:03d}.png"
+        )
         started = time.perf_counter()
         if force or not capture_path.exists():
-            rendered, renderer = _try_rasterize_svg_to_linear_rgb(
+            rendered, actual_renderer = render_svg_in_browser_to_linear_rgb(
                 str(artifact), width, height
             )
-            if rendered is None:
+            if actual_renderer != renderer:
                 raise RuntimeError(
-                    f"SVG renderer unavailable for {artifact}: {renderer}"
+                    f"SVG renderer changed during capture: {actual_renderer}"
                 )
             _save_linear_png(capture_path, rendered)
             rendered = _load_rendered_png(capture_path)
         else:
             rendered = _load_rendered_png(capture_path)
-            _, renderer = _try_rasterize_svg_to_linear_rgb(str(artifact), width, height)
         elapsed_ms = (time.perf_counter() - started) * 1000.0
-        renderer_version = _renderer_version(renderer)
         records.append(
             _observation(
                 target="svg",
@@ -286,7 +276,7 @@ def _capture_svg(
                 repeat=repeat,
                 renderer=renderer,
                 renderer_version=renderer_version,
-                capture_method="emitted SVG rasterization",
+                capture_method="Playwright Chromium native-dimension PNG screenshot",
                 capture_path=capture_path,
                 render_time_ms=elapsed_ms,
                 metrics=_score(source_linear, rendered, renderer=renderer),
@@ -307,7 +297,7 @@ def _capture_canvas(
     capture_python: Path,
     browser_executable: Path,
 ) -> list[dict[str, Any]]:
-    sample_dir = output_dir / "captures" / "canvas" / image
+    sample_dir = output_dir / "captures" / "pixel-runtime" / image
     expected = [sample_dir / f"repeat-{repeat:03d}.png" for repeat in range(repeats)]
     metadata_path = sample_dir / "capture.json"
     if (
@@ -357,13 +347,13 @@ def _capture_canvas(
         )
         records.append(
             _observation(
-                target="canvas",
+                target="pixel-runtime",
                 image=image,
                 artifact=artifact,
                 artifact_id=artifact_id,
                 source=source,
                 repeat=repeat,
-                renderer="Google Chrome canvas.toDataURL",
+                renderer="Google Chrome pixel-runtime canvas.toDataURL",
                 renderer_version=str(metadata.get("browser", "unknown")),
                 capture_method="browser canvas.toDataURL",
                 capture_path=capture_path,
@@ -371,7 +361,7 @@ def _capture_canvas(
                 metrics=_score(
                     source_linear,
                     rendered,
-                    renderer="Google Chrome canvas.toDataURL",
+                    renderer="Google Chrome pixel-runtime canvas.toDataURL",
                 ),
             )
         )
@@ -499,7 +489,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus-root", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--targets", default="canvas,svg,pptx")
+    parser.add_argument("--targets", default="pixel-runtime,svg,pptx")
     parser.add_argument("--only", help="comma-separated corpus image names")
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--noise-multiplier", type=float, default=2.0)
@@ -547,8 +537,9 @@ def _build_artifact_specs(
     specs = []
     for target in targets:
         for image in selected_names:
+            run_target = "canvas" if target == "pixel-runtime" else target
             artifact = _artifact_path(
-                corpus_root, image, target, latest_runs.get((image, target))
+                corpus_root, image, target, latest_runs.get((image, run_target))
             )
             artifact_hash = _sha256(artifact) if artifact.exists() else "missing"
             artifact_id = f"{target}:{image}:{artifact_hash[:16]}"
@@ -566,7 +557,7 @@ def _capture_one(
 ) -> list[dict[str, Any]]:
     if target == "svg":
         return _capture_svg(**common)
-    if target == "canvas":
+    if target == "pixel-runtime":
         return _capture_canvas(
             **common,
             capture_python=capture_python,

@@ -1454,7 +1454,7 @@ def prepare_canvas_runtime_data(
     background_linear_rgb: Optional[np.ndarray] = None,
     compositing_space: str = "linear",
 ) -> Tuple[List[List[float]], np.ndarray, bool]:
-    """Prepare the exact ordered values serialized into the Canvas runtime."""
+    """Prepare exact ordered values for the ImageData pixel runtime."""
 
     normalized_space = str(compositing_space).strip().lower()
     if normalized_space not in {"linear", "srgb"}:
@@ -1470,7 +1470,7 @@ def prepare_canvas_runtime_data(
         background = np.clip(background, 0.0, 1.0).astype(np.float32)
     if srgb_mode:
         background = _np_linear_to_srgb(background)
-    # generate_canvas_html emits six decimal places for the background. Apply
+    # generate_pixel_runtime_html emits six decimal places for the background. Apply
     # the same boundary here so scoring sees exactly the serialized values.
     serialized_background = np.asarray(
         [float(f"{float(channel):.6f}") for channel in background],

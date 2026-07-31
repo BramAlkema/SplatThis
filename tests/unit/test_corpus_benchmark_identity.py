@@ -72,7 +72,7 @@ def test_run_identity_changes_with_source_and_optimizer_config(tmp_path: Path) -
 
     changed_adaptive_policy = corpus_benchmark._run_config(
         source=source,
-        fmt="canvas",
+        fmt="pixel-runtime",
         seed=0,
         splats=2000,
         stages="1000,500,250",
@@ -177,7 +177,7 @@ def test_overview_scopes_runtime_to_canvas_and_compares_artifacts(
             "lpips": 0.2,
             "ssim_srgb": 0.8,
             "psnr_srgb": 25.0,
-            "renderer": "rsvg-convert",
+            "renderer": "playwright-chromium/140.0",
         },
         {
             "key": "sample|pptx|seed0|fixture",

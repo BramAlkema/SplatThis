@@ -36,7 +36,7 @@ def _metrics(**overrides):
         worst_roi_error=0.20,
         splat_count=100,
         file_size_bytes=50_000,
-        render_method="rsvg-convert",
+        render_method="playwright-chromium/test",
     )
     base.update(overrides)
     from png2svg_gs.fidelity.metrics import FidelityMetrics
@@ -216,7 +216,7 @@ def test_select_fixed_rois_deterministic_and_spread():
 def test_metrics_identical_images_are_perfect():
     rng = np.random.default_rng(1)
     img = rng.random((48, 40, 3)).astype(np.float32)
-    m = compute_fidelity_metrics(img, img, render_method="rsvg-convert")
+    m = compute_fidelity_metrics(img, img, render_method="playwright-chromium/test")
     assert m.ssim_srgb == pytest.approx(1.0, abs=1e-5)
     assert m.delta_e_ok_p95 == pytest.approx(0.0, abs=1e-5)
     assert m.edge_chamfer == pytest.approx(0.0, abs=1e-6)
@@ -253,17 +253,10 @@ def test_resolve_fidelity_config_validates_mode():
         resolve_fidelity_config({"fidelity_stage": "extreme"})
 
 
-def _rasterizer_available() -> bool:
-    import shutil
+def _browser_renderer_available() -> bool:
+    from png2svg_gs.browser_capture import browser_capture_configured
 
-    if shutil.which("rsvg-convert"):
-        return True
-    try:
-        import cairosvg  # noqa: F401
-
-        return True
-    except Exception:
-        return False
+    return browser_capture_configured()
 
 
 def _tiny_image(tmp_path):
@@ -316,12 +309,13 @@ def test_fidelity_stage_writes_manifest_and_artifacts(tmp_path):
     assert fragment["mode"] == "balanced"
     assert fragment["winner_is_baseline"] is True
     assert fragment["candidates_evaluated"] == 0
-    # With a rasterizer available the baseline must come from the deployed
-    # artifact; without one (bare CI runners) the honest proxy fallback is
-    # recorded instead — and the gate refuses gains from it by construction.
+    # With Chrome available the baseline must come from the deployed browser
+    # artifact; without it the honest proxy fallback is recorded instead — and
+    # the gate refuses gains from it by construction.
     render_method = str(fragment["baseline_metrics"]["render_method"])
-    if _rasterizer_available():
+    if _browser_renderer_available():
         assert not render_method.startswith("proxy")
+        assert render_method.startswith("playwright-chromium/")
     else:
         assert render_method.startswith("proxy")
     fidelity_dir = artifacts / "fidelity"

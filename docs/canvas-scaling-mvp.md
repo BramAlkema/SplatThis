@@ -1,8 +1,8 @@
-# Canvas Scaling MVP
+# Pixel-Runtime Scaling MVP
 
 **Status:** full-corpus 2k→4k comparison complete\
 **Date:** 2026-07-29
-**Scope:** emitted HTML canvas, full source frames, seed 0
+**Scope:** emitted ImageData pixel-runtime HTML, full source frames, seed 0
 
 ## Question
 
@@ -10,9 +10,11 @@ Before adapting paper-style Top-K training to SVG or PowerPoint, how much of
 the current fidelity gap is simply an inadequate Gaussian budget or incomplete
 optimization?
 
-Canvas is the first target because its JavaScript runtime implements the same
-linear-light alpha-over equation used during MLX training. It removes SVG and
-DrawingML primitive mismatch from the experiment.
+The target was historically called Canvas, but it is the JavaScript software
+renderer now named `pixel-runtime`: it implements the same linear-light
+alpha-over equation used during MLX training and writes the result to
+`ImageData`. It removes SVG, native Canvas-gradient, and DrawingML primitive
+mismatch from the experiment.
 
 ## Measurement contract
 
@@ -161,7 +163,7 @@ Two post-training operations could destroy a better canvas:
    degrading deployed SSIM/PSNR. An ungated Colorwheel run fell from a
    stage-1 SSIM around 0.979 to a browser SSIM of 0.9726.
 
-Canvas now has two default-on artifact-in-the-loop gates:
+Pixel runtime now has two default-on artifact-in-the-loop gates:
 
 - score every stage checkpoint with the exact deployed canvas model and retain
   the best material SSIM/PSNR checkpoint, preferring fewer splats at equivalent

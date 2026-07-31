@@ -13,7 +13,10 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-ARTIFACT_TARGETS = ("canvas", "svg", "pptx")
+# The calibrated browser framebuffer belongs to the historical ImageData
+# software renderer, now named ``pixel-runtime``. Native Canvas and CSS need
+# their own repeat-render calibration before they can be added here.
+ARTIFACT_TARGETS = ("pixel-runtime", "svg", "pptx")
 
 # True means higher values are better.
 QUALITY_METRIC_DIRECTIONS: Dict[str, bool] = {

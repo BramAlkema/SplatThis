@@ -3,8 +3,8 @@
 
 Materializes a fixed corpus of standard, redistributable test images, runs the
 conversion pipeline over it per export format, and scores every run on the
-**deployed artifact** — the emitted SVG put through a real rasterizer, never
-the internal renderer.
+**deployed artifact** — the emitted SVG captured in Chromium, never the
+internal renderer.
 
 Everything is content-addressed and resumable: each run writes one JSONL
 record keyed by (image, format, seed, config), and re-invocations skip records
@@ -48,6 +48,11 @@ from png2svg_gs.adaptive_compute import (  # noqa: E402
 
 DEFAULT_ROOT = REPO / "result" / "corpus"
 MAX_EDGE = 384  # keeps a 20-image x 2-format sweep tractable; recorded in meta
+PIXEL_RUNTIME_CAPTURE_KINDS = {"canvas-pixel-buffer", "pixel-runtime-buffer"}
+DEPLOYED_CANVAS_CAPTURE_KINDS = {
+    *PIXEL_RUNTIME_CAPTURE_KINDS,
+    "canvas-api-pixel-buffer",
+}
 
 
 @dataclass(frozen=True)
@@ -195,18 +200,15 @@ def _lpips_score(a_srgb: np.ndarray, b_srgb: np.ndarray) -> float:
 
 
 def score_svg(source_png: Path, svg_path: Path) -> Optional[dict]:
-    """Metrics on the actually-rasterized SVG."""
-    from png2svg_gs.io import (
-        _try_rasterize_svg_to_linear_rgb,
-        compute_quality_metrics,
-        linear_to_srgb,
-        load_png,
-    )
+    """Metrics on the emitted SVG captured in governing Chromium."""
+    from png2svg_gs.browser_capture import render_svg_in_browser_to_linear_rgb
+    from png2svg_gs.io import compute_quality_metrics, linear_to_srgb, load_png
 
     target_lin = load_png(str(source_png))[..., :3]
     h, w = target_lin.shape[:2]
-    rendered_lin, method = _try_rasterize_svg_to_linear_rgb(str(svg_path), w, h)
-    if rendered_lin is None:
+    try:
+        rendered_lin, method = render_svg_in_browser_to_linear_rgb(str(svg_path), w, h)
+    except RuntimeError:
         return None
     m = compute_quality_metrics(target_lin, rendered_lin)
     lp = _lpips_score(linear_to_srgb(target_lin), linear_to_srgb(rendered_lin))
@@ -251,7 +253,7 @@ def score_pptx_proxy(source_png: Path, splats_json: Path) -> Optional[dict]:
 def score_canvas(
     source_png: Path, splats_json: Path, manifest_path: Path
 ) -> Optional[dict]:
-    """Score the byte-exact deployed Canvas runtime model."""
+    """Score the byte-exact ImageData pixel-runtime model."""
     from png2svg_gs.io import (
         compute_quality_metrics,
         linear_to_srgb,
@@ -283,7 +285,7 @@ def score_canvas(
     lpips_score = _lpips_score(linear_to_srgb(target_lin), linear_to_srgb(rendered))
     return {
         "renderer": "canvas-image-data-byte-v1",
-        "render_kind": "canvas-runtime-model",
+        "render_kind": "pixel-runtime-model",
         "is_deployed_artifact": False,
         "lpips": round(lpips_score, 4),
         "ssim_srgb": round(float(metrics["ssim_srgb"]), 4),
@@ -307,6 +309,7 @@ def score_canvas_capture(
     *,
     splat_count: int,
     artifact_bytes: int,
+    compositor: str = "pixel-runtime",
 ) -> Optional[dict]:
     """Score the browser's exact canvas pixel buffer, not a Python proxy."""
 
@@ -334,10 +337,16 @@ def score_canvas_capture(
     for key, value in list(metrics.items()):
         if isinstance(value, float) and not np.isfinite(value):
             metrics[key] = None
+    render_kind = (
+        "canvas-api-pixel-buffer"
+        if compositor == "canvas-api-splats"
+        else "pixel-runtime-buffer"
+    )
     return {
         **metrics,
         "renderer": "Google Chrome canvas.toDataURL",
-        "render_kind": "canvas-pixel-buffer",
+        "render_kind": render_kind,
+        "compositor": compositor,
         "is_deployed_artifact": True,
     }
 
@@ -956,13 +965,13 @@ def generate_canvas_corpus_html(root: Path, output: Path) -> None:
         comparison_rows = [
             {
                 "output": (
-                    "Canvas"
-                    if model["source_format"] == "canvas"
-                    else f"Canvas ({model['source_format']}-trained)"
+                    "Pixel runtime"
+                    if canvas_record.get("render_kind") in PIXEL_RUNTIME_CAPTURE_KINDS
+                    else "Native Canvas"
                 ),
                 "evaluation": (
                     "actual browser pixel buffer"
-                    if canvas_record.get("render_kind") == "canvas-pixel-buffer"
+                    if canvas_record.get("render_kind") in DEPLOYED_CANVAS_CAPTURE_KINDS
                     else "runtime-model proxy"
                 ),
                 "record": canvas_record,
@@ -1059,7 +1068,7 @@ def generate_canvas_corpus_html(root: Path, output: Path) -> None:
                 or history_record.get("render_kind")
                 or "unknown"
             )
-            actual = history_record.get("render_kind") == "canvas-pixel-buffer"
+            actual = history_record.get("render_kind") in PIXEL_RUNTIME_CAPTURE_KINDS
             browser_ms = history_record.get("browser_render_ms")
             browser_samples = [
                 float(value)
@@ -1155,8 +1164,8 @@ def generate_canvas_corpus_html(root: Path, output: Path) -> None:
         for history in canvas_history.values()
         if 2000 in history
         and 4000 in history
-        and history[2000].get("render_kind") == "canvas-pixel-buffer"
-        and history[4000].get("render_kind") == "canvas-pixel-buffer"
+        and history[2000].get("render_kind") in PIXEL_RUNTIME_CAPTURE_KINDS
+        and history[4000].get("render_kind") in PIXEL_RUNTIME_CAPTURE_KINDS
     ]
     if paired_canvas:
         median_2k_ssim = statistics.median(
@@ -1643,7 +1652,12 @@ def run(
         key = run_key(name, fmt, seed, config_hash)
         src = root / meta[name]["path"]
         stem = runs_dir / f"{name}_{fmt}_s{seed}_{config_hash}"
-        suffix = {"svg": ".svg", "pptx": ".pptx", "canvas": ".html"}.get(fmt)
+        suffix = {
+            "svg": ".svg",
+            "pptx": ".pptx",
+            "canvas": ".html",
+            "pixel-runtime": ".html",
+        }.get(fmt)
         if suffix is None:
             raise ValueError(f"unsupported corpus format: {fmt}")
         out = stem.with_suffix(suffix)
@@ -1731,7 +1745,7 @@ def run(
                 )
             if fmt == "svg":
                 scored = score_svg(src, out)
-            elif fmt == "canvas":
+            elif fmt in {"canvas", "pixel-runtime"}:
                 scored = None
                 if canvas_capture_python is not None:
                     capture_path = out.with_name(f"{out.stem}_chrome_canvas.png")
@@ -1754,6 +1768,7 @@ def run(
                             capture_path,
                             splat_count=int(rec.get("splats_final") or 0),
                             artifact_bytes=int(rec.get("artifact_bytes") or 0),
+                            compositor=str(capture_metadata.get("compositor") or fmt),
                         )
                     else:
                         rec["canvas_capture_error"] = capture_log[-1000:]
@@ -1797,7 +1812,7 @@ def capture_existing_canvas_runs(
         except json.JSONDecodeError:
             continue
         if (
-            record.get("format") == "canvas"
+            record.get("format") in {"canvas", "pixel-runtime"}
             and record.get("returncode", 0) == 0
             and (only is None or record.get("image") in only)
         ):
@@ -1807,7 +1822,7 @@ def capture_existing_canvas_runs(
         record
         for record in latest_by_key.values()
         if refresh_html
-        or record.get("render_kind") != "canvas-pixel-buffer"
+        or record.get("render_kind") not in DEPLOYED_CANVAS_CAPTURE_KINDS
         or not record.get("canvas_capture_path")
         or not (root / record["canvas_capture_path"]).exists()
     ]
@@ -1818,7 +1833,7 @@ def capture_existing_canvas_runs(
         html_path = (
             root / recorded_output
             if recorded_output
-            else root / "runs" / f"{name}_canvas_s0.html"
+            else root / "runs" / f"{name}_{record.get('format', 'canvas')}_s0.html"
         )
         if not html_path.exists():
             print(
@@ -1827,7 +1842,11 @@ def capture_existing_canvas_runs(
             )
             continue
         if refresh_html:
-            from png2svg_gs.io import generate_canvas_html, load_splats_json
+            from png2svg_gs.io import (
+                generate_native_canvas_html,
+                generate_pixel_runtime_html,
+                load_splats_json,
+            )
 
             recorded_artifacts = record.get("artifacts_path")
             artifact_dir = (
@@ -1847,23 +1866,36 @@ def capture_existing_canvas_runs(
             config = manifest.get("config", {})
             width, height = config.get("resolved_target_size", meta[name]["size"])
             training_target = str(config.get("training_export_target", "canvas"))
-            html_path.write_text(
-                generate_canvas_html(
-                    load_splats_json(str(raw_path)),
+            splats = load_splats_json(str(raw_path))
+            background = np.asarray(
+                config.get("background_linear_rgb", [0.0, 0.0, 0.0]),
+                dtype=np.float32,
+            )
+            render_kind = str(
+                manifest.get("artifact_evaluation", {}).get("render_kind", "")
+            )
+            if render_kind.startswith("canvas-api-"):
+                refreshed_html = generate_native_canvas_html(
+                    splats,
                     int(width),
                     int(height),
-                    background_linear_rgb=np.asarray(
-                        config.get("background_linear_rgb", [0.0, 0.0, 0.0]),
-                        dtype=np.float32,
-                    ),
-                    title=f"{name} · SplatThis canvas",
+                    background_linear_rgb=background,
+                    title=f"{name} · SplatThis native canvas",
+                )
+            else:
+                refreshed_html = generate_pixel_runtime_html(
+                    splats,
+                    int(width),
+                    int(height),
+                    background_linear_rgb=background,
+                    title=f"{name} · SplatThis pixel runtime",
                     compositing_space=(
                         "srgb"
                         if training_target in {"svg", "pptx-softedge"}
                         else "linear"
                     ),
                 )
-            )
+            html_path.write_text(refreshed_html)
             record["artifact_bytes"] = html_path.stat().st_size
         capture_path = html_path.with_name(f"{html_path.stem}_chrome_canvas.png")
         print(
@@ -1886,6 +1918,7 @@ def capture_existing_canvas_runs(
             capture_path,
             splat_count=int(record.get("splats_final") or 0),
             artifact_bytes=int(record.get("artifact_bytes") or 0),
+            compositor=str(metadata.get("compositor") or "pixel-runtime"),
         )
         if scored is None:
             print("UNSCORED")
@@ -1938,9 +1971,9 @@ def summarize(root: Path) -> None:
     for record in ok:
         budget = record.get("splats_requested")
         if (
-            record.get("format") != "canvas"
+            record.get("format") not in {"canvas", "pixel-runtime"}
             or record.get("seed") != 0
-            or record.get("render_kind") != "canvas-pixel-buffer"
+            or record.get("render_kind") not in PIXEL_RUNTIME_CAPTURE_KINDS
             or budget not in {2000, 4000}
         ):
             continue
@@ -2194,9 +2227,9 @@ def main() -> int:
     if (
         args.run
         and args.adaptive_compute
-        and any(value != "canvas" for value in requested_formats)
+        and any(value != "pixel-runtime" for value in requested_formats)
     ):
-        ap.error("--adaptive-compute currently supports only --formats canvas")
+        ap.error("--adaptive-compute currently supports only --formats pixel-runtime")
 
     root = Path(args.root)
     root.mkdir(parents=True, exist_ok=True)

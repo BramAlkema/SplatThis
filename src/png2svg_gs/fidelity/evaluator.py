@@ -73,7 +73,7 @@ class FidelityEvaluator:
     def _deployed_render(
         self, splats: List[GaussianSplat], label: str
     ) -> tuple[Optional[np.ndarray], str, int]:
-        from ..io import _try_rasterize_svg_to_linear_rgb
+        from ..browser_capture import render_svg_in_browser_to_linear_rgb
 
         h, w = self.target.shape[:2]
         svg_content = self.emit_svg(list(splats))
@@ -84,14 +84,15 @@ class FidelityEvaluator:
         with open(svg_path, "w", encoding="utf-8") as f:
             f.write(svg_content)
         size = os.path.getsize(svg_path)
-        rendered, method = _try_rasterize_svg_to_linear_rgb(svg_path, w, h)
+        try:
+            rendered, method = render_svg_in_browser_to_linear_rgb(svg_path, w, h)
+        except RuntimeError as exc:
+            return None, f"proxy-fallback:{exc}", size
         if not self.keep_candidate_artifacts and label != "baseline":
             try:
                 os.remove(svg_path)
             except OSError:
                 pass
-        if rendered is None:
-            return None, f"proxy-fallback:{method}", size
         return rendered, method, size
 
     # -- public API ------------------------------------------------------
@@ -144,8 +145,8 @@ class FidelityEvaluator:
 
         rendered, method, size = self._deployed_render(splats, label)
         if rendered is None:
-            # Rasterizer unavailable: record honestly; the gate will refuse
-            # to accept any candidate (and to claim any gain) from this.
+            # Browser capture unavailable: record honestly; the gate refuses
+            # to accept a candidate or claim a deployed-artifact gain.
             rendered = proxy
         return compute_fidelity_metrics(
             self.target,

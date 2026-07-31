@@ -20,7 +20,7 @@ shrinking more Gaussians.
 5. Keep short connected fragments and simplify their vertices.
 6. Solve each path's source color for alpha-over compositing.
 7. Sweep bounded path count, length, width, and opacity.
-8. Score every emitted SVG with `rsvg-convert`.
+8. Capture and score every emitted SVG at native dimensions in Chromium.
 9. Select the lowest-complexity candidate that gains at least 0.005 SSIM with
    no material PSNR regression.
 10. Translate accepted paths to editable rounded DrawingML segment shapes.
@@ -69,6 +69,11 @@ If that experiment holds, integrate the operator into the ADR-003
 accept-or-revert fidelity stage rather than the normal Gaussian training loop.
 
 ## Full-corpus result
+
+**Historical renderer note:** the measurements below used `rsvg-convert`
+before Chromium became the governing browser target. They remain useful for
+explaining the earlier decision but cannot promote a browser-SVG operator. The
+runner now uses Playwright Chromium and requires a fresh run for new claims.
 
 The follow-up evaluated all 21 full corpus frames against the existing
 MLX-trained seed-0 SVG and PPTX artifacts. Candidate selection used the actual

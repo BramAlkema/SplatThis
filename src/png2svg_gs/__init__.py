@@ -1,14 +1,16 @@
-"""
-PNG to SVG Gaussian Splatting Pipeline
-
-A lean, practical tool for converting PNG images to SVG using anisotropic 2D Gaussian splats.
-Based on Image-GS methodology but optimized for real-world PNG→SVG conversion.
-"""
+"""Target-aware 2D Gaussian splat conversion and browser runtimes."""
 
 from ._version import __version__
 from .converter import PNG2SVGConverter
 from .io import (
+    evaluate_css_export_quality,
+    evaluate_native_canvas_export_quality,
     evaluate_svg_export_quality,
+    generate_css_splat_html,
+    generate_native_canvas_html,
+    generate_parallax_pixel_runtime_html,
+    generate_pixel_runtime_html,
+    generate_webgl_pixel_runtime_html,
     load_png,
     load_splats_json,
     render_splats_preview_png,
@@ -31,6 +33,13 @@ __all__ = [
     "load_splats_json",
     "render_splats_preview_png",
     "save_side_by_side_html",
+    "generate_css_splat_html",
+    "generate_native_canvas_html",
+    "generate_pixel_runtime_html",
+    "generate_webgl_pixel_runtime_html",
+    "generate_parallax_pixel_runtime_html",
+    "evaluate_css_export_quality",
+    "evaluate_native_canvas_export_quality",
     "evaluate_svg_export_quality",
     "validate_export_roundtrip",
     "PNG2SVGConverter",

@@ -1,4 +1,4 @@
-"""Canvas checkpoint model-to-browser parity calibration helpers."""
+"""Historical pixel-runtime checkpoint-to-browser parity helpers."""
 
 import json
 import sys

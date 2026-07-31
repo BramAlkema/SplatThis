@@ -149,9 +149,12 @@ def _shape_count(zf: zipfile.ZipFile) -> int:
 
 
 @pytest.mark.parametrize("splat_style", ["gradient", "soft-edge", "blur"])
-def test_native_shape_package_is_valid(tmp_path: Path, splat_style: str):
+@pytest.mark.parametrize("painter_order", ["legacy", "back-to-front"])
+def test_native_shape_package_is_valid(
+    tmp_path: Path, splat_style: str, painter_order: str
+):
     """Every splat style must emit a package PowerPoint can open."""
-    out = tmp_path / f"{splat_style}.pptx"
+    out = tmp_path / f"{splat_style}-{painter_order}.pptx"
     splats = _splats()
     save_pptx_with_splats(
         splats,
@@ -160,6 +163,7 @@ def test_native_shape_package_is_valid(tmp_path: Path, splat_style: str):
         output_path=str(out),
         background_linear_rgb=np.array([0.1, 0.1, 0.12], dtype=np.float32),
         splat_style=splat_style,
+        painter_order=painter_order,
     )
     zf = assert_valid_opc_package(out)
     # One shape per splat, plus the background plate.

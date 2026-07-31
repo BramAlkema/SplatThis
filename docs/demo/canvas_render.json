@@ -1,5 +1,6 @@
 {
-  "render_kind": "canvas-pixel-buffer",
+  "render_kind": "pixel-runtime-buffer",
+  "compositor": "JavaScript software rasterizer writing ImageData to Canvas",
   "renderer": "Google Chrome via Playwright",
   "is_deployed_artifact": true,
   "canvas_html_sha256": "00c07036a3354cf6aaffbeb414eadd743d2c26e5f700e72241ac5c88bd3e8509",

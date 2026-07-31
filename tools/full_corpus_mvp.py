@@ -3,8 +3,8 @@
 
 The runner deliberately reuses the deployed seed-0 SVG/PPTX artifacts already
 stored below ``result/corpus``. Top-K arms are trained at the corpus resolution;
-mixed paths are selected against an actual rsvg-convert render. Results are
-written below ``./tmp/full-corpus-mvp`` by default and are resumable.
+mixed paths are selected against a native-dimension Chromium capture. Results
+are written below ``./tmp/full-corpus-mvp`` by default and are resumable.
 """
 
 from __future__ import annotations
@@ -533,13 +533,14 @@ def _artifact_metrics(
     *,
     shape_count: int,
 ) -> dict[str, Any]:
+    from png2svg_gs.browser_capture import render_svg_in_browser_to_linear_rgb
     from png2svg_gs.fidelity.metrics import compute_fidelity_metrics
-    from png2svg_gs.io import _try_rasterize_svg_to_linear_rgb, load_png
+    from png2svg_gs.io import load_png
 
     target = load_png(str(source), target_size=(width, height))[..., :3]
-    rendered, renderer = _try_rasterize_svg_to_linear_rgb(str(artifact), width, height)
-    if rendered is None:
-        raise RuntimeError(f"failed to rasterize {artifact}: {renderer}")
+    rendered, renderer = render_svg_in_browser_to_linear_rgb(
+        str(artifact), width, height
+    )
     metrics = compute_fidelity_metrics(
         target,
         rendered,
@@ -1021,8 +1022,8 @@ The deployed baselines were optimized with MLX; the Top-K experiment ran with
 Torch on MPS. The completed Top-K run is a low-budget screen: 1,024 splats is
 below the deployed corpus median of 1,389, and its 40 total direct-arm
 iterations are far shorter than the deployed schedule. Top-K tables compare
-actual SVG rasterizations at every completed seed, while the visual triptychs
-show seed 0.</p>
+governing Chromium SVG captures at every completed seed, while the visual
+triptychs show seed 0.</p>
 {''.join(topk_sections)}
 <section>
   <h2>Mixed native paths on deployed MLX SVG baselines</h2>

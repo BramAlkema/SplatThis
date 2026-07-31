@@ -5,11 +5,16 @@ import numpy as np
 from png2svg_gs.io import load_splats_json, save_splats_json
 from png2svg_gs.splat import GaussianSplat, RawSplat
 from tools.combined_portfolio_mvp import (
+    RECIPE_NAMES,
     _build_foreground_hybrid,
     metric_deltas,
     passes_guard,
     quality_score,
 )
+
+
+def test_browser_portfolio_includes_scripted_svg_recipe():
+    assert "scripted-matrix" in RECIPE_NAMES
 
 
 def _metrics(**overrides):

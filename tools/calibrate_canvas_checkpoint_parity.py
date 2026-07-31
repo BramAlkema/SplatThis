@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Calibrate Canvas checkpoint scores against exact Chrome pixel buffers.
+"""Calibrate historical pixel-runtime scores against Chrome pixel buffers.
 
 The tool reconstructs every available stage HTML from its canonical raw splat
 artifact, captures the canvas with real Chrome, and compares both the
@@ -116,7 +116,7 @@ def _latest_curves(
         image = record.get("image")
         artifact_path = record.get("artifacts_path")
         if (
-            record.get("format") != "canvas"
+            record.get("format") not in {"canvas", "pixel-runtime"}
             or record.get("seed") != 0
             or not isinstance(image, str)
             or image not in selected_images
@@ -227,7 +227,7 @@ def _render_report(summary: Mapping[str, Any]) -> str:
     calibration = summary["calibration"]
     continuous = summary.get("continuous_model_baseline")
     lines = [
-        "# Canvas checkpoint model-to-Chrome parity",
+        "# Pixel-runtime checkpoint model-to-Chrome parity",
         "",
         "Every row is one unchanged full-frame stage artifact. No checkpoint",
         "was retrained for this calibration.",

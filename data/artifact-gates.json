@@ -7,15 +7,15 @@
     "corpus_images": 21,
     "full_run_observations": 315,
     "additional_powerpoint_warmup_observations": 5,
-    "canvas_renderer": "Google Chrome canvas.toDataURL",
-    "svg_renderer": "rsvg-convert 2.62.3",
+    "pixel_runtime_renderer": "Google Chrome canvas.toDataURL of the generated ImageData framebuffer",
+    "svg_renderer": "Playwright Chromium 140.0.7339.81",
     "powerpoint_renderer": "Microsoft PowerPoint 16.89.1",
     "platform": "macOS 26.5.2 arm64",
     "note": "Algorithm policy thresholds remain stricter than these repeat-render floors."
   },
   "targets": {
-    "canvas": {
-      "target": "canvas",
+    "pixel-runtime": {
+      "target": "pixel-runtime",
       "required_repeats": 5,
       "artifact_count": 21,
       "complete_artifact_count": 21,

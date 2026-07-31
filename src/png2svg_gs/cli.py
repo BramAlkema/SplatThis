@@ -253,19 +253,37 @@ def build_parser() -> argparse.ArgumentParser:
         "--canvas-parallax-strength",
         type=_non_negative_float,
         default=None,
-        help="For --format=canvas: enable mouse-driven parallax with this max "
-        "pixel offset for the foreground layer (e.g. 24-40). Splats are "
-        "bucketed by their --layered-saliency tag into base/mass/detail/edge "
-        "canvases; on mousemove each canvas translates by its depth times this "
-        "strength. Requires --layered-saliency to give meaningful depth; "
-        "without it all splats fall back to a single mid-depth layer. "
-        "Default: 0 = static (use the existing single-canvas runtime).",
+        help="For --format=canvas: enable mouse-driven parallax over native "
+        "Canvas-API splat planes. Requires --layered-saliency for meaningful "
+        "depth. Default: 0 = one static Canvas compositor.",
+    )
+    parser.add_argument(
+        "--pixel-runtime-parallax-strength",
+        type=_non_negative_float,
+        default=None,
+        help="For --format=pixel-runtime: enable the historical multi-plane "
+        "ImageData parallax runtime. Default: 0 = one generated pixel buffer.",
+    )
+    parser.add_argument(
+        "--css-parallax-strength",
+        type=_non_negative_float,
+        default=None,
+        help="For --format=css: enable scriptless hover parallax with this max "
+        "foreground offset in pixels. A CSS-only hover grid moves midground "
+        "and foreground depth planes; no JavaScript is emitted. Combine with "
+        "--layered-saliency for meaningful depth. Default: 0 = static.",
+    )
+    parser.add_argument(
+        "--css-hover-grid-size",
+        type=_positive_int,
+        default=None,
+        help="CSS parallax hover-grid width and height (1-20, default: 10).",
     )
     parser.add_argument(
         "--adaptive-compute",
         action="store_true",
-        help="For Canvas output, stop before later densification/stages once an "
-        "observed deployed-Canvas checkpoint reaches the quality target. "
+        help="For pixel-runtime output, stop before later densification/stages once an "
+        "observed deployed pixel-runtime checkpoint reaches the quality target. "
         "Default: off. This conservative controller does not use plateau or "
         "future-budget prediction.",
     )
@@ -273,8 +291,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--adaptive-target-ssim-srgb",
         type=_unit_interval_float,
         default=None,
-        help="Desired Chrome SSIM_sRGB target for --adaptive-compute, scored "
-        "with the byte-exact Canvas runtime model (default: 0.98).",
+        help="Desired SSIM_sRGB target for --adaptive-compute, scored with the "
+        "byte-exact CPU boundary model; the selected final browser backend is "
+        "graded separately (default: 0.98).",
     )
     parser.add_argument(
         "--adaptive-target-psnr-srgb",
@@ -287,7 +306,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--adaptive-min-checkpoints",
         type=_positive_int,
         default=None,
-        help="Minimum completed Canvas stages before adaptive stopping "
+        help="Minimum completed pixel-runtime stages before adaptive stopping "
         "(default: 2).",
     )
     parser.add_argument(
@@ -295,7 +314,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=_non_negative_float,
         default=None,
         help="Advanced cross-version SSIM safety-margin override for the "
-        "byte-exact Canvas runtime model "
+        "byte-exact ImageData runtime model "
         f"(calibrated default: {DEFAULT_CHROME_SSIM_SAFETY_MARGIN:g}).",
     )
     parser.add_argument(
@@ -303,7 +322,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=_non_negative_float,
         default=None,
         help="Advanced cross-version PSNR safety-margin override for the "
-        "byte-exact Canvas runtime model "
+        "byte-exact ImageData runtime model "
         f"in dB (calibrated default: {DEFAULT_CHROME_PSNR_SAFETY_MARGIN:g}).",
     )
     parser.add_argument(
@@ -337,11 +356,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--format",
         default="svg",
-        choices=["svg", "pptx", "canvas"],
+        choices=["svg", "pptx", "canvas", "css", "pixel-runtime"],
         dest="fmt",
-        help="Output format. 'canvas' emits a self-contained HTML that renders the "
-        "splats via a JS canvas runtime with real linear-space alpha-over "
-        "compositing (breaks the SVG primitive's representational cap).",
+        help="Output format. 'canvas' submits one browser-native Canvas 2D "
+        "radial-gradient primitive per splat. 'pixel-runtime' tries WebGL2 "
+        "float splats, then exact Worker/main-thread CPU fallbacks. 'css' emits "
+        "scriptless DOM gradient splats.",
     )
     parser.add_argument(
         "--pptx-splat-style",
@@ -357,13 +377,30 @@ def build_parser() -> argparse.ArgumentParser:
         "post-fit color/alpha refinement against the gradient compositor.",
     )
     parser.add_argument(
+        "--pptx-painter-order",
+        default="legacy",
+        choices=["legacy", "back-to-front"],
+        help="Native DrawingML shape order. 'legacy' remains the safe default; "
+        "'back-to-front' uses corrected painter semantics demonstrated by the "
+        "real-PowerPoint corpus MVP. Use the external artifact gate before "
+        "promoting it per image.",
+    )
+    parser.add_argument(
         "--training-export-target",
         default="auto",
-        choices=["auto", "canvas", "svg", "pptx-softedge"],
+        choices=[
+            "auto",
+            "pixel-runtime",
+            "browser-gradient",
+            "svg",
+            "canvas",
+            "pptx-softedge",
+        ],
         help="Renderer target used during optimization. 'auto' (default) picks "
-        "based on --format: svg->svg (sRGB compositing, matches browser SVG "
-        "blending), pptx->canvas (linear-light training; safer across PPTX "
-        "viewers), canvas->canvas. The 'pptx-softedge' target trains against "
+        "based on --format: svg/css/canvas->browser-gradient and pixel-runtime "
+        "->pixel-runtime. PPTX defaults to pixel-runtime training, which is "
+        "safer across viewers. 'canvas' remains a deprecated alias for "
+        "'pixel-runtime'. The 'pptx-softedge' target trains against "
         "PowerPoint's actual brighter-than-Gaussian soft-edge rendering; it "
         "produces the closest match in real PowerPoint but can look washed "
         "out in soffice/LibreOffice (which renders the file more literally). "
@@ -390,6 +427,29 @@ def build_parser() -> argparse.ArgumentParser:
         "high splat counts and renders in any SVG-capable surface "
         "(browsers AND headless rasterizers); slight color banding at very "
         "small palette sizes.",
+    )
+    parser.add_argument(
+        "--svg-gradient-quality",
+        default=None,
+        choices=["standard", "high"],
+        help="SVG Gaussian-stop policy. 'standard' uses compact adaptive "
+        "gradients; 'high' uses a stricter adaptive error bound and up to "
+        "nine stops. Default: standard; the max-fidelity compositor gate can "
+        "select high when the deployed browser artifact improves.",
+    )
+    parser.add_argument(
+        "--svg-painter-order",
+        default=None,
+        choices=["back-to-front", "legacy"],
+        help="SVG element order. Correct back-to-front is the default; legacy "
+        "retains historical forward DOM emission for compatibility checks.",
+    )
+    parser.add_argument(
+        "--svg-compositor-gate",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Browser-grade legacy, corrected-standard and corrected-high SVG "
+        "candidates, then accept or revert. Enabled by default for max-fidelity.",
     )
     parser.add_argument(
         "--svg-optimize",
@@ -501,29 +561,42 @@ def _run_conversion(args: argparse.Namespace) -> int:
         print(f"error: input not found: {input_path}", file=sys.stderr)
         return 2
 
-    output = args.output or str(Path(input_path).with_suffix(f".{args.fmt}"))
+    default_suffix = (
+        ".html" if args.fmt in {"canvas", "css", "pixel-runtime"} else f".{args.fmt}"
+    )
+    output = args.output or str(Path(input_path).with_suffix(default_suffix))
 
     refinement_config = {}
     if args.svg_recipe is not None:
         refinement_config["svg_export_recipe"] = args.svg_recipe
+    if args.svg_gradient_quality is not None:
+        refinement_config["svg_gradient_quality"] = args.svg_gradient_quality
+    if args.svg_painter_order is not None:
+        refinement_config["svg_painter_order"] = args.svg_painter_order
+    if args.svg_compositor_gate is not None:
+        refinement_config["svg_compositor_gate"] = args.svg_compositor_gate
     if args.fidelity_stage is not None:
         refinement_config["fidelity_stage"] = args.fidelity_stage
     if args.svg_optimize:
         refinement_config["svg_optimize"] = True
         refinement_config["svg_optimize_precision"] = int(args.svg_optimize_precision)
-    # Resolve "auto" training_export_target. SVG output trains under sRGB
-    # compositing (matches browser/rsvg blend). PPTX defaults to canvas
+    # Resolve "auto" training_export_target. Browser-gradient outputs train
+    # under sRGB compositing. PPTX defaults to the exact pixel-runtime model
     # (linear-light) because the pptx-softedge proxy is calibrated for
     # PowerPoint's brighter-than-Gaussian rendering and produces washed-out
     # output in soffice/LibreOffice viewers; users targeting real PowerPoint
     # should pass --training-export-target pptx-softedge explicitly.
     training_export_target = args.training_export_target
     if training_export_target == "auto":
-        if args.fmt == "svg":
+        if args.fmt in {"svg", "css", "canvas"}:
             training_export_target = "svg"
         else:
-            training_export_target = "canvas"
-    if training_export_target != "canvas":
+            training_export_target = "pixel-runtime"
+    elif training_export_target == "canvas":
+        training_export_target = "pixel-runtime"
+    elif training_export_target == "browser-gradient":
+        training_export_target = "svg"
+    if training_export_target != "pixel-runtime":
         refinement_config["training_export_target"] = training_export_target
     if args.svg_proxy_postfit_iters > 0:
         refinement_config["svg_proxy_postfit_iters"] = int(args.svg_proxy_postfit_iters)
@@ -559,6 +632,14 @@ def _run_conversion(args: argparse.Namespace) -> int:
         refinement_config["canvas_parallax_strength"] = float(
             args.canvas_parallax_strength
         )
+    if args.pixel_runtime_parallax_strength is not None:
+        refinement_config["pixel_runtime_parallax_strength"] = float(
+            args.pixel_runtime_parallax_strength
+        )
+    if args.css_parallax_strength is not None:
+        refinement_config["css_parallax_strength"] = float(args.css_parallax_strength)
+    if args.css_hover_grid_size is not None:
+        refinement_config["css_hover_grid_size"] = int(args.css_hover_grid_size)
     if args.adaptive_compute:
         refinement_config["adaptive_compute_enabled"] = True
     if args.adaptive_target_ssim_srgb is not None:
@@ -607,6 +688,7 @@ def _run_conversion(args: argparse.Namespace) -> int:
         apple_silicon_splat_cap=apple_silicon_splat_cap,
         layered_saliency=args.layered_saliency,
         pptx_splat_style=args.pptx_splat_style,
+        pptx_painter_order=args.pptx_painter_order,
     )
     converter.convert(
         input_path=input_path,

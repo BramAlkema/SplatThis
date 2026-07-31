@@ -20,13 +20,14 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from html import escape as escape_html
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
 from PIL import Image
 
 from .splat import (
     LAYER_BASE,
+    LAYER_MASS,
     RAW_SPLAT_SCHEMA_VERSION,
     SPLAT_LAYER_NAMES,
     GaussianSplat,
@@ -47,6 +48,7 @@ MIN_ELLIPSE_RADIUS_PX = 0.35
 # Gaussian curve. Low-alpha splats often need just 2; mid-alpha 3-4; only
 # high-alpha sharp curves want the full 8.
 SVG_GRADIENT_STOPS = 8
+SVG_GRADIENT_STOPS_HIGH = 9
 SVG_GRADIENT_STOPS_MIN = 2
 # Max absolute opacity error (0..1) tolerated between the true Gaussian
 # curve and the linear interpolation between adjacent gradient stops.
@@ -63,6 +65,11 @@ SVG_GRADIENT_STOPS_MIN = 2
 # don't have to think about it. See tmp/stops_sweep_visual.html and
 # tmp/forced_4000_thresholds_visual.html for the data.
 SVG_GRADIENT_STOP_MAX_ERROR = 0.05
+SVG_GRADIENT_STOP_HIGH_MAX_ERROR = 0.005
+SVG_GRADIENT_QUALITY_STANDARD = "standard"
+SVG_GRADIENT_QUALITY_HIGH = "high"
+SVG_PAINTER_ORDER_BACK_TO_FRONT = "back-to-front"
+SVG_PAINTER_ORDER_LEGACY = "legacy"
 
 
 def _density_aware_stop_error(
@@ -87,8 +94,67 @@ def _density_aware_stop_error(
     return float(np.clip(raw, floor, ceiling))
 
 
+def _normalize_svg_gradient_quality(value: str) -> str:
+    """Normalize the SVG gradient-fidelity policy without adding a recipe."""
+
+    normalized = str(value).strip().lower().replace("_", "-")
+    if normalized in {"", "standard", "balanced", "default"}:
+        return SVG_GRADIENT_QUALITY_STANDARD
+    if normalized in {"high", "max", "max-fidelity", "exact"}:
+        return SVG_GRADIENT_QUALITY_HIGH
+    raise ValueError(f"Unsupported SVG gradient quality: {value}")
+
+
+def _svg_gradient_settings(
+    gradient_quality: str, splat_count: int
+) -> Tuple[float, int, int]:
+    """Return max error, max stops, and opacity precision for SVG gradients."""
+
+    normalized = _normalize_svg_gradient_quality(gradient_quality)
+    density_error = _density_aware_stop_error(splat_count)
+    if normalized == SVG_GRADIENT_QUALITY_HIGH:
+        return (
+            min(density_error, SVG_GRADIENT_STOP_HIGH_MAX_ERROR),
+            SVG_GRADIENT_STOPS_HIGH,
+            4,
+        )
+    return density_error, SVG_GRADIENT_STOPS, 2
+
+
+def _normalize_svg_painter_order(value: str) -> str:
+    """Normalize static SVG element-order semantics."""
+
+    normalized = str(value).strip().lower().replace("_", "-")
+    if normalized in {"", "back-to-front", "correct", "corrected", "painter"}:
+        return SVG_PAINTER_ORDER_BACK_TO_FRONT
+    if normalized in {"legacy", "forward", "front-to-back"}:
+        return SVG_PAINTER_ORDER_LEGACY
+    raise ValueError(f"Unsupported SVG painter order: {value}")
+
+
+def _svg_painter_indices(
+    splat_count: int,
+    painter_order: str = SVG_PAINTER_ORDER_BACK_TO_FRONT,
+) -> range:
+    """Map front-to-back alpha-over input to back-to-front SVG paint order.
+
+    The mathematical renderers consume lower render-order keys first and let
+    those layers claim transmittance. SVG, CSS, and DrawingML instead paint
+    later elements on top. SVG emitters must therefore write splat elements in
+    reverse order while keeping each element paired with its original paint
+    server. Pixel-runtime code must not use this helper.
+    """
+
+    normalized = _normalize_svg_painter_order(painter_order)
+    if normalized == SVG_PAINTER_ORDER_LEGACY:
+        return range(int(splat_count))
+    return range(int(splat_count) - 1, -1, -1)
+
+
 DEFAULT_EXPORT_ORDER = "importance"
 DEFAULT_PPTX_SPLAT_STYLE = "gradient"
+PPTX_PAINTER_ORDER_LEGACY = "legacy"
+PPTX_PAINTER_ORDER_BACK_TO_FRONT = "back-to-front"
 PPTX_SOFT_EDGE_ALPHA_SCALE = 0.25
 PPTX_SOFT_EDGE_RADIUS_FACTOR = 0.20
 PPTX_SOFT_EDGE_K_SIGMA_SCALE = 0.92
@@ -266,6 +332,7 @@ def _adaptive_gradient_stops(
     min_stops: int = SVG_GRADIENT_STOPS_MIN,
     max_stops: int = SVG_GRADIENT_STOPS,
     max_error: float = SVG_GRADIENT_STOP_MAX_ERROR,
+    opacity_precision: int = 2,
 ) -> List[Tuple[float, float]]:
     """Return (offset, opacity) tuples approximating the Gaussian opacity curve.
 
@@ -276,6 +343,7 @@ def _adaptive_gradient_stops(
 
     min_stops = max(2, int(min_stops))
     max_stops = max(min_stops, int(max_stops))
+    opacity_precision = max(0, int(opacity_precision))
 
     if float(alpha) <= 1e-6 or float(gradient_footprint) <= 0.0:
         # Effectively transparent or degenerate: a flat zero ramp suffices.
@@ -286,18 +354,21 @@ def _adaptive_gradient_stops(
 
     for n_stops in range(min_stops, max_stops + 1):
         stop_t = np.linspace(0.0, 1.0, n_stops)
-        # Quantize to the 2-decimal precision the SVG emitter writes, so the
-        # error check judges exactly the curve a browser will interpolate —
-        # otherwise rounding silently spends up to 0.005/stop of the budget.
+        # Quantize to the precision the SVG emitter writes, so the error check
+        # judges exactly the curve a browser will interpolate.
         stop_op = np.round(
-            _gaussian_opacity_curve(stop_t, alpha, gradient_footprint), 2
+            _gaussian_opacity_curve(stop_t, alpha, gradient_footprint),
+            opacity_precision,
         )
         interp_op = np.interp(sample_t, stop_t, stop_op)
         if float(np.max(np.abs(interp_op - true_op))) <= float(max_error):
             return [(float(t * inner_end), float(op)) for t, op in zip(stop_t, stop_op)]
 
     stop_t = np.linspace(0.0, 1.0, max_stops)
-    stop_op = np.round(_gaussian_opacity_curve(stop_t, alpha, gradient_footprint), 2)
+    stop_op = np.round(
+        _gaussian_opacity_curve(stop_t, alpha, gradient_footprint),
+        opacity_precision,
+    )
     return [(float(t * inner_end), float(op)) for t, op in zip(stop_t, stop_op)]
 
 
@@ -310,6 +381,29 @@ def _normalize_pptx_splat_style(splat_style: str) -> str:
     if normalized in {"blur", "gaussian-blur"}:
         return "blur"
     raise ValueError(f"Unsupported PPTX splat style: {splat_style}")
+
+
+def _normalize_pptx_painter_order(value: str) -> str:
+    """Normalize native DrawingML shape-stack semantics."""
+
+    normalized = str(value).strip().lower().replace("_", "-")
+    if normalized in {"", "legacy", "forward", "front-to-back"}:
+        return PPTX_PAINTER_ORDER_LEGACY
+    if normalized in {"back-to-front", "correct", "corrected", "painter"}:
+        return PPTX_PAINTER_ORDER_BACK_TO_FRONT
+    raise ValueError(f"Unsupported PPTX painter order: {value}")
+
+
+def _pptx_painter_splats(
+    splats: List[GaussianSplat],
+    painter_order: str = PPTX_PAINTER_ORDER_LEGACY,
+) -> List[GaussianSplat]:
+    """Convert front-to-back renderer input to a DrawingML shape stack."""
+
+    normalized = _normalize_pptx_painter_order(painter_order)
+    if normalized == PPTX_PAINTER_ORDER_LEGACY:
+        return list(splats)
+    return list(reversed(splats))
 
 
 def load_png(
@@ -407,8 +501,9 @@ def _sort_splats_for_export(
     """
     Return an export-ordered splat list.
 
-    `importance` order is ascending so higher-importance splats render last/front-most,
-    matching renderer behavior.
+    `importance` returns the canonical front-to-back alpha-over order used by
+    the mathematical renderers. Browser/vector emitters must convert that to
+    their back-to-front painter order at the final element-emission boundary.
     """
     if sort_by_area:
         return sorted(splats, key=lambda s: s.area(), reverse=True)
@@ -561,6 +656,8 @@ def save_svg(
     foreground_mask: Optional[np.ndarray] = None,
     background_safe_mask: Optional[np.ndarray] = None,
     edge_band_mask: Optional[np.ndarray] = None,
+    gradient_quality: str = SVG_GRADIENT_QUALITY_STANDARD,
+    painter_order: str = SVG_PAINTER_ORDER_BACK_TO_FRONT,
 ) -> None:
     """
     Save splats as SVG file.
@@ -592,6 +689,8 @@ def save_svg(
         foreground_mask=foreground_mask,
         background_safe_mask=background_safe_mask,
         edge_band_mask=edge_band_mask,
+        gradient_quality=gradient_quality,
+        painter_order=painter_order,
     )
 
     try:
@@ -641,6 +740,7 @@ def save_drawingml(
     sort_mode: str = DEFAULT_EXPORT_ORDER,
     background_linear_rgb: Optional[np.ndarray] = None,
     splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
+    painter_order: str = PPTX_PAINTER_ORDER_LEGACY,
 ) -> None:
     """
     Save splats as PresentationML slide XML with DrawingML ellipse shapes.
@@ -660,6 +760,7 @@ def save_drawingml(
         k_sigma,
         background_linear_rgb=background_linear_rgb,
         splat_style=splat_style,
+        painter_order=painter_order,
     )
 
     try:
@@ -672,7 +773,413 @@ def save_drawingml(
         raise
 
 
-def generate_parallax_canvas_html(
+def generate_css_splat_html(
+    splats: List[GaussianSplat],
+    width: int,
+    height: int,
+    background_linear_rgb: Optional[np.ndarray] = None,
+    title: str = "SplatThis CSS",
+    parallax_strength: float = 0.0,
+    hover_grid_size: int = 10,
+    k_sigma: float = 2.5,
+) -> str:
+    """Emit a scriptless HTML compositor made from CSS gradient splats.
+
+    Every Gaussian is an absolutely positioned, rotated DOM ellipse whose
+    radial-gradient stops approximate the same per-splat opacity curve as the
+    standard SVG exporter.  When ``parallax_strength`` is positive, splats are
+    grouped into three depth planes and a transparent hover grid drives the
+    transforms with sibling CSS selectors.  No JavaScript, canvas, SVG, or
+    embedded bitmap is required at runtime.
+
+    CSS compositing, like browser SVG compositing, happens in display sRGB.  It
+    is therefore a browser-native alternative to SVG, not a replacement for
+    the Canvas target's explicit linear-light pixel compositor.
+    """
+
+    if int(width) <= 0 or int(height) <= 0:
+        raise ValueError("CSS compositor width and height must be positive integers")
+    if float(parallax_strength) < 0.0:
+        raise ValueError("CSS parallax strength must be non-negative")
+    if not 1 <= int(hover_grid_size) <= 20:
+        raise ValueError("CSS hover grid size must be between 1 and 20")
+    if float(k_sigma) <= 0.0:
+        raise ValueError("CSS k_sigma must be positive")
+
+    width = int(width)
+    height = int(height)
+    hover_grid_size = int(hover_grid_size)
+    parallax_strength = float(parallax_strength)
+
+    bg_linear = (
+        np.zeros(3, dtype=np.float32)
+        if background_linear_rgb is None
+        else np.asarray(background_linear_rgb, dtype=np.float32).reshape(-1)
+    )
+    if bg_linear.size != 3:
+        raise ValueError("background_linear_rgb must have exactly 3 components")
+    bg_srgb = linear_to_srgb(np.clip(bg_linear, 0.0, 1.0))
+    bg_rgb = tuple(int(np.clip(np.round(channel * 255), 0, 255)) for channel in bg_srgb)
+    background_css = f"rgb({bg_rgb[0]},{bg_rgb[1]},{bg_rgb[2]})"
+
+    ordered_splats = _sort_splats_for_export(splats)
+    gradient_footprint = ELLIPSE_OVERLAP_BOOST * float(k_sigma)
+    stop_error = _density_aware_stop_error(len(ordered_splats))
+
+    def _plane_for(splat: GaussianSplat) -> str:
+        layer = _splat_layer(splat)
+        if layer is not None and layer <= LAYER_BASE:
+            return "background"
+        if layer is None or layer == LAYER_MASS:
+            return "midground"
+        return "foreground"
+
+    def _splat_element(splat: GaussianSplat, index: int) -> str:
+        eigenvals, eigenvecs = splat.eigendecomposition()
+        rx = max(
+            MIN_ELLIPSE_RADIUS_PX,
+            gradient_footprint * math.sqrt(max(float(eigenvals[0]), 1e-8)),
+        )
+        ry = max(
+            MIN_ELLIPSE_RADIUS_PX,
+            gradient_footprint * math.sqrt(max(float(eigenvals[1]), 1e-8)),
+        )
+        rotation = math.degrees(
+            math.atan2(float(eigenvecs[1, 0]), float(eigenvecs[0, 0]))
+        )
+        color_srgb = linear_to_srgb(
+            np.clip(np.asarray(splat.color[:3], dtype=np.float32), 0.0, 1.0)
+        )
+        color = tuple(
+            int(np.clip(np.round(channel * 255), 0, 255)) for channel in color_srgb
+        )
+        stops = _adaptive_gradient_stops(
+            float(np.clip(splat.alpha, 0.0, 1.0)),
+            gradient_footprint,
+            1.0,
+            max_error=stop_error,
+        )
+        gradient = ",".join(
+            f"rgba({color[0]},{color[1]},{color[2]},{opacity:.2f}) {offset * 100:.1f}%"
+            for offset, opacity in stops
+        )
+        cx, cy = (float(splat.mu[0]), float(splat.mu[1]))
+        style = (
+            f"left:{cx:.2f}px;top:{cy:.2f}px;"
+            f"width:{2.0 * rx:.2f}px;height:{2.0 * ry:.2f}px;"
+            f"transform:translate(-50%,-50%) rotate({rotation:.2f}deg);"
+            f"background:radial-gradient(ellipse 50% 50% at center,{gradient})"
+        )
+        return f'<i class="splat" data-splat="{index}" style="{style}"></i>'
+
+    plane_names = ("background", "midground", "foreground")
+    planes: Dict[str, List[str]] = {name: [] for name in plane_names}
+    for index, splat in enumerate(ordered_splats):
+        target_plane = _plane_for(splat) if parallax_strength > 0.0 else "midground"
+        planes[target_plane].append(_splat_element(splat, index))
+
+    css_lines = [
+        "*{box-sizing:border-box}",
+        (
+            f"html,body{{margin:0;width:{width}px;height:{height}px;"
+            "overflow:hidden;background:transparent}"
+        ),
+        (
+            f"#scene{{position:relative;width:{width}px;height:{height}px;"
+            f"overflow:hidden;background:{background_css};isolation:isolate}}"
+        ),
+        (
+            ".plane{position:absolute;inset:0;pointer-events:none;"
+            "transform-origin:center;transition:transform 240ms "
+            "cubic-bezier(.2,.7,.3,1)}"
+        ),
+        ".plane-background{z-index:1}.plane-midground{z-index:2}.plane-foreground{z-index:3}",
+        (
+            ".splat{position:absolute;display:block;border-radius:50%;"
+            "pointer-events:none;transform-origin:center;mix-blend-mode:normal}"
+        ),
+    ]
+
+    hit_cells: List[str] = []
+    if parallax_strength > 0.0:
+        cell_size = 100.0 / float(hover_grid_size)
+        css_lines.append(
+            ".depth-hit{position:absolute;z-index:10;display:block;background:transparent}"
+        )
+        for row in range(hover_grid_size):
+            for column in range(hover_grid_size):
+                index = row * hover_grid_size + column
+                x_normalized = ((column + 0.5) / hover_grid_size - 0.5) * 2.0
+                y_normalized = ((row + 0.5) / hover_grid_size - 0.5) * 2.0
+                # Move the scene opposite to the pointer, as if the viewer were
+                # looking around foreground objects rather than dragging them.
+                mid_x = -x_normalized * parallax_strength * 0.4
+                mid_y = -y_normalized * parallax_strength * 0.4
+                fore_x = -x_normalized * parallax_strength
+                fore_y = -y_normalized * parallax_strength
+                css_lines.extend(
+                    [
+                        (
+                            f".h{index}:hover~.plane-midground{{"
+                            f"transform:translate3d({mid_x:.2f}px,{mid_y:.2f}px,0)}}"
+                        ),
+                        (
+                            f".h{index}:hover~.plane-foreground{{"
+                            f"transform:translate3d({fore_x:.2f}px,{fore_y:.2f}px,0)}}"
+                        ),
+                    ]
+                )
+                hit_cells.append(
+                    f'<b class="depth-hit h{index}" aria-hidden="true" '
+                    f'style="left:{column * cell_size:.3f}%;top:{row * cell_size:.3f}%;'
+                    f'width:{cell_size:.3f}%;height:{cell_size:.3f}%"></b>'
+                )
+
+    plane_html = []
+    for plane_name in plane_names:
+        if parallax_strength <= 0.0 and plane_name != "midground":
+            continue
+        plane_html.append(
+            f'<div class="plane plane-{plane_name}" data-depth="{plane_name}">'
+            + "".join(planes[plane_name])
+            + "</div>"
+        )
+
+    safe_title = escape_html(title)
+    grid_value = hover_grid_size if parallax_strength > 0.0 else 0
+    return (
+        "<!doctype html>\n"
+        f'<html><head><meta charset="utf-8"><title>{safe_title}</title>'
+        f"<style>{''.join(css_lines)}</style></head>\n"
+        f'<body><main id="scene" data-compositor="css-splats" '
+        f'data-splat-count="{len(ordered_splats)}" data-grid="{grid_value}">'
+        + "".join(hit_cells)
+        + "".join(plane_html)
+        + "</main></body></html>\n"
+    )
+
+
+def generate_native_canvas_html(
+    splats: List[GaussianSplat],
+    width: int,
+    height: int,
+    background_linear_rgb: Optional[np.ndarray] = None,
+    title: str = "SplatThis Canvas",
+    parallax_strength: float = 0.0,
+    k_sigma: float = 2.5,
+) -> str:
+    """Emit browser-native Canvas radial-gradient splats.
+
+    Unlike :func:`generate_pixel_runtime_html`, this function never computes or
+    uploads an ``ImageData`` framebuffer. JavaScript submits one transformed
+    radial-gradient circle per Gaussian to the Canvas 2D API, so Chromium owns
+    gradient interpolation, antialiasing, and source-over compositing. Optional
+    parallax uses three pre-rendered Canvas planes.
+    """
+
+    import json
+
+    if int(width) <= 0 or int(height) <= 0:
+        raise ValueError("Canvas width and height must be positive integers")
+    if float(parallax_strength) < 0.0:
+        raise ValueError("Canvas parallax strength must be non-negative")
+    if float(k_sigma) <= 0.0:
+        raise ValueError("Canvas k_sigma must be positive")
+
+    width = int(width)
+    height = int(height)
+    parallax_strength = float(parallax_strength)
+    ordered_splats = _sort_splats_for_export(splats)
+    gradient_footprint = ELLIPSE_OVERLAP_BOOST * float(k_sigma)
+    stop_error = _density_aware_stop_error(len(ordered_splats))
+
+    bg_linear = (
+        np.zeros(3, dtype=np.float32)
+        if background_linear_rgb is None
+        else np.asarray(background_linear_rgb, dtype=np.float32).reshape(-1)
+    )
+    if bg_linear.size != 3:
+        raise ValueError("background_linear_rgb must have exactly 3 components")
+    bg_srgb = linear_to_srgb(np.clip(bg_linear, 0.0, 1.0))
+    bg_rgb = [int(np.clip(np.round(channel * 255), 0, 255)) for channel in bg_srgb]
+
+    def _plane_for(splat: GaussianSplat) -> str:
+        layer = _splat_layer(splat)
+        if layer is not None and layer <= LAYER_BASE:
+            return "background"
+        if layer is None or layer == LAYER_MASS:
+            return "midground"
+        return "foreground"
+
+    def _record(splat: GaussianSplat) -> List[Any]:
+        eigenvals, eigenvecs = splat.eigendecomposition()
+        rx = max(
+            MIN_ELLIPSE_RADIUS_PX,
+            gradient_footprint * math.sqrt(max(float(eigenvals[0]), 1e-8)),
+        )
+        ry = max(
+            MIN_ELLIPSE_RADIUS_PX,
+            gradient_footprint * math.sqrt(max(float(eigenvals[1]), 1e-8)),
+        )
+        rotation = math.atan2(float(eigenvecs[1, 0]), float(eigenvecs[0, 0]))
+        color_srgb = linear_to_srgb(
+            np.clip(np.asarray(splat.color[:3], dtype=np.float32), 0.0, 1.0)
+        )
+        color = [
+            int(np.clip(np.round(channel * 255), 0, 255)) for channel in color_srgb
+        ]
+        stops = _adaptive_gradient_stops(
+            float(np.clip(splat.alpha, 0.0, 1.0)),
+            gradient_footprint,
+            1.0,
+            max_error=stop_error,
+        )
+        return [
+            round(float(splat.mu[0]), 4),
+            round(float(splat.mu[1]), 4),
+            round(float(rx), 4),
+            round(float(ry), 4),
+            round(float(rotation), 6),
+            *color,
+            [[round(offset, 6), round(opacity, 4)] for offset, opacity in stops],
+        ]
+
+    if parallax_strength > 0.0:
+        plane_records: Dict[str, List[List[Any]]] = {
+            "background": [],
+            "midground": [],
+            "foreground": [],
+        }
+        for splat in ordered_splats:
+            plane_records[_plane_for(splat)].append(_record(splat))
+        planes = [
+            {
+                "name": "background",
+                "depth": 0.0,
+                "splats": plane_records["background"],
+            },
+            {
+                "name": "midground",
+                "depth": 0.4,
+                "splats": plane_records["midground"],
+            },
+            {
+                "name": "foreground",
+                "depth": 1.0,
+                "splats": plane_records["foreground"],
+            },
+        ]
+    else:
+        planes = [
+            {
+                "name": "scene",
+                "depth": 0.0,
+                "splats": [_record(splat) for splat in ordered_splats],
+            }
+        ]
+
+    plane_json = json.dumps(planes, separators=(",", ":"))
+    js = (
+        r"""
+(() => {
+  const t0 = performance.now();
+  const W = __W__, H = __H__, BG = __BG__;
+  const STRENGTH = __STRENGTH__, PLANES = __PLANES__;
+  const scene = document.getElementById('scene');
+  const canvases = [];
+
+  function drawSplat(ctx, splat) {
+    const [x, y, rx, ry, theta, r, g, b, stops] = splat;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(theta);
+    ctx.scale(rx, ry);
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    for (const [offset, opacity] of stops) {
+      gradient.addColorStop(offset, `rgba(${r},${g},${b},${opacity})`);
+    }
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(0, 0, 1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  for (const plane of PLANES) {
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    if (plane.name === 'scene') canvas.id = 'c';
+    canvas.className = 'plane';
+    canvas.dataset.compositor = 'canvas-api-splats';
+    canvas.dataset.depth = plane.depth;
+    canvas.dataset.plane = plane.name;
+    const ctx = canvas.getContext('2d', {alpha: true});
+    if (plane.name === 'scene' || plane.name === 'background') {
+      ctx.fillStyle = `rgb(${BG[0]},${BG[1]},${BG[2]})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    for (const splat of plane.splats) drawSplat(ctx, splat);
+    scene.appendChild(canvas);
+    canvases.push(canvas);
+  }
+
+  if (STRENGTH > 0) {
+    let queued = false, pointerX = 0, pointerY = 0;
+    const update = () => {
+      queued = false;
+      for (const canvas of canvases) {
+        const depth = Number(canvas.dataset.depth);
+        const tx = -pointerX * depth * STRENGTH;
+        const ty = -pointerY * depth * STRENGTH;
+        canvas.style.transform = `translate3d(${tx.toFixed(2)}px,${ty.toFixed(2)}px,0)`;
+      }
+    };
+    scene.addEventListener('mousemove', event => {
+      const rect = scene.getBoundingClientRect();
+      pointerX = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
+      pointerY = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
+      if (!queued) { queued = true; requestAnimationFrame(update); }
+    });
+    scene.addEventListener('mouseleave', () => {
+      pointerX = 0; pointerY = 0;
+      if (!queued) { queued = true; requestAnimationFrame(update); }
+    });
+  }
+
+  const renderMs = performance.now() - t0;
+  window.__SPLATTHIS_RENDER_MS = renderMs;
+  document.documentElement.dataset.splatthisRenderDone = 'true';
+  scene.dataset.renderMs = renderMs.toFixed(3);
+})();
+""".replace(
+            "__W__", str(width)
+        )
+        .replace("__H__", str(height))
+        .replace("__BG__", json.dumps(bg_rgb, separators=(",", ":")))
+        .replace("__STRENGTH__", f"{parallax_strength:.4f}")
+        .replace("__PLANES__", plane_json)
+    )
+
+    safe_title = escape_html(title)
+    return (
+        "<!doctype html>\n"
+        f'<html><head><meta charset="utf-8"><title>{safe_title}</title>'
+        "<style>*{box-sizing:border-box}"
+        f"html,body{{margin:0;width:{width}px;height:{height}px;overflow:hidden}}"
+        f"#scene{{position:relative;width:{width}px;height:{height}px;overflow:hidden}}"
+        ".plane{position:absolute;inset:0;display:block;pointer-events:none;"
+        "transition:transform 60ms cubic-bezier(.2,.7,.3,1)}"
+        "</style></head>\n"
+        f'<body><main id="scene" data-compositor="canvas-api-splats" '
+        f'data-splat-count="{len(ordered_splats)}" '
+        f'data-parallax="{str(parallax_strength > 0.0).lower()}"></main>'
+        "<script>" + js + "</script></body></html>\n"
+    )
+
+
+def generate_parallax_pixel_runtime_html(
     splats: List[GaussianSplat],
     width: int,
     height: int,
@@ -680,11 +1187,11 @@ def generate_parallax_canvas_html(
     title: str = "SplatThis Parallax",
     parallax_strength: float = 28.0,
 ) -> str:
-    """Parallax canvas runtime: per-layer canvases driven by mouse position.
+    """Parallax ImageData runtime: per-layer canvases driven by mouse position.
 
     Splats with ``raw.layer`` set (via ``--layered-saliency``) get bucketed
     into base/mass/detail/edge canvases. Each canvas runs the same
-    linear-light alpha-over render as ``generate_canvas_html`` but only on
+    linear-light alpha-over render as ``generate_pixel_runtime_html`` but only on
     its own splats. The canvases stack absolutely; on mousemove a
     ``translate3d`` is applied per canvas scaled by its depth (base
     stationary, edge moves the most). Background-rect plate is painted
@@ -693,7 +1200,7 @@ def generate_parallax_canvas_html(
 
     Quality caveat: each layer composites linear-light internally, but the
     DOM composites the layers in sRGB display space. Tiny color drift vs
-    the single-canvas runtime at static rest. The parallax effect itself
+    the single-buffer pixel runtime at static rest. The parallax effect itself
     is the goal here, not pixel-perfect render parity.
 
     Splats without a layer tag fall back to layer 1 ("mass") so they get
@@ -923,22 +1430,29 @@ def generate_parallax_canvas_html(
         "</style></head>\n"
         "<body>\n"
         '<div id="status">rendering...</div>\n'
-        f'<div id="stack" data-layers="{len(layer_records)}"></div>\n'
+        f'<div id="stack" data-compositor="pixel-runtime-parallax" '
+        f'data-layers="{len(layer_records)}"></div>\n'
         "<script>\n" + js + "\n</script>\n"
         "</body></html>\n"
     )
 
 
-def generate_canvas_html(
+def generate_pixel_runtime_html(
     splats: List[GaussianSplat],
     width: int,
     height: int,
     background_linear_rgb: Optional[np.ndarray] = None,
-    title: str = "SplatThis Canvas",
+    title: str = "SplatThis Pixel Runtime",
     compositing_space: str = "linear",
 ) -> str:
-    """Self-contained HTML that renders the splats via a JS canvas runtime
-    doing real alpha-over compositing in the requested space.
+    """Self-contained HTML that software-rasterizes splats into ImageData.
+
+    The static runtime executes in a Web Worker on an OffscreenCanvas when the
+    browser supports both APIs, then transfers the exact packed pixel bytes to
+    the visible canvas. A main-thread implementation of the same function is
+    retained as a compatibility fallback. ``__SPLATTHIS_RENDER_MS`` measures
+    end-to-end completion while ``__SPLATTHIS_COMPUTE_MS`` isolates raster
+    computation.
 
     Shares its serialized inputs with `render_canvas_runtime_numpy`, whose
     double-precision math, Float32Array writeback, and 8-bit ImageData packing
@@ -975,79 +1489,160 @@ def generate_canvas_html(
   const W = __W__, H = __H__;
   const BG = __BG__;
   const SPLATS = __SPLATS__;
-  const FOOTPRINT = 3.0;
+  const SRGB_IN = __SRGB_IN__;
   const status = document.getElementById('status');
   const canvas = document.getElementById('c');
-  const ctx = canvas.getContext('2d', { willReadFrequently: false });
+  let finished = false;
 
-  const lin = new Float32Array(W * H * 3);
-  const T = new Float32Array(W * H).fill(1);
+  function rasterizePixelRuntime(targetCanvas, splats, width, height, background, srgbIn) {
+    const computeStarted = performance.now();
+    const FOOTPRINT = 3.0;
+    const ctx = targetCanvas.getContext('2d', { willReadFrequently: false });
+    const lin = new Float32Array(width * height * 3);
+    const T = new Float32Array(width * height).fill(1);
 
-  for (let si = 0; si < SPLATS.length; si++) {
-    const s = SPLATS[si];
-    const x = s[0], y = s[1];
-    const sx = Math.max(s[2], 1e-4), sy = Math.max(s[3], 1e-4);
-    const theta = s[4];
-    const r = s[5], g = s[6], b = s[7];
-    const a = Math.min(1, Math.max(0, s[8]));
-    const ct = Math.cos(theta), st = Math.sin(theta);
-    const rx = Math.max(1, Math.ceil(FOOTPRINT * Math.sqrt((sx*ct)*(sx*ct) + (sy*st)*(sy*st))));
-    const ry = Math.max(1, Math.ceil(FOOTPRINT * Math.sqrt((sx*st)*(sx*st) + (sy*ct)*(sy*ct))));
-    const x0 = Math.max(0, Math.floor(x - rx));
-    const x1 = Math.min(W, Math.ceil(x + rx + 1));
-    const y0 = Math.max(0, Math.floor(y - ry));
-    const y1 = Math.min(H, Math.ceil(y + ry + 1));
-    if (x0 >= x1 || y0 >= y1) continue;
-    const invSx2 = 1 / (sx * sx), invSy2 = 1 / (sy * sy);
-    for (let py = y0; py < y1; py++) {
-      const baseRow = py * W;
-      for (let px = x0; px < x1; px++) {
-        const dx = px - x, dy = py - y;
-        const u = ct * dx + st * dy;
-        const v = -st * dx + ct * dy;
-        const q = u * u * invSx2 + v * v * invSy2;
-        const w = Math.exp(-0.5 * q);
-        const la = 1 - Math.exp(-a * w);
-        const idx = baseRow + px;
-        const tt = T[idx];
-        const contrib = tt * la;
-        const j = idx * 3;
-        lin[j]     += contrib * r;
-        lin[j + 1] += contrib * g;
-        lin[j + 2] += contrib * b;
-        T[idx] = tt * (1 - la);
+    for (let si = 0; si < splats.length; si++) {
+      const s = splats[si];
+      const x = s[0], y = s[1];
+      const sx = Math.max(s[2], 1e-4), sy = Math.max(s[3], 1e-4);
+      const theta = s[4];
+      const r = s[5], g = s[6], b = s[7];
+      const a = Math.min(1, Math.max(0, s[8]));
+      const ct = Math.cos(theta), st = Math.sin(theta);
+      const rx = Math.max(1, Math.ceil(FOOTPRINT * Math.sqrt((sx*ct)*(sx*ct) + (sy*st)*(sy*st))));
+      const ry = Math.max(1, Math.ceil(FOOTPRINT * Math.sqrt((sx*st)*(sx*st) + (sy*ct)*(sy*ct))));
+      const x0 = Math.max(0, Math.floor(x - rx));
+      const x1 = Math.min(width, Math.ceil(x + rx + 1));
+      const y0 = Math.max(0, Math.floor(y - ry));
+      const y1 = Math.min(height, Math.ceil(y + ry + 1));
+      if (x0 >= x1 || y0 >= y1) continue;
+      const invSx2 = 1 / (sx * sx), invSy2 = 1 / (sy * sy);
+      for (let py = y0; py < y1; py++) {
+        const baseRow = py * width;
+        for (let px = x0; px < x1; px++) {
+          const dx = px - x, dy = py - y;
+          const u = ct * dx + st * dy;
+          const v = -st * dx + ct * dy;
+          const q = u * u * invSx2 + v * v * invSy2;
+          const w = Math.exp(-0.5 * q);
+          const la = 1 - Math.exp(-a * w);
+          const idx = baseRow + px;
+          const tt = T[idx];
+          const contrib = tt * la;
+          const j = idx * 3;
+          lin[j]     += contrib * r;
+          lin[j + 1] += contrib * g;
+          lin[j + 2] += contrib * b;
+          T[idx] = tt * (1 - la);
+        }
       }
     }
+
+    // Pack into ImageData. srgbIn means colors were pre-encoded host-side and
+    // composited directly in display space, so no gamma encode here.
+    const img = ctx.createImageData(width, height);
+    const out = img.data;
+    const THR = 0.0031308;
+    for (let i = 0; i < width * height; i++) {
+      const j = i * 3, k = i * 4;
+      const tt = T[i];
+      let rL = lin[j]     + tt * background[0];
+      let gL = lin[j + 1] + tt * background[1];
+      let bL = lin[j + 2] + tt * background[2];
+      if (rL < 0) rL = 0; else if (rL > 1) rL = 1;
+      if (gL < 0) gL = 0; else if (gL > 1) gL = 1;
+      if (bL < 0) bL = 0; else if (bL > 1) bL = 1;
+      const rS = srgbIn ? rL : (rL <= THR ? 12.92 * rL : 1.055 * Math.pow(rL, 1/2.4) - 0.055);
+      const gS = srgbIn ? gL : (gL <= THR ? 12.92 * gL : 1.055 * Math.pow(gL, 1/2.4) - 0.055);
+      const bS = srgbIn ? bL : (bL <= THR ? 12.92 * bL : 1.055 * Math.pow(bL, 1/2.4) - 0.055);
+      out[k]     = (rS * 255 + 0.5) | 0;
+      out[k + 1] = (gS * 255 + 0.5) | 0;
+      out[k + 2] = (bS * 255 + 0.5) | 0;
+      out[k + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    return {
+      computeMs: performance.now() - computeStarted,
+      pixels: img.data
+    };
   }
 
-  // Pack into ImageData. SRGB_IN means colors were pre-encoded host-side and
-  // composited directly in display space, so no gamma encode here.
-  const img = ctx.createImageData(W, H);
-  const out = img.data;
-  const THR = 0.0031308;
-  const SRGB_IN = __SRGB_IN__;
-  for (let i = 0; i < W * H; i++) {
-    const j = i * 3, k = i * 4;
-    const tt = T[i];
-    let rL = lin[j]     + tt * BG[0];
-    let gL = lin[j + 1] + tt * BG[1];
-    let bL = lin[j + 2] + tt * BG[2];
-    if (rL < 0) rL = 0; else if (rL > 1) rL = 1;
-    if (gL < 0) gL = 0; else if (gL > 1) gL = 1;
-    if (bL < 0) bL = 0; else if (bL > 1) bL = 1;
-    const rS = SRGB_IN ? rL : (rL <= THR ? 12.92 * rL : 1.055 * Math.pow(rL, 1/2.4) - 0.055);
-    const gS = SRGB_IN ? gL : (gL <= THR ? 12.92 * gL : 1.055 * Math.pow(gL, 1/2.4) - 0.055);
-    const bS = SRGB_IN ? bL : (bL <= THR ? 12.92 * bL : 1.055 * Math.pow(bL, 1/2.4) - 0.055);
-    out[k]     = (rS * 255 + 0.5) | 0;
-    out[k + 1] = (gS * 255 + 0.5) | 0;
-    out[k + 2] = (bS * 255 + 0.5) | 0;
-    out[k + 3] = 255;
+  function finish(mode, computeMs) {
+    if (finished) return;
+    finished = true;
+    const renderMs = performance.now() - t0;
+    canvas.dataset.execution = mode;
+    window.__SPLATTHIS_COMPUTE_MS = computeMs;
+    window.__SPLATTHIS_RENDER_MS = renderMs;
+    window.__SPLATTHIS_RENDER_MODE = mode;
+    document.documentElement.dataset.splatthisExecution = mode;
+    document.documentElement.dataset.splatthisRenderDone = 'true';
+    status.textContent = 'software-rasterized ' + SPLATS.length + ' splats into ' + W + '×' + H + ' ImageData pixels in ' + renderMs.toFixed(0) + 'ms total / ' + computeMs.toFixed(0) + 'ms compute (' + mode + ', ' + (SRGB_IN ? 'srgb' : 'linear') + '-space alpha-over)';
   }
-  ctx.putImageData(img, 0, 0);
-  const renderMs = performance.now() - t0;
-  window.__SPLATTHIS_RENDER_MS = renderMs;
-  document.documentElement.dataset.splatthisRenderDone = 'true';
-  status.textContent = 'rendered ' + SPLATS.length + ' splats at ' + W + '×' + H + ' in ' + renderMs.toFixed(0) + 'ms (' + (SRGB_IN ? 'srgb' : 'linear') + '-space alpha-over)';
+
+  function renderOnMainThread(reason) {
+    const result = rasterizePixelRuntime(canvas, SPLATS, W, H, BG, SRGB_IN);
+    finish('main-thread-fallback:' + reason, result.computeMs);
+  }
+
+  if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') {
+    renderOnMainThread('unsupported');
+    return;
+  }
+
+  const workerSource = [
+    rasterizePixelRuntime.toString(),
+    "self.onmessage = function(event) {",
+    "  try {",
+    "    const p = event.data;",
+    "    const target = new OffscreenCanvas(p.width, p.height);",
+    "    const result = rasterizePixelRuntime(target, p.splats, p.width, p.height, p.background, p.srgbIn);",
+    "    self.postMessage({pixels: result.pixels.buffer, computeMs: result.computeMs}, [result.pixels.buffer]);",
+    "  } catch (error) {",
+    "    self.postMessage({error: String(error && error.stack || error)});",
+    "  }",
+    "};"
+  ].join('\n');
+  const workerUrl = URL.createObjectURL(new Blob([workerSource], {type: 'text/javascript'}));
+  const worker = new Worker(workerUrl);
+  let workerSettled = false;
+
+  function fallBackFromWorker(reason) {
+    if (workerSettled) return;
+    workerSettled = true;
+    worker.terminate();
+    URL.revokeObjectURL(workerUrl);
+    renderOnMainThread(reason);
+  }
+
+  worker.onerror = function(event) {
+    event.preventDefault();
+    fallBackFromWorker('worker-error');
+  };
+  worker.onmessage = function(event) {
+    if (event.data && event.data.error) {
+      fallBackFromWorker('worker-runtime-error');
+      return;
+    }
+    if (workerSettled) return;
+    workerSettled = true;
+    // Transfer the exact packed bytes rather than an ImageBitmap. ImageBitmap
+    // may receive browser color conversion in transit, while ImageData is the
+    // byte-level deployment contract calibrated by this runtime.
+    const pixels = new Uint8ClampedArray(event.data.pixels);
+    const displayContext = canvas.getContext('2d', { willReadFrequently: false });
+    displayContext.putImageData(new ImageData(pixels, W, H), 0, 0);
+    worker.terminate();
+    URL.revokeObjectURL(workerUrl);
+    finish('worker-offscreen', Number(event.data.computeMs));
+  };
+  worker.postMessage({
+    width: W,
+    height: H,
+    background: BG,
+    splats: SPLATS,
+    srgbIn: SRGB_IN
+  });
 })();
 """.replace(
             "__W__", str(int(width))
@@ -1070,10 +1665,500 @@ def generate_canvas_html(
         "</style></head>\n"
         "<body>\n"
         '<div id="status">rendering...</div>\n'
-        f'<canvas id="c" width="{int(width)}" height="{int(height)}"></canvas>\n'
+        f'<canvas id="c" data-compositor="pixel-runtime" data-execution="pending" '
+        f'width="{int(width)}" height="{int(height)}"></canvas>\n'
         "<script>\n" + js + "\n</script>\n"
         "</body></html>\n"
     )
+
+
+def generate_webgl_pixel_runtime_html(
+    splats: List[GaussianSplat],
+    width: int,
+    height: int,
+    background_linear_rgb: Optional[np.ndarray] = None,
+    title: str = "SplatThis Accelerated Pixel Runtime",
+    compositing_space: str = "linear",
+    backend: str = "auto",
+) -> str:
+    """Emit the accelerated pixel runtime with exact CPU fallbacks.
+
+    The browser tries RGBA32F WebGL2, then RGBA16F WebGL2, then the exact
+    Worker/OffscreenCanvas software renderer, and finally the same exact
+    renderer on the main thread. GPU paths render on a temporary canvas and
+    transfer packed bytes to the visible 2D canvas, so failed contexts never
+    prevent a later fallback from acquiring its required context.
+    """
+    import json
+
+    from .renderer import prepare_canvas_runtime_data
+
+    if int(width) <= 0 or int(height) <= 0:
+        raise ValueError("Pixel runtime width and height must be positive")
+    normalized_backend = str(backend).strip().lower()
+    allowed_backends = {"auto", "rgba32f", "rgba16f", "worker", "main"}
+    if normalized_backend not in allowed_backends:
+        raise ValueError(
+            f"Unsupported pixel runtime backend {backend!r}; "
+            f"expected one of {sorted(allowed_backends)}"
+        )
+
+    rows, serialized_background, srgb_mode = prepare_canvas_runtime_data(
+        splats,
+        background_linear_rgb=background_linear_rgb,
+        compositing_space=compositing_space,
+    )
+    bg = [float(channel) for channel in serialized_background]
+    splats_json = json.dumps(rows, separators=(",", ":"))
+    safe_title = escape_html(title)
+    js = (
+        r"""
+(function(){
+  const started = performance.now();
+  const W = __W__, H = __H__;
+  const BG = __BG__;
+  const SPLATS = __SPLATS__;
+  const SRGB_IN = __SRGB_IN__;
+  const canvas = document.getElementById('c');
+  const status = document.getElementById('status');
+  const configuredBackend = __BACKEND__;
+  const forcedBackend = new URLSearchParams(location.search).get('splatthisPixelBackend') ||
+    (configuredBackend==='auto' ? '' : configuredBackend);
+  const failures = [];
+  let finished = false;
+  let gpuQuality = null;
+
+  function finish(mode, computeMs, pixels) {
+    if (finished) return;
+    finished = true;
+    if (pixels) {
+      const displayContext = canvas.getContext('2d', {willReadFrequently:false});
+      displayContext.putImageData(new ImageData(pixels, W, H), 0, 0);
+    }
+    const renderMs = performance.now() - started;
+    canvas.dataset.execution = mode;
+    window.__SPLATTHIS_COMPUTE_MS = computeMs;
+    window.__SPLATTHIS_RENDER_MS = renderMs;
+    window.__SPLATTHIS_RENDER_MODE = mode;
+    window.__SPLATTHIS_FAST_PATH_FAILURES = failures.slice();
+    window.__SPLATTHIS_GPU_QUALITY = gpuQuality;
+    document.documentElement.dataset.splatthisExecution = mode;
+    document.documentElement.dataset.splatthisRenderDone = 'true';
+    status.textContent = 'rendered ' + SPLATS.length + ' splats at ' + W + '×' + H +
+      ' in ' + renderMs.toFixed(1) + 'ms total / ' + computeMs.toFixed(1) +
+      'ms compute (' + mode + ', ' + (SRGB_IN ? 'srgb' : 'linear') + ' alpha-over)';
+  }
+
+  function rasterizePixelRuntime(targetCanvas, splats, width, height, background, srgbIn) {
+    const computeStarted = performance.now();
+    const FOOTPRINT = 3.0;
+    const ctx = targetCanvas.getContext('2d', {willReadFrequently:false});
+    const lin = new Float32Array(width * height * 3);
+    const transmittance = new Float32Array(width * height).fill(1);
+    for (let si=0; si<splats.length; si++) {
+      const s=splats[si];
+      const x=s[0], y=s[1];
+      const sx=Math.max(s[2],1e-4), sy=Math.max(s[3],1e-4);
+      const theta=s[4], r=s[5], g=s[6], b=s[7];
+      const alpha=Math.min(1,Math.max(0,s[8]));
+      const ct=Math.cos(theta), st=Math.sin(theta);
+      const rx=Math.max(1,Math.ceil(FOOTPRINT*Math.sqrt((sx*ct)*(sx*ct)+(sy*st)*(sy*st))));
+      const ry=Math.max(1,Math.ceil(FOOTPRINT*Math.sqrt((sx*st)*(sx*st)+(sy*ct)*(sy*ct))));
+      const x0=Math.max(0,Math.floor(x-rx));
+      const x1=Math.min(width,Math.ceil(x+rx+1));
+      const y0=Math.max(0,Math.floor(y-ry));
+      const y1=Math.min(height,Math.ceil(y+ry+1));
+      const invSx2=1/(sx*sx), invSy2=1/(sy*sy);
+      for (let py=y0; py<y1; py++) {
+        const row=py*width;
+        for (let px=x0; px<x1; px++) {
+          const dx=px-x, dy=py-y;
+          const u=ct*dx+st*dy, v=-st*dx+ct*dy;
+          const weight=Math.exp(-0.5*(u*u*invSx2+v*v*invSy2));
+          const layerAlpha=1-Math.exp(-alpha*weight);
+          const index=row+px, t=transmittance[index], contribution=t*layerAlpha;
+          const target=index*3;
+          lin[target]+=contribution*r;
+          lin[target+1]+=contribution*g;
+          lin[target+2]+=contribution*b;
+          transmittance[index]=t*(1-layerAlpha);
+        }
+      }
+    }
+    const image=ctx.createImageData(width,height), out=image.data;
+    const threshold=0.0031308;
+    for (let index=0; index<width*height; index++) {
+      const source=index*3, target=index*4, t=transmittance[index];
+      let r=lin[source]+t*background[0];
+      let g=lin[source+1]+t*background[1];
+      let b=lin[source+2]+t*background[2];
+      r=Math.min(1,Math.max(0,r));
+      g=Math.min(1,Math.max(0,g));
+      b=Math.min(1,Math.max(0,b));
+      if (!srgbIn) {
+        r=r<=threshold ? 12.92*r : 1.055*Math.pow(r,1/2.4)-0.055;
+        g=g<=threshold ? 12.92*g : 1.055*Math.pow(g,1/2.4)-0.055;
+        b=b<=threshold ? 12.92*b : 1.055*Math.pow(b,1/2.4)-0.055;
+      }
+      out[target]=(r*255+0.5)|0;
+      out[target+1]=(g*255+0.5)|0;
+      out[target+2]=(b*255+0.5)|0;
+      out[target+3]=255;
+    }
+    ctx.putImageData(image,0,0);
+    return {computeMs:performance.now()-computeStarted,pixels:image.data};
+  }
+
+  function exactPixelBytes(px,py) {
+    const FOOTPRINT=3.0;
+    let r=0, g=0, b=0, transmittance=1;
+    for (let index=0; index<SPLATS.length; index++) {
+      const s=SPLATS[index];
+      const x=s[0], y=s[1];
+      const sx=Math.max(s[2],1e-4), sy=Math.max(s[3],1e-4);
+      const ct=Math.cos(s[4]), st=Math.sin(s[4]);
+      const rx=Math.max(1,Math.ceil(FOOTPRINT*Math.sqrt((sx*ct)*(sx*ct)+(sy*st)*(sy*st))));
+      const ry=Math.max(1,Math.ceil(FOOTPRINT*Math.sqrt((sx*st)*(sx*st)+(sy*ct)*(sy*ct))));
+      const x0=Math.max(0,Math.floor(x-rx));
+      const x1=Math.min(W,Math.ceil(x+rx+1));
+      const y0=Math.max(0,Math.floor(y-ry));
+      const y1=Math.min(H,Math.ceil(y+ry+1));
+      if (px<x0 || px>=x1 || py<y0 || py>=y1) continue;
+      const dx=px-x, dy=py-y;
+      const u=ct*dx+st*dy, v=-st*dx+ct*dy;
+      const weight=Math.exp(-0.5*(u*u/(sx*sx)+v*v/(sy*sy)));
+      const layerAlpha=1-Math.exp(-Math.min(1,Math.max(0,s[8]))*weight);
+      const contribution=transmittance*layerAlpha;
+      r+=contribution*s[5]; g+=contribution*s[6]; b+=contribution*s[7];
+      transmittance*=1-layerAlpha;
+    }
+    r=Math.min(1,Math.max(0,r+transmittance*BG[0]));
+    g=Math.min(1,Math.max(0,g+transmittance*BG[1]));
+    b=Math.min(1,Math.max(0,b+transmittance*BG[2]));
+    if (!SRGB_IN) {
+      const threshold=0.0031308;
+      r=r<=threshold ? 12.92*r : 1.055*Math.pow(r,1/2.4)-0.055;
+      g=g<=threshold ? 12.92*g : 1.055*Math.pow(g,1/2.4)-0.055;
+      b=b<=threshold ? 12.92*b : 1.055*Math.pow(b,1/2.4)-0.055;
+    }
+    return [(r*255+0.5)|0,(g*255+0.5)|0,(b*255+0.5)|0];
+  }
+
+  function checkHalfFloatQuality(pixels) {
+    // A fixed 4x4 grid is cheap (16 * splat count) and detects broken or
+    // excessively lossy half-float accumulation without paying for a second
+    // full CPU frame. Normal IEEE binary16 drift is allowed up to two bytes.
+    let channels=0, totalError=0, maxError=0;
+    for (let gy=0; gy<4; gy++) {
+      const py=Math.min(H-1,Math.floor((gy+0.5)*H/4));
+      for (let gx=0; gx<4; gx++) {
+        const px=Math.min(W-1,Math.floor((gx+0.5)*W/4));
+        const expected=exactPixelBytes(px,py);
+        const offset=(py*W+px)*4;
+        for (let channel=0; channel<3; channel++) {
+          const error=Math.abs(pixels[offset+channel]-expected[channel]);
+          totalError+=error; maxError=Math.max(maxError,error); channels++;
+        }
+      }
+    }
+    const meanError=totalError/channels;
+    return {
+      samples:16,
+      maxByteError:maxError,
+      meanAbsByteError:meanError,
+      accepted:maxError<=2 && meanError<=0.5
+    };
+  }
+
+  function renderOnMainThread(reason) {
+    failures.push(reason);
+    const result=rasterizePixelRuntime(canvas,SPLATS,W,H,BG,SRGB_IN);
+    finish('main-thread-fallback',result.computeMs,null);
+  }
+
+  function renderInWorker(reason) {
+    if (reason) failures.push(reason);
+    if (typeof Worker==='undefined' || typeof OffscreenCanvas==='undefined') {
+      renderOnMainThread('worker-or-offscreen-unsupported');
+      return;
+    }
+    const workerSource=[
+      rasterizePixelRuntime.toString(),
+      "self.onmessage=function(event){try{const p=event.data;const target=new OffscreenCanvas(p.width,p.height);const result=rasterizePixelRuntime(target,p.splats,p.width,p.height,p.background,p.srgbIn);self.postMessage({pixels:result.pixels.buffer,computeMs:result.computeMs},[result.pixels.buffer]);}catch(error){self.postMessage({error:String(error&&error.stack||error)});}};"
+    ].join('\n');
+    let workerUrl;
+    let worker;
+    try {
+      workerUrl=URL.createObjectURL(new Blob([workerSource],{type:'text/javascript'}));
+      worker=new Worker(workerUrl);
+    } catch (error) {
+      if (workerUrl) URL.revokeObjectURL(workerUrl);
+      renderOnMainThread('worker-construction-failed');
+      return;
+    }
+    let settled=false;
+    function workerFailed(message) {
+      if (settled) return;
+      settled=true;
+      failures.push(message);
+      worker.terminate();
+      URL.revokeObjectURL(workerUrl);
+      renderOnMainThread('worker-failed');
+    }
+    worker.onerror=function(event){event.preventDefault();workerFailed('worker-error');};
+    worker.onmessage=function(event){
+      if (event.data&&event.data.error) {workerFailed('worker-runtime-error');return;}
+      if (settled) return;
+      settled=true;
+      const pixels=new Uint8ClampedArray(event.data.pixels);
+      worker.terminate();
+      URL.revokeObjectURL(workerUrl);
+      finish('worker-offscreen',Number(event.data.computeMs),pixels);
+    };
+    worker.postMessage({width:W,height:H,background:BG,splats:SPLATS,srgbIn:SRGB_IN});
+  }
+
+  function shader(gl, type, source) {
+      const value = gl.createShader(type);
+      gl.shaderSource(value, source);
+      gl.compileShader(value);
+      if (!gl.getShaderParameter(value, gl.COMPILE_STATUS)) {
+        throw new Error(gl.getShaderInfoLog(value) || 'shader compile failed');
+      }
+      return value;
+  }
+
+  function program(gl, vertexSource, fragmentSource) {
+      const value = gl.createProgram();
+      gl.attachShader(value, shader(gl,gl.VERTEX_SHADER,vertexSource));
+      gl.attachShader(value, shader(gl,gl.FRAGMENT_SHADER,fragmentSource));
+      gl.linkProgram(value);
+      if (!gl.getProgramParameter(value, gl.LINK_STATUS)) {
+        throw new Error(gl.getProgramInfoLog(value) || 'program link failed');
+      }
+      return value;
+  }
+
+    const splatVertex = `#version 300 es
+precision highp float;
+layout(location=0) in vec4 aRect;
+layout(location=1) in vec4 aGeometry;
+layout(location=2) in vec2 aRotation;
+layout(location=3) in vec4 aColorAlpha;
+uniform vec2 uSize;
+flat out vec4 vGeometry;
+flat out vec2 vRotation;
+flat out vec4 vColorAlpha;
+void main() {
+  vec2 corner;
+  if (gl_VertexID == 0) corner=vec2(0.0,0.0);
+  else if (gl_VertexID == 1) corner=vec2(1.0,0.0);
+  else if (gl_VertexID == 2) corner=vec2(0.0,1.0);
+  else if (gl_VertexID == 3) corner=vec2(0.0,1.0);
+  else if (gl_VertexID == 4) corner=vec2(1.0,0.0);
+  else corner=vec2(1.0,1.0);
+  vec2 pixel=mix(aRect.xy,aRect.zw,corner);
+  vec2 ndc=vec2(pixel.x/uSize.x*2.0-1.0,1.0-pixel.y/uSize.y*2.0);
+  gl_Position=vec4(ndc,0.0,1.0);
+  vGeometry=aGeometry;
+  vRotation=aRotation;
+  vColorAlpha=aColorAlpha;
+}`;
+    const splatFragment = `#version 300 es
+precision highp float;
+uniform vec2 uSize;
+flat in vec4 vGeometry;
+flat in vec2 vRotation;
+flat in vec4 vColorAlpha;
+out vec4 outputColor;
+void main() {
+  vec2 pixel=vec2(gl_FragCoord.x-0.5,uSize.y-gl_FragCoord.y-0.5);
+  vec2 delta=pixel-vGeometry.xy;
+  float u=vRotation.x*delta.x+vRotation.y*delta.y;
+  float v=-vRotation.y*delta.x+vRotation.x*delta.y;
+  float q=u*u*vGeometry.z+v*v*vGeometry.w;
+  float weight=exp(-0.5*q);
+  float layerAlpha=1.0-exp(-vColorAlpha.a*weight);
+  outputColor=vec4(vColorAlpha.rgb*layerAlpha,layerAlpha);
+}`;
+    const displayVertex = `#version 300 es
+precision highp float;
+void main() {
+  vec2 p=gl_VertexID==0 ? vec2(-1.0,-1.0) :
+         (gl_VertexID==1 ? vec2(3.0,-1.0) : vec2(-1.0,3.0));
+  gl_Position=vec4(p,0.0,1.0);
+}`;
+    const displayFragment = `#version 300 es
+precision highp float;
+uniform sampler2D uAccum;
+uniform vec3 uBackground;
+uniform bool uSrgbIn;
+out vec4 outputColor;
+vec3 encodeSrgb(vec3 value) {
+  bvec3 low=lessThanEqual(value,vec3(0.0031308));
+  vec3 lo=12.92*value;
+  vec3 hi=1.055*pow(value,vec3(1.0/2.4))-0.055;
+  return mix(hi,lo,low);
+}
+void main() {
+  ivec2 coordinate=ivec2(gl_FragCoord.xy);
+  vec4 accum=texelFetch(uAccum,coordinate,0);
+  vec3 color=clamp(accum.rgb+accum.a*uBackground,0.0,1.0);
+  outputColor=vec4(uSrgbIn ? color : encodeSrgb(color),1.0);
+}`;
+
+  const instance = new Float32Array(SPLATS.length * 14);
+    const FOOTPRINT = 3.0;
+    for (let index=0; index<SPLATS.length; index++) {
+      const s=SPLATS[index];
+      const x=s[0], y=s[1];
+      const sx=Math.max(s[2],1e-4), sy=Math.max(s[3],1e-4);
+      const ct=Math.cos(s[4]), st=Math.sin(s[4]);
+      const rx=Math.max(1,Math.ceil(FOOTPRINT*Math.sqrt((sx*ct)*(sx*ct)+(sy*st)*(sy*st))));
+      const ry=Math.max(1,Math.ceil(FOOTPRINT*Math.sqrt((sx*st)*(sx*st)+(sy*ct)*(sy*ct))));
+      const base=index*14;
+      instance[base]=Math.max(0,Math.floor(x-rx));
+      instance[base+1]=Math.max(0,Math.floor(y-ry));
+      instance[base+2]=Math.min(W,Math.ceil(x+rx+1));
+      instance[base+3]=Math.min(H,Math.ceil(y+ry+1));
+      instance[base+4]=x; instance[base+5]=y;
+      instance[base+6]=1/(sx*sx); instance[base+7]=1/(sy*sy);
+      instance[base+8]=ct; instance[base+9]=st;
+      instance[base+10]=s[5]; instance[base+11]=s[6]; instance[base+12]=s[7];
+      instance[base+13]=Math.min(1,Math.max(0,s[8]));
+    }
+
+  function tryWebGL(format) {
+    const computeStarted=performance.now();
+    const surface=document.createElement('canvas');
+    surface.width=W; surface.height=H;
+    let contextLost=false;
+    surface.addEventListener('webglcontextlost',function(event){
+      event.preventDefault(); contextLost=true;
+    });
+    const gl=surface.getContext('webgl2',{
+      alpha:false,antialias:false,depth:false,stencil:false,
+      premultipliedAlpha:false,preserveDrawingBuffer:true
+    });
+    if (!gl) {failures.push(format+':webgl2-unavailable');return null;}
+    const colorFloat=gl.getExtension('EXT_color_buffer_float');
+    let internalFormat, pixelType, mode;
+    if (format==='rgba32f') {
+      if (!colorFloat || !gl.getExtension('EXT_float_blend')) {
+        failures.push('rgba32f:extensions-unavailable'); return null;
+      }
+      internalFormat=gl.RGBA32F; pixelType=gl.FLOAT; mode='webgl2-rgba32f';
+    } else {
+      // Attempt RGBA16F directly; framebuffer completeness is the
+      // authoritative capability probe across WebGL2 implementations.
+      internalFormat=gl.RGBA16F; pixelType=gl.HALF_FLOAT; mode='webgl2-rgba16f';
+    }
+    try {
+    const accumulationTexture=gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D,accumulationTexture);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D,0,internalFormat,W,H,0,gl.RGBA,pixelType,null);
+    const framebuffer=gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER,framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,accumulationTexture,0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE) {
+      throw new Error('float framebuffer incomplete');
+    }
+
+    const splatProgram=program(gl,splatVertex,splatFragment);
+    gl.useProgram(splatProgram);
+    gl.uniform2f(gl.getUniformLocation(splatProgram,'uSize'),W,H);
+    const buffer=gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+    gl.bufferData(gl.ARRAY_BUFFER,instance,gl.STATIC_DRAW);
+    const stride=14*4;
+    const attributes=[[0,4,0],[1,4,4],[2,2,8],[3,4,10]];
+    for (const [location,size,offset] of attributes) {
+      gl.enableVertexAttribArray(location);
+      gl.vertexAttribPointer(location,size,gl.FLOAT,false,stride,offset*4);
+      gl.vertexAttribDivisor(location,1);
+    }
+    gl.viewport(0,0,W,H);
+    gl.clearColor(0,0,0,1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND);
+    gl.blendEquation(gl.FUNC_ADD);
+    gl.blendFuncSeparate(gl.DST_ALPHA,gl.ONE,gl.ZERO,gl.ONE_MINUS_SRC_ALPHA);
+    gl.drawArraysInstanced(gl.TRIANGLES,0,6,SPLATS.length);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    gl.disable(gl.BLEND);
+    const displayProgram=program(gl,displayVertex,displayFragment);
+    gl.useProgram(displayProgram);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D,accumulationTexture);
+    gl.uniform1i(gl.getUniformLocation(displayProgram,'uAccum'),0);
+    gl.uniform3f(gl.getUniformLocation(displayProgram,'uBackground'),BG[0],BG[1],BG[2]);
+    gl.uniform1i(gl.getUniformLocation(displayProgram,'uSrgbIn'),SRGB_IN ? 1 : 0);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+    gl.finish();
+    if (contextLost || gl.isContextLost()) throw new Error('context-lost');
+    const bottomUp=new Uint8Array(W*H*4);
+    gl.readPixels(0,0,W,H,gl.RGBA,gl.UNSIGNED_BYTE,bottomUp);
+    if (gl.getError()!==gl.NO_ERROR) throw new Error('readPixels-failed');
+    const pixels=new Uint8ClampedArray(bottomUp.length), rowBytes=W*4;
+    for (let row=0; row<H; row++) {
+      const source=(H-1-row)*rowBytes;
+      pixels.set(bottomUp.subarray(source,source+rowBytes),row*rowBytes);
+    }
+    if (format==='rgba16f') {
+      gpuQuality=checkHalfFloatQuality(pixels);
+      if (!gpuQuality.accepted) {
+        throw new Error('half-float-quality-gate-failed:'+
+          gpuQuality.maxByteError+'/'+gpuQuality.meanAbsByteError.toFixed(3));
+      }
+    }
+    return {mode:mode,pixels:pixels,computeMs:performance.now()-computeStarted};
+    } catch (error) {
+      failures.push(format+':'+String(error&&error.message||error));
+      return null;
+    }
+  }
+
+  if (forcedBackend==='main') {renderOnMainThread('forced-main');return;}
+  if (forcedBackend==='worker') {renderInWorker('forced-worker');return;}
+  let result=null;
+  if (forcedBackend==='rgba16f') result=tryWebGL('rgba16f');
+  else if (forcedBackend==='rgba32f') result=tryWebGL('rgba32f');
+  else result=tryWebGL('rgba32f') || tryWebGL('rgba16f');
+  if (result) finish(result.mode,result.computeMs,result.pixels);
+  else renderInWorker('webgl-fast-paths-unavailable');
+})();
+""".replace(
+            "__W__", str(int(width))
+        )
+        .replace("__H__", str(int(height)))
+        .replace("__BG__", f"[{bg[0]:.6f},{bg[1]:.6f},{bg[2]:.6f}]")
+        .replace("__SRGB_IN__", "true" if srgb_mode else "false")
+        .replace("__BACKEND__", json.dumps(normalized_backend))
+        .replace("__SPLATS__", splats_json)
+    )
+    return (
+        "<!doctype html>\n"
+        f'<html><head><meta charset="utf-8"><title>{safe_title}</title>\n'
+        "<style>html,body{margin:0;background:#111;color:#eee;font:14px "
+        "-apple-system,sans-serif}body{display:flex;flex-direction:column;"
+        "align-items:center;padding:16px}#c{border:1px solid #333;max-width:100%}"
+        "#status{color:#7fd17f;font:12px ui-monospace,monospace;margin:8px}</style>"
+        '</head><body><div id="status">rendering pixel runtime...</div>'
+        f'<canvas id="c" data-compositor="pixel-runtime" '
+        f'data-execution="pending" width="{int(width)}" height="{int(height)}"></canvas>'
+        f"<script>{js}</script></body></html>\n"
+    )
+
+
+# Backward-compatible Python aliases for historical tools and stored benchmark
+# workflows. New CLI output uses the explicit ``pixel-runtime`` name.
+generate_canvas_html = generate_pixel_runtime_html
+generate_parallax_canvas_html = generate_parallax_pixel_runtime_html
 
 
 def generate_svg_content(
@@ -1087,6 +2172,8 @@ def generate_svg_content(
     background_safe_mask: Optional[np.ndarray] = None,
     edge_band_mask: Optional[np.ndarray] = None,
     palette_size: Optional[int] = None,
+    gradient_quality: str = SVG_GRADIENT_QUALITY_STANDARD,
+    painter_order: str = SVG_PAINTER_ORDER_BACK_TO_FRONT,
 ) -> str:
     """
     Generate SVG content from splats.
@@ -1100,11 +2187,15 @@ def generate_svg_content(
         export_recipe: "standard" or "browser-compatible". The browser recipe
             feathers gradients, pre-compensates dark opaque splats against the
             background, and caps alpha in safe background regions.
+        gradient_quality: "standard" or stricter adaptive "high" gradients.
+        painter_order: Correct "back-to-front" SVG paint order or "legacy".
 
     Returns:
         Complete SVG document as string
     """
     normalized_recipe = _normalize_svg_export_recipe(export_recipe)
+    normalized_gradient_quality = _normalize_svg_gradient_quality(gradient_quality)
+    normalized_painter_order = _normalize_svg_painter_order(painter_order)
     if normalized_recipe == SVG_SCRIPTED_MATRIX_RECIPE:
         return generate_scripted_svg_content(
             splats=splats,
@@ -1115,6 +2206,8 @@ def generate_svg_content(
             foreground_mask=foreground_mask,
             background_safe_mask=background_safe_mask,
             edge_band_mask=edge_band_mask,
+            gradient_quality=normalized_gradient_quality,
+            painter_order=normalized_painter_order,
         )
     if normalized_recipe == SVG_PALETTE_QUANTIZED_RECIPE:
         return generate_palette_quantized_svg_content(
@@ -1131,6 +2224,7 @@ def generate_svg_content(
                 if palette_size is None
                 else int(palette_size)
             ),
+            painter_order=normalized_painter_order,
         )
     if normalized_recipe == SVG_BLUR_RECIPE:
         return generate_blur_svg_content(
@@ -1139,6 +2233,7 @@ def generate_svg_content(
             height=height,
             k_sigma=k_sigma,
             background_linear_rgb=background_linear_rgb,
+            painter_order=normalized_painter_order,
         )
     use_browser_recipe = normalized_recipe == SVG_BROWSER_COMPAT_RECIPE
 
@@ -1212,7 +2307,9 @@ def generate_svg_content(
     # Density-aware stop-error threshold: sparse scenes tolerate fewer stops
     # per splat; dense scenes need more because per-splat 2-stop ramps stack
     # into visible "unsmoothed" artifacts.
-    stop_error = _density_aware_stop_error(len(splats))
+    stop_error, max_gradient_stops, opacity_precision = _svg_gradient_settings(
+        normalized_gradient_quality, len(splats)
+    )
 
     # Per-splat radial gradients approximate gaussian opacity in exported SVG.
     for i, splat in enumerate(splats):
@@ -1234,10 +2331,18 @@ def generate_svg_content(
         # scenes, tighter for dense ones so 2-stop linear ramps don't pile up
         # into visible artifacts.
         adaptive_stops = _adaptive_gradient_stops(
-            alpha, gradient_footprint, inner_end, max_error=stop_error
+            alpha,
+            gradient_footprint,
+            inner_end,
+            max_error=stop_error,
+            max_stops=max_gradient_stops,
+            opacity_precision=opacity_precision,
         )
+        offset_precision = 2 if opacity_precision > 2 else 1
         stop_lines = [
-            f'      <stop offset="{offset * 100:.1f}%" stop-color="{color}" stop-opacity="{opacity:.2f}"/>'
+            f'      <stop offset="{offset * 100:.{offset_precision}f}%" '
+            f'stop-color="{color}" '
+            f'stop-opacity="{opacity:.{opacity_precision}f}"/>'
             for offset, opacity in adaptive_stops
         ]
         if use_browser_recipe:
@@ -1259,7 +2364,8 @@ def generate_svg_content(
         svg_lines.append(background_rect_line)
         svg_lines.append("")
 
-    for i, splat in enumerate(splats):
+    for i in _svg_painter_indices(len(splats), normalized_painter_order):
+        splat = splats[i]
         ellipse_element = splat_to_svg_ellipse(
             splat=splat,
             k_sigma=k_sigma,
@@ -1282,6 +2388,8 @@ def generate_scripted_svg_content(
     foreground_mask: Optional[np.ndarray] = None,
     background_safe_mask: Optional[np.ndarray] = None,
     edge_band_mask: Optional[np.ndarray] = None,
+    gradient_quality: str = SVG_GRADIENT_QUALITY_STANDARD,
+    painter_order: str = SVG_PAINTER_ORDER_BACK_TO_FRONT,
 ) -> str:
     """
     Generate a compact browser SVG that stores splats as a numeric matrix.
@@ -1378,9 +2486,23 @@ def generate_scripted_svg_content(
         ]
         return ",".join(values)
 
-    rows = ";".join(_matrix_row(splat) for splat in splats)
+    # Script-created ellipses obey the same painter's-order rules as static
+    # SVG. Store rows back-to-front so the first front-to-back splat is
+    # appended last and therefore remains visually front-most.
+    rows = ";".join(
+        _matrix_row(splats[i]) for i in _svg_painter_indices(len(splats), painter_order)
+    )
     gradient_footprint = ELLIPSE_OVERLAP_BOOST * k_sigma
     inner_end = 1.0 / SVG_FEATHER_EXTENT
+    normalized_gradient_quality = _normalize_svg_gradient_quality(gradient_quality)
+    scripted_stops = (
+        SVG_GRADIENT_STOPS_HIGH
+        if normalized_gradient_quality == SVG_GRADIENT_QUALITY_HIGH
+        else SVG_GRADIENT_STOPS
+    )
+    scripted_opacity_precision = (
+        4 if normalized_gradient_quality == SVG_GRADIENT_QUALITY_HIGH else 2
+    )
     script = f"""
 (function(){{
   const NS = 'http://www.w3.org/2000/svg';
@@ -1390,14 +2512,15 @@ def generate_scripted_svg_content(
   const layer = document.getElementById('splats');
   const gradFrag = document.createDocumentFragment();
   const splatFrag = document.createDocumentFragment();
-  const stops = {SVG_GRADIENT_STOPS};
+  const stops = {scripted_stops};
+  const opacityPrecision = {scripted_opacity_precision};
   const footprint = {gradient_footprint:.8f};
   const innerEnd = {inner_end:.8f};
   function addStop(grad, offset, color, opacity) {{
     const stop = document.createElementNS(NS, 'stop');
     stop.setAttribute('offset', (offset * 100).toFixed(1) + '%');
     stop.setAttribute('stop-color', color);
-    stop.setAttribute('stop-opacity', opacity.toFixed(5));
+    stop.setAttribute('stop-opacity', opacity.toFixed(opacityPrecision));
     grad.appendChild(stop);
   }}
   for (let i = 0; i < rows.length; i++) {{
@@ -1468,14 +2591,15 @@ def generate_palette_quantized_svg_content(
     background_safe_mask: Optional[np.ndarray] = None,
     edge_band_mask: Optional[np.ndarray] = None,
     palette_size: int = SVG_PALETTE_QUANTIZED_DEFAULT_SIZE,
+    painter_order: str = SVG_PAINTER_ORDER_BACK_TO_FRONT,
 ) -> str:
     """Compact SVG that quantizes splat colors into a shared palette.
 
     Generates one <radialGradient> per palette color in <defs> (with the
     palette color baked into every stop) and references it per-splat via
     ``fill="url(#p{label})"``. Per-element ``opacity="..."`` scales the
-    Gaussian profile to the splat's trained alpha. Works in every renderer
-    that supports radial gradients (browsers, rsvg-convert, cairosvg).
+    Gaussian profile to the splat's trained alpha. The governing Chromium
+    target supports these standards-based radial gradients.
 
     The naive "one gradient per splat" `standard` recipe writes ~400 bytes
     per splat in gradient defs alone. This recipe writes one gradient
@@ -1631,7 +2755,9 @@ def generate_palette_quantized_svg_content(
         )
         svg_lines.append("")
 
-    for splat, label in zip(splats, labels):
+    for splat_index in _svg_painter_indices(len(splats), painter_order):
+        splat = splats[splat_index]
+        label = labels[splat_index]
         alpha = float(np.clip(splat.alpha, 0.0, 1.0))
         if masks.in_safe_background(splat):
             alpha = min(alpha, SVG_BACKGROUND_ALPHA_CAP)
@@ -1681,6 +2807,7 @@ def generate_blur_svg_content(
     height: int,
     k_sigma: float = 2.5,
     background_linear_rgb: Optional[np.ndarray] = None,
+    painter_order: str = SVG_PAINTER_ORDER_BACK_TO_FRONT,
 ) -> str:
     """Generate SVG using `<feGaussianBlur>` per splat instead of gradient stops.
 
@@ -1768,7 +2895,9 @@ def generate_blur_svg_content(
         svg_lines.append(bg_rect_line)
 
     # Per-splat small ellipse referencing the bucketed filter.
-    for splat, (sigma_x, sigma_y, eigenvecs) in zip(splats, decomps):
+    for splat_index in _svg_painter_indices(len(splats), painter_order):
+        splat = splats[splat_index]
+        sigma_x, sigma_y, eigenvecs = decomps[splat_index]
         sigma_geo = float(np.sqrt(max(sigma_x * sigma_y, 1e-8)))
         idx = _bucket(sigma_geo)
         cx, cy = float(splat.mu[0]), float(splat.mu[1])
@@ -1836,9 +2965,11 @@ def generate_drawingml_slide_content(
     k_sigma: float = 2.5,
     background_linear_rgb: Optional[np.ndarray] = None,
     splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
+    painter_order: str = PPTX_PAINTER_ORDER_LEGACY,
 ) -> str:
     """Generate PresentationML slide XML containing DrawingML ellipse shapes."""
     normalized_splat_style = _normalize_pptx_splat_style(splat_style)
+    normalized_painter_order = _normalize_pptx_painter_order(painter_order)
     # Small canvases would emit a sub-inch slide, which is schema-invalid;
     # scale the whole composition uniformly instead (see pptx_emu_scale).
     emu_scale = pptx_emu_scale(width, height)
@@ -1918,7 +3049,7 @@ def generate_drawingml_slide_content(
                     )
                 )
                 shape_id += 1
-            for splat in layer_splats:
+            for splat in _pptx_painter_splats(layer_splats, normalized_painter_order):
                 lines.extend(
                     _splat_to_drawingml_shape_lines(
                         splat,
@@ -1941,7 +3072,7 @@ def generate_drawingml_slide_content(
                 )
             )
             shape_id += 1
-        for splat in splats:
+        for splat in _pptx_painter_splats(splats, normalized_painter_order):
             lines.extend(
                 _splat_to_drawingml_shape_lines(
                     splat,
@@ -2589,55 +3720,52 @@ def render_splats_preview_png(
     return output_path
 
 
-def _try_rasterize_svg_to_linear_rgb(
-    svg_path: str,
-    width: int,
-    height: int,
-) -> Tuple[Optional[np.ndarray], str]:
-    """
-    Try rasterizing SVG to linear-RGB float image.
+def _evaluate_browser_export_quality(
+    target_linear_rgb: np.ndarray,
+    fallback_linear_rgb: Optional[np.ndarray] = None,
+    *,
+    artifact_name: str,
+    capture: Callable[[int, int], Tuple[np.ndarray, str]],
+) -> Dict[str, Any]:
+    """Grade a browser-native artifact while keeping proxies diagnostic-only."""
 
-    Returns `(image_or_none, method_label)`.
-    """
-    # Preferred backend: cairosvg (in-process).
+    target = np.asarray(target_linear_rgb, dtype=np.float32)
+    h, w = target.shape[:2]
     try:
-        import cairosvg  # type: ignore
-
-        png_bytes = cairosvg.svg2png(
-            url=svg_path, output_width=int(width), output_height=int(height)
+        rendered, method = capture(w, h)
+    except RuntimeError as exc:
+        method = f"unavailable:{exc}"
+        fallback = (
+            None
+            if fallback_linear_rgb is None
+            else np.asarray(fallback_linear_rgb, dtype=np.float32)
         )
-        image = Image.open(io.BytesIO(png_bytes)).convert("RGB")
-        srgb = np.asarray(image, dtype=np.float32) / 255.0
-        return srgb_to_linear(srgb), "cairosvg"
-    except Exception:
-        pass
+        if fallback is not None:
+            logger.warning(
+                "%s could not be captured in Chromium (%s); export-quality metrics "
+                "fall back to the numpy proxy render, which does NOT reflect deployed "
+                "browser fidelity. Install the capture extra and configure Chrome to "
+                "measure it.",
+                artifact_name,
+                method,
+            )
+        return {
+            "available": False,
+            "method": "proxy-fallback" if fallback is not None else method,
+            "governing_method": method,
+            "used_fallback": fallback is not None,
+            "metrics": (
+                None if fallback is None else compute_quality_metrics(target, fallback)
+            ),
+        }
 
-    # Fallback backend: rsvg-convert (librsvg CLI), common on macOS/Linux.
-    rsvg = shutil.which("rsvg-convert")
-    if rsvg is not None:
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as tmp:
-                subprocess.run(
-                    [
-                        rsvg,
-                        "-w",
-                        str(int(width)),
-                        "-h",
-                        str(int(height)),
-                        svg_path,
-                        "-o",
-                        tmp.name,
-                    ],
-                    check=True,
-                    capture_output=True,
-                )
-                image = Image.open(tmp.name).convert("RGB")
-                srgb = np.asarray(image, dtype=np.float32) / 255.0
-            return srgb_to_linear(srgb), "rsvg-convert"
-        except Exception as exc:
-            return None, f"error:rsvg:{type(exc).__name__}"
-
-    return None, "unavailable:cairosvg,rsvg-convert"
+    metrics = compute_quality_metrics(target, rendered)
+    return {
+        "available": True,
+        "method": method,
+        "used_fallback": False,
+        "metrics": metrics,
+    }
 
 
 def evaluate_svg_export_quality(
@@ -2645,44 +3773,77 @@ def evaluate_svg_export_quality(
     svg_path: str,
     fallback_linear_rgb: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
-    """
-    Grade SVG export quality against a target image.
+    """Grade an emitted SVG using its governing Chromium rasterization."""
 
-    Tries actual SVG rasterization first; if unavailable, uses provided fallback render.
-    """
-    target = np.asarray(target_linear_rgb, dtype=np.float32)
-    h, w = target.shape[:2]
-    rendered, method = _try_rasterize_svg_to_linear_rgb(
-        svg_path=svg_path, width=w, height=h
+    from .browser_capture import render_svg_in_browser_to_linear_rgb
+
+    return _evaluate_browser_export_quality(
+        target_linear_rgb,
+        fallback_linear_rgb,
+        artifact_name="SVG",
+        capture=lambda width, height: render_svg_in_browser_to_linear_rgb(
+            svg_path=svg_path, width=width, height=height
+        ),
     )
-    used_fallback = False
 
-    if rendered is None and fallback_linear_rgb is not None:
-        logger.warning(
-            "SVG could not be rasterized (%s); export-quality metrics fall back to the "
-            "numpy proxy render, which does NOT reflect real SVG fidelity. Install cairosvg "
-            "or rsvg-convert to measure the actual SVG.",
-            method,
-        )
-        rendered = np.asarray(fallback_linear_rgb, dtype=np.float32)
-        method = "proxy-fallback"
-        used_fallback = True
 
-    if rendered is None:
-        return {
-            "available": False,
-            "method": method,
-            "used_fallback": False,
-            "metrics": None,
-        }
+def evaluate_css_export_quality(
+    target_linear_rgb: np.ndarray,
+    html_path: str,
+    fallback_linear_rgb: Optional[np.ndarray] = None,
+) -> Dict[str, Any]:
+    """Grade an emitted CSS-splat scene using governing Chromium."""
 
-    metrics = compute_quality_metrics(target, rendered)
-    return {
-        "available": True,
-        "method": method,
-        "used_fallback": bool(used_fallback),
-        "metrics": metrics,
-    }
+    from .browser_capture import render_css_html_in_browser_to_linear_rgb
+
+    return _evaluate_browser_export_quality(
+        target_linear_rgb,
+        fallback_linear_rgb,
+        artifact_name="CSS compositor",
+        capture=lambda width, height: render_css_html_in_browser_to_linear_rgb(
+            html_path=html_path, width=width, height=height
+        ),
+    )
+
+
+def evaluate_native_canvas_export_quality(
+    target_linear_rgb: np.ndarray,
+    html_path: str,
+    fallback_linear_rgb: Optional[np.ndarray] = None,
+) -> Dict[str, Any]:
+    """Grade browser-native Canvas gradient splats in governing Chromium."""
+
+    from .browser_capture import render_canvas_html_in_browser_to_linear_rgb
+
+    return _evaluate_browser_export_quality(
+        target_linear_rgb,
+        fallback_linear_rgb,
+        artifact_name="Canvas compositor",
+        capture=lambda width, height: render_canvas_html_in_browser_to_linear_rgb(
+            html_path=html_path, width=width, height=height
+        ),
+    )
+
+
+def evaluate_pixel_runtime_export_quality(
+    target_linear_rgb: np.ndarray,
+    html_path: str,
+    fallback_linear_rgb: Optional[np.ndarray] = None,
+) -> Dict[str, Any]:
+    """Grade the actually selected static pixel-runtime backend in Chromium."""
+
+    from .browser_capture import render_pixel_runtime_html_in_browser_to_linear_rgb
+
+    return _evaluate_browser_export_quality(
+        target_linear_rgb,
+        fallback_linear_rgb,
+        artifact_name="Pixel runtime",
+        capture=lambda width, height: (
+            render_pixel_runtime_html_in_browser_to_linear_rgb(
+                html_path=html_path, width=width, height=height
+            )
+        ),
+    )
 
 
 def _pptx_content_types_xml() -> str:
@@ -3121,6 +4282,7 @@ def save_pptx_with_splats(
     sort_by_area: bool = False,
     background_linear_rgb: Optional[np.ndarray] = None,
     splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
+    painter_order: str = PPTX_PAINTER_ORDER_LEGACY,
 ) -> None:
     """
     Save a self-contained PPTX containing native DrawingML splat shapes.
@@ -3143,6 +4305,7 @@ def save_pptx_with_splats(
         k_sigma=k_sigma,
         background_linear_rgb=background_linear_rgb,
         splat_style=splat_style,
+        painter_order=painter_order,
     )
     now_iso = (
         datetime.now(timezone.utc)

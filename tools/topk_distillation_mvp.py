@@ -11,10 +11,10 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from png2svg_gs.browser_capture import render_svg_in_browser_to_linear_rgb
 from png2svg_gs.converter import PNG2SVGConverter
 from png2svg_gs.distillation import run_distillation_mvp, summarize_mvp_metrics
 from png2svg_gs.io import (
-    _try_rasterize_svg_to_linear_rgb,
     compute_quality_metrics,
     load_png,
     load_splats_json,
@@ -260,7 +260,7 @@ def main() -> int:
         )
         arm_timings["emit_pptx"] = float(time.perf_counter() - pptx_t0)
         raster_t0 = time.perf_counter()
-        svg_render, renderer = _try_rasterize_svg_to_linear_rgb(
+        svg_render, renderer = render_svg_in_browser_to_linear_rgb(
             str(svg_path), width, height
         )
         arm_timings["rasterize_svg"] = float(time.perf_counter() - raster_t0)
@@ -274,11 +274,7 @@ def main() -> int:
             "pptx_bytes": pptx_path.stat().st_size,
             "actual_svg_renderer": renderer,
             "svg_postfit": postfit_metrics,
-            "actual_svg": (
-                None
-                if svg_render is None
-                else compute_quality_metrics(target, svg_render)
-            ),
+            "actual_svg": compute_quality_metrics(target, svg_render),
             "actual_pptx": None,
         }
 
@@ -287,26 +283,21 @@ def main() -> int:
     teacher_advantage = float(
         proxy_metrics["teacher"]["ssim_srgb"] - proxy_metrics["direct"]["ssim_srgb"]
     )
-    if direct_svg is None or student_svg is None:
-        accepted = False
-        decision_reason = "actual SVG rasterization unavailable"
-        actual_gain = None
+    actual_gain = float(student_svg["ssim_srgb"] - direct_svg["ssim_srgb"])
+    psnr_regression = float(direct_svg["psnr_srgb"] - student_svg["psnr_srgb"])
+    accepted = bool(
+        teacher_advantage > 0.0
+        and actual_gain >= float(args.min_svg_ssim_gain)
+        and psnr_regression <= 0.1
+    )
+    if teacher_advantage <= 0.0:
+        decision_reason = "teacher ceiling did not beat direct proxy"
+    elif actual_gain < float(args.min_svg_ssim_gain):
+        decision_reason = "actual SVG SSIM gain below threshold"
+    elif psnr_regression > 0.1:
+        decision_reason = "actual SVG PSNR regressed"
     else:
-        actual_gain = float(student_svg["ssim_srgb"] - direct_svg["ssim_srgb"])
-        psnr_regression = float(direct_svg["psnr_srgb"] - student_svg["psnr_srgb"])
-        accepted = bool(
-            teacher_advantage > 0.0
-            and actual_gain >= float(args.min_svg_ssim_gain)
-            and psnr_regression <= 0.1
-        )
-        if teacher_advantage <= 0.0:
-            decision_reason = "teacher ceiling did not beat direct proxy"
-        elif actual_gain < float(args.min_svg_ssim_gain):
-            decision_reason = "actual SVG SSIM gain below threshold"
-        elif psnr_regression > 0.1:
-            decision_reason = "actual SVG PSNR regressed"
-        else:
-            decision_reason = "student cleared SVG MVP gates"
+        decision_reason = "student cleared SVG MVP gates"
     records["decision"] = {
         "accepted": accepted,
         "winner": "student" if accepted else "direct",

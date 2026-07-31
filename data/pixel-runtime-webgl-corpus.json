@@ -1,0 +1,31 @@
+{
+  "schema": "splatthis.pixel-runtime-webgl-corpus-summary/1",
+  "date": "2026-07-31",
+  "browser": "Chrome 140.0.7339.81",
+  "corpus": "21 stored seed-0 historical Canvas (now pixel-runtime) checkpoints at full benchmark dimensions",
+  "method": "one warm-up plus one measured navigation per backend and image",
+  "rgba32f": {
+    "selected_images": 21,
+    "total_images": 21,
+    "max_byte_error_vs_exact_cpu": 1,
+    "worst_source_delta_ssim_srgb": -0.000001379765297016,
+    "median_render_ms": 19.100000143051147
+  },
+  "rgba16f": {
+    "selected_images": 20,
+    "total_images": 21,
+    "fallback_image": "checkerboard",
+    "max_full_frame_byte_error_on_selected_images": 3,
+    "worst_source_delta_ssim_srgb_including_fallback": -0.000336832817849464,
+    "median_render_ms_including_fallback": 21.5
+  },
+  "worker": {
+    "byte_identical_to_main_images": 21,
+    "total_images": 21,
+    "median_render_ms": 112.5
+  },
+  "main": {
+    "median_render_ms": 93.59999990463257
+  },
+  "local_detailed_report": "./tmp/pixel-runtime-chain/corpus-results.json"
+}

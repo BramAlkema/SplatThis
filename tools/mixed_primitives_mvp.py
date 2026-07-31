@@ -8,11 +8,8 @@ import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from png2svg_gs.io import (
-    _try_rasterize_svg_to_linear_rgb,
-    compute_quality_metrics,
-    load_png,
-)
+from png2svg_gs.browser_capture import render_svg_in_browser_to_linear_rgb
+from png2svg_gs.io import compute_quality_metrics, load_png
 from png2svg_gs.mixed_primitives import (
     edge_paths_to_svg_group,
     edge_strokes_to_svg_group,
@@ -63,11 +60,9 @@ def main() -> int:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     width, height = _svg_size(args.baseline_svg)
     target = load_png(str(args.source), target_size=(width, height))[..., :3]
-    baseline_render, baseline_renderer = _try_rasterize_svg_to_linear_rgb(
+    baseline_render, baseline_renderer = render_svg_in_browser_to_linear_rgb(
         str(args.baseline_svg), width, height
     )
-    if baseline_render is None:
-        raise RuntimeError(f"could not rasterize baseline SVG: {baseline_renderer}")
     baseline_metrics = compute_quality_metrics(target, baseline_render)
     baseline_content = args.baseline_svg.read_text()
 
@@ -114,11 +109,9 @@ def main() -> int:
                         else args.output_dir / f"{label}.svg"
                     )
                     candidate_path.write_text(candidate_content)
-                    rendered, renderer = _try_rasterize_svg_to_linear_rgb(
+                    rendered, renderer = render_svg_in_browser_to_linear_rgb(
                         str(candidate_path), width, height
                     )
-                    if rendered is None:
-                        continue
                     metrics = compute_quality_metrics(target, rendered)
                     ssim_gain = float(
                         metrics["ssim_srgb"] - baseline_metrics["ssim_srgb"]

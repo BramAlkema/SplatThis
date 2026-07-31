@@ -39,8 +39,10 @@
 <h2>Three deploy targets, one splat set</h2>
 <p>Same chameleon source. 2 000 splats, ~8 min training on M-series. The
 canvas renders in linear-light alpha-over (matches the optimizer exactly).
-The SVG hits a perceptual ceiling around LPIPS 0.30 from gradient-stop
-quantization; canvas keeps improving with splat count.</p>
+The SVG card is a historical artifact; the current exporter corrects SVG
+painter order and can browser-test bounded gradient policies per image.
+Canvas keeps the exact pixel-runtime path and can continue improving with
+splat count.</p>
 
 <div class="grid">
   <figure>
@@ -48,17 +50,18 @@ quantization; canvas keeps improving with splat count.</p>
     <figcaption><strong>Source</strong> · input.png · 476×502</figcaption>
   </figure>
   <figure>
-    <img src="demo/canvas_render.png" alt="Canvas render">
-    <figcaption><strong>Canvas</strong> · LPIPS 0.11 · PSNR 29 dB</figcaption>
+    <img src="demo/canvas_render.png" alt="Pixel-runtime render">
+    <figcaption><strong>Pixel runtime</strong> · LPIPS 0.11 · PSNR 29 dB</figcaption>
   </figure>
   <figure>
     <object data="demo/chameleon_compact.svg" type="image/svg+xml" style="width:100%;height:auto;display:block;border-radius:4px"></object>
-    <figcaption><strong>SVG</strong> · LPIPS 0.32 · 109 KB · scripted-matrix</figcaption>
+    <figcaption><strong>Historical SVG</strong> · LPIPS 0.32 · 109 KB · scripted-matrix</figcaption>
   </figure>
 </div>
 
-<p class="note">The SVG above is rendered live — true vector, scales infinitely.
-Uses the <code>scripted-matrix</code> recipe (109 KB raw, ~43 KB gzipped on the
+<p class="note">The historical SVG above is rendered live — true vector and
+scalable, but it predates the corrected compositor. It uses the
+<code>scripted-matrix</code> recipe (109 KB raw, ~43 KB gzipped on the
 wire) which stores splats as a compact matrix + JS expander instead of inline
 gradient defs. For an editable file usable in any vector editor, download
 <a href="demo/chameleon.svg">chameleon.svg</a> (1 MB raw, ~93 KB gzipped, pure
@@ -86,12 +89,30 @@ Render in ~50 ms (500) / ~300 ms (2 000) in any modern browser. Standalone:
 <a href="demo/canvas_500.html">canvas_500.html</a>,
 <a href="demo/canvas.html">canvas.html</a>.</p>
 
-<h2>Format ranking on photo content</h2>
+<h2>Current SVG compositor evidence</h2>
+<p>The stored corpus covers 21 images and all 33 available seed populations.
+The table reports seed-0 medians from native-size Chromium captures; every
+metric grades the complete image, not a crop.</p>
+<table>
+  <thead><tr><th>SVG policy</th><th>SSIM</th><th>LPIPS↓</th><th>gzip</th><th>Capture</th></tr></thead>
+  <tbody>
+    <tr><td>Historical order</td><td>0.5973</td><td>0.4023</td><td>63.0 KB</td><td>227 ms</td></tr>
+    <tr><td>Correct order, standard stops</td><td>0.7404</td><td>0.2433</td><td>62.8 KB</td><td>233 ms</td></tr>
+    <tr><td>Correct order, high stops</td><td>0.7483</td><td>0.2439</td><td>96.4 KB</td><td>255 ms</td></tr>
+    <tr><td>Per-image artifact gate</td><td>0.7111</td><td>0.2439</td><td>93.5 KB</td><td>234 ms</td></tr>
+  </tbody>
+</table>
+<p class="note">The gate is deliberately conservative: it retained the
+historical order for four seed-0 images whose complete metric vector regressed.
+See the <a href="svg-compositor-gate.md">method and gate report</a> or the
+<a href="../data/svg-compositor-corpus.json">versioned measurements</a>.</p>
+
+<h2>Historical Chameleon format snapshot</h2>
 <table>
   <thead><tr><th>Format</th><th>SSIM</th><th>LPIPS↓</th><th>PSNR</th><th>File</th></tr></thead>
   <tbody>
-    <tr><td>Canvas (HTML)</td><td>0.92</td><td>0.11</td><td>29 dB</td><td>~700 KB</td></tr>
-    <tr><td>SVG standard</td><td>0.76</td><td>0.32</td><td>22 dB</td><td>~1.0 MB</td></tr>
+    <tr><td>Pixel runtime (HTML)</td><td>0.92</td><td>0.11</td><td>29 dB</td><td>~700 KB</td></tr>
+    <tr><td>SVG standard (old order)</td><td>0.76</td><td>0.32</td><td>22 dB</td><td>~1.0 MB</td></tr>
     <tr><td>PPTX blur</td><td>0.55</td><td>~0.40</td><td>14 dB</td><td>~100 KB</td></tr>
   </tbody>
 </table>
