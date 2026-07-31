@@ -53,9 +53,18 @@ def test_missing_svgo_leaves_file_untouched(tmp_path, monkeypatch):
 
 def test_failing_svgo_leaves_file_untouched(tmp_path, monkeypatch):
     """Non-zero exit must not clobber the emitted SVG."""
+    import subprocess as sp
+
     svg = tmp_path / "b.svg"
     original = _write_svg(svg)
-    monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/false")
+    monkeypatch.setattr(shutil, "which", lambda _name: "/fake/svgo")
+    monkeypatch.setattr(
+        sp,
+        "run",
+        lambda cmd, **_kwargs: sp.CompletedProcess(
+            cmd, returncode=1, stdout="", stderr="expected test failure"
+        ),
+    )
 
     report = optimize_svg_file(str(svg))
 

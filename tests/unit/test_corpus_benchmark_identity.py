@@ -183,7 +183,7 @@ def test_overview_scopes_runtime_to_canvas_and_compares_artifacts(
 
     output = tmp_path / "index.html"
     corpus_benchmark.generate_canvas_corpus_html(tmp_path, output)
-    document = output.read_text()
+    document = output.read_text(encoding="utf-8")
 
     assert '<figure class="canvas-panel">' in document
     assert '<span id="status-0">queued · 1 canvas-trained splats</span>' in document
