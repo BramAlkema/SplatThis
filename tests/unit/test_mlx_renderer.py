@@ -9,7 +9,8 @@ from png2svg_gs.mlx_renderer import (
     is_mlx_available,
     splats_to_numpy_table,
 )
-from png2svg_gs.renderer import create_renderer, splats_to_tensor
+from png2svg_gs.mlx_stage import MlxRendererConfig
+from png2svg_gs.renderer import create_renderer, render_splats_numpy, splats_to_tensor
 from png2svg_gs.splat import GaussianSplat, RawSplat
 
 WIDTH = 23
@@ -17,6 +18,10 @@ HEIGHT = 19
 BACKGROUND = [0.05, 0.08, 0.11]
 TILE_SIZE = 8
 BATCH_TILE_COUNT = 3
+
+
+def test_mlx_renderer_config_uses_benchmarked_small_tile_batch() -> None:
+    assert MlxRendererConfig().batch_tile_count == 8
 
 
 def _sample_splats() -> List[GaussianSplat]:
@@ -66,11 +71,43 @@ def _sample_splats() -> List[GaussianSplat]:
     ]
 
 
+def test_numpy_rotated_footprints_match_tiled_renderer() -> None:
+    """A rotated major axis must not be clipped by an unrotated sx/sy bbox."""
+
+    splats = [
+        GaussianSplat.from_raw_splat(
+            RawSplat(
+                x=11.0,
+                y=9.0,
+                sx=6.0,
+                sy=0.8,
+                theta=np.pi / 2.0,
+                r=0.9,
+                g=0.2,
+                b=0.1,
+                a=0.8,
+                importance=0.5,
+            )
+        )
+    ]
+
+    reference = _render_torch_batched(splats)
+    rendered = render_splats_numpy(
+        splats,
+        width=WIDTH,
+        height=HEIGHT,
+        background_linear_rgb=np.asarray(BACKGROUND, dtype=np.float32),
+    )
+
+    _assert_images_close(rendered, reference)
+
+
 def _render_torch_batched(
     splats: Sequence[GaussianSplat],
     blend_mode: str = "alpha-over",
     compositing_space: str = "linear",
     max_active_splats_per_tile: Optional[int] = None,
+    normalized_top_k: int = 10,
 ) -> np.ndarray:
     renderer = create_renderer(
         backend="torch-batched",
@@ -79,6 +116,7 @@ def _render_torch_batched(
         device=torch.device("cpu"),
         tile_size=TILE_SIZE,
         blend_mode=blend_mode,
+        normalized_top_k=normalized_top_k,
         background_color=BACKGROUND,
         compositing_space=compositing_space,
         batch_tile_count=BATCH_TILE_COUNT,
@@ -93,6 +131,7 @@ def _render_mlx(
     compositing_space: str = "linear",
     max_active_splats_per_tile: Optional[int] = None,
     pptx_softedge_mode: bool = False,
+    normalized_top_k: int = 10,
 ) -> np.ndarray:
     import mlx.core as mx
 
@@ -102,6 +141,7 @@ def _render_mlx(
         tile_size=TILE_SIZE,
         batch_tile_count=BATCH_TILE_COUNT,
         blend_mode=blend_mode,
+        normalized_top_k=normalized_top_k,
         background_color=BACKGROUND,
         compositing_space=compositing_space,
         max_active_splats_per_tile=max_active_splats_per_tile,
@@ -146,7 +186,7 @@ def test_mlx_renderer_import_guard_when_mlx_is_absent() -> None:
     if is_mlx_available():
         pytest.skip("MLX is available in this environment")
 
-    with pytest.raises(RuntimeError, match="MLX is not installed"):
+    with pytest.raises(RuntimeError, match="MLX is not installed|no Metal device"):
         MlxBatchedGaussianRenderer(width=8, height=8)
 
 
@@ -166,6 +206,50 @@ def test_mlx_batched_renderer_matches_torch_reference_matrix(
     )
 
     _assert_images_close(image, reference)
+
+
+@pytest.mark.skipif(not is_mlx_available(), reason="MLX is not installed")
+def test_mlx_normalized_topk_matches_torch_reference() -> None:
+    splats = _sample_splats()
+
+    reference = _render_torch_batched(
+        splats,
+        blend_mode="normalized-topk",
+        normalized_top_k=2,
+    )
+    image = _render_mlx(
+        splats,
+        blend_mode="normalized-topk",
+        normalized_top_k=2,
+    )
+
+    _assert_images_close(image, reference)
+
+
+@pytest.mark.skipif(not is_mlx_available(), reason="MLX is not installed")
+def test_mlx_normalized_topk_has_finite_gradients() -> None:
+    import mlx.core as mx
+
+    splats = _sample_splats()
+    table = mx.array(splats_to_numpy_table(splats))
+    renderer = MlxBatchedGaussianRenderer(
+        width=WIDTH,
+        height=HEIGHT,
+        tile_size=TILE_SIZE,
+        batch_tile_count=BATCH_TILE_COUNT,
+        blend_mode="normalized-topk",
+        normalized_top_k=2,
+        background_color=BACKGROUND,
+    )
+    plan = renderer.build_plan(np.asarray(table))
+
+    def objective(values):
+        return mx.mean(renderer.render(values, plan=plan))
+
+    gradients = mx.grad(objective)(table)
+    mx.eval(gradients)
+
+    assert np.isfinite(np.asarray(gradients)).all()
 
 
 @pytest.mark.skipif(not is_mlx_available(), reason="MLX is not installed")

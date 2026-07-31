@@ -12,12 +12,15 @@ import logging
 import math
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 import zipfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
+from html import escape as escape_html
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
 from PIL import Image
@@ -115,6 +118,49 @@ SVG_BACKGROUND_ALPHA_CAP = 0.20
 SVG_FEATHER_EXTENT = 2.0
 SVG_PRECOMP_ALPHA_THRESHOLD = 0.90
 SVG_PRECOMP_MAX_SRGB = 160.0
+
+
+@contextmanager
+def atomic_output_path(output_path: str | Path) -> Iterator[Path]:
+    """Yield a sibling temporary path and atomically replace the destination.
+
+    Final SVG, JSON, HTML, and PPTX artifacts should never be left truncated
+    when a process is interrupted or an encoder raises. The temporary file
+    lives beside the destination so :func:`os.replace` stays on one filesystem.
+    Existing destination permissions are preserved.
+    """
+
+    target = Path(output_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    mode = stat.S_IMODE(target.stat().st_mode) if target.exists() else 0o644
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{target.name}.",
+        suffix=".tmp",
+        dir=str(target.parent),
+    )
+    os.close(descriptor)
+    temporary = Path(temporary_name)
+    try:
+        yield temporary
+        # A writable descriptor keeps fsync compatible with Windows' _commit.
+        with temporary.open("rb+") as stream:
+            os.fsync(stream.fileno())
+        temporary.chmod(mode)
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def atomic_write_text(
+    output_path: str | Path,
+    content: str,
+    *,
+    encoding: str = "utf-8",
+) -> None:
+    """Write a text artifact without exposing a partial destination file."""
+
+    with atomic_output_path(output_path) as temporary:
+        temporary.write_text(content, encoding=encoding)
 
 
 class RegionMasks:
@@ -548,10 +594,8 @@ def save_svg(
         edge_band_mask=edge_band_mask,
     )
 
-    # Write to file
     try:
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(svg_content)
+        atomic_write_text(output_path, svg_content)
         logger.info(f"Saved SVG with {len(ordered_splats)} splats to {output_path}")
     except Exception as e:
         logger.error(f"Failed to save SVG {output_path}: {e}")
@@ -619,8 +663,7 @@ def save_drawingml(
     )
 
     try:
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(drawingml_content)
+        atomic_write_text(output_path, drawingml_content)
         logger.info(
             f"Saved DrawingML with {len(ordered_splats)} splats to {output_path}"
         )
@@ -658,6 +701,9 @@ def generate_parallax_canvas_html(
     """
 
     import json
+
+    if int(width) <= 0 or int(height) <= 0:
+        raise ValueError("Canvas width and height must be positive integers")
 
     bg_lin = (
         [0.0, 0.0, 0.0]
@@ -723,18 +769,20 @@ def generate_parallax_canvas_html(
             ]
         )
 
-    layer_data_json = json.dumps(
-        [
+    layer_records = []
+    for plane in (PLANE_BACKGROUND, PLANE_MIDGROUND, PLANE_FOREGROUND):
+        if not buckets[plane]:
+            continue
+        # Sort once while emitting instead of making every browser repeat it.
+        buckets[plane].sort(key=lambda row: row[9])
+        layer_records.append(
             {
                 "layer": plane,
                 "depth": PLANE_DEPTHS[plane],
                 "splats": buckets[plane],
             }
-            for plane in (PLANE_BACKGROUND, PLANE_MIDGROUND, PLANE_FOREGROUND)
-            if buckets[plane]
-        ],
-        separators=(",", ":"),
-    )
+        )
+    layer_data_json = json.dumps(layer_records, separators=(",", ":"))
 
     js = (
         r"""
@@ -749,7 +797,6 @@ def generate_parallax_canvas_html(
 
   function renderLayer(canvas, splats) {
     const ctx = canvas.getContext('2d', { willReadFrequently: false });
-    splats.sort((a, b) => a[9] - b[9]);
     const lin = new Float32Array(W * H * 3);
     const T = new Float32Array(W * H).fill(1);
     const FOOTPRINT = 3.0;
@@ -760,14 +807,14 @@ def generate_parallax_canvas_html(
       const theta = s[4];
       const r = s[5], g = s[6], b = s[7];
       const a = Math.min(1, Math.max(0, s[8]));
-      const rx = Math.max(1, Math.ceil(FOOTPRINT * sx));
-      const ry = Math.max(1, Math.ceil(FOOTPRINT * sy));
+      const ct = Math.cos(theta), st = Math.sin(theta);
+      const rx = Math.max(1, Math.ceil(FOOTPRINT * Math.sqrt((sx*ct)*(sx*ct) + (sy*st)*(sy*st))));
+      const ry = Math.max(1, Math.ceil(FOOTPRINT * Math.sqrt((sx*st)*(sx*st) + (sy*ct)*(sy*ct))));
       const x0 = Math.max(0, Math.floor(x - rx));
       const x1 = Math.min(W, Math.ceil(x + rx + 1));
       const y0 = Math.max(0, Math.floor(y - ry));
       const y1 = Math.min(H, Math.ceil(y + ry + 1));
       if (x0 >= x1 || y0 >= y1) continue;
-      const ct = Math.cos(theta), st = Math.sin(theta);
       const invSx2 = 1 / (sx * sx), invSy2 = 1 / (sy * sy);
       for (let py = y0; py < y1; py++) {
         const baseRow = py * W;
@@ -858,7 +905,7 @@ def generate_parallax_canvas_html(
         .replace("__LAYERS__", layer_data_json)
     )
 
-    safe_title = title.replace("<", "&lt;").replace(">", "&gt;")
+    safe_title = escape_html(title)
     return (
         "<!doctype html>\n"
         f'<html><head><meta charset="utf-8"><title>{safe_title}</title>\n'
@@ -876,7 +923,7 @@ def generate_parallax_canvas_html(
         "</style></head>\n"
         "<body>\n"
         '<div id="status">rendering...</div>\n'
-        f'<div id="stack" data-layers="{len(layer_data_json)}"></div>\n'
+        f'<div id="stack" data-layers="{len(layer_records)}"></div>\n'
         "<script>\n" + js + "\n</script>\n"
         "</body></html>\n"
     )
@@ -905,6 +952,9 @@ def generate_canvas_html(
     breaking the SVG primitive's structural cap.
     """
     import json
+
+    if int(width) <= 0 or int(height) <= 0:
+        raise ValueError("Canvas width and height must be positive integers")
 
     compositing_space = str(compositing_space).strip().lower()
     if compositing_space not in {"linear", "srgb"}:
@@ -944,6 +994,9 @@ def generate_canvas_html(
                 -1.0 if raw.layer is None else float(raw.layer),
             ]
         )
+    # Python's stable sort matches JavaScript's stable Array.sort semantics.
+    # Do this once at export time instead of at every browser startup.
+    rows.sort(key=lambda row: row[9])
     splats_json = json.dumps(rows, separators=(",", ":"))
 
     js = (
@@ -958,9 +1011,6 @@ def generate_canvas_html(
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d', { willReadFrequently: false });
 
-  // Back-to-front: lowest render_order first, highest last (painted on top).
-  SPLATS.sort((a, b) => a[9] - b[9]);
-
   const lin = new Float32Array(W * H * 3);
   const T = new Float32Array(W * H).fill(1);
 
@@ -971,14 +1021,14 @@ def generate_canvas_html(
     const theta = s[4];
     const r = s[5], g = s[6], b = s[7];
     const a = Math.min(1, Math.max(0, s[8]));
-    const rx = Math.max(1, Math.ceil(FOOTPRINT * sx));
-    const ry = Math.max(1, Math.ceil(FOOTPRINT * sy));
+    const ct = Math.cos(theta), st = Math.sin(theta);
+    const rx = Math.max(1, Math.ceil(FOOTPRINT * Math.sqrt((sx*ct)*(sx*ct) + (sy*st)*(sy*st))));
+    const ry = Math.max(1, Math.ceil(FOOTPRINT * Math.sqrt((sx*st)*(sx*st) + (sy*ct)*(sy*ct))));
     const x0 = Math.max(0, Math.floor(x - rx));
     const x1 = Math.min(W, Math.ceil(x + rx + 1));
     const y0 = Math.max(0, Math.floor(y - ry));
     const y1 = Math.min(H, Math.ceil(y + ry + 1));
     if (x0 >= x1 || y0 >= y1) continue;
-    const ct = Math.cos(theta), st = Math.sin(theta);
     const invSx2 = 1 / (sx * sx), invSy2 = 1 / (sy * sy);
     for (let py = y0; py < y1; py++) {
       const baseRow = py * W;
@@ -1025,7 +1075,10 @@ def generate_canvas_html(
     out[k + 3] = 255;
   }
   ctx.putImageData(img, 0, 0);
-  status.textContent = 'rendered ' + SPLATS.length + ' splats at ' + W + '×' + H + ' in ' + (performance.now() - t0).toFixed(0) + 'ms (' + (SRGB_IN ? 'srgb' : 'linear') + '-space alpha-over)';
+  const renderMs = performance.now() - t0;
+  window.__SPLATTHIS_RENDER_MS = renderMs;
+  document.documentElement.dataset.splatthisRenderDone = 'true';
+  status.textContent = 'rendered ' + SPLATS.length + ' splats at ' + W + '×' + H + ' in ' + renderMs.toFixed(0) + 'ms (' + (SRGB_IN ? 'srgb' : 'linear') + '-space alpha-over)';
 })();
 """.replace(
             "__W__", str(int(width))
@@ -1036,7 +1089,7 @@ def generate_canvas_html(
         .replace("__SPLATS__", splats_json)
     )
 
-    safe_title = title.replace("<", "&lt;").replace(">", "&gt;")
+    safe_title = escape_html(title)
     return (
         "<!doctype html>\n"
         '<html><head><meta charset="utf-8"><title>' + safe_title + "</title>\n"
@@ -2396,8 +2449,10 @@ def save_splats_json(splats: List[GaussianSplat], output_path: str) -> None:
         ]
 
     try:
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2, sort_keys=True)
+        atomic_write_text(
+            output_path,
+            json.dumps(payload, indent=2, sort_keys=True),
+        )
         logger.info(f"Saved {len(splats)} splats to JSON: {output_path}")
     except Exception as e:
         logger.error(f"Failed to save JSON {output_path}: {e}")
@@ -2538,10 +2593,11 @@ def render_splats_preview_png(
     compositing_space: str = "linear",
 ) -> str:
     """
-    Render splats to a PNG preview image (linear->sRGB conversion included).
+    Render splats to an internal proxy PNG (linear->sRGB conversion included).
 
-    Pass compositing_space="srgb" for models trained against SVG/PPTX deploy
-    targets so the preview reflects the deployed compositing, not linear.
+    This renders the in-memory splats; it does not rasterize an emitted SVG or
+    capture an emitted PPTX. Pass compositing_space="srgb" for models trained
+    against SVG/PPTX targets so the proxy approximates deployed compositing.
     """
     from .renderer import render_splats_numpy
 
@@ -2559,7 +2615,8 @@ def render_splats_preview_png(
     image = Image.fromarray((rendered_srgb * 255.0).astype(np.uint8), mode="RGB")
     if render_width != width or render_height != height:
         image = image.resize((render_width, render_height), Image.Resampling.LANCZOS)
-    image.save(output_path, format="PNG")
+    with atomic_output_path(output_path) as temporary:
+        image.save(temporary, format="PNG")
     return output_path
 
 
@@ -2984,6 +3041,20 @@ def _pptx_theme_xml() -> str:
 """
 
 
+def _write_pptx_package(
+    output_path: str | Path,
+    members: List[Tuple[str, str | bytes]],
+) -> None:
+    """Write a complete OOXML package and publish it atomically."""
+
+    with atomic_output_path(output_path) as temporary:
+        with zipfile.ZipFile(
+            temporary, "w", compression=zipfile.ZIP_DEFLATED
+        ) as archive:
+            for member_path, payload in members:
+                archive.writestr(member_path, payload)
+
+
 def save_pptx_with_splat_png(
     splats: List[GaussianSplat],
     width: int,
@@ -3034,35 +3105,39 @@ def save_pptx_with_splat_png(
         .replace("+00:00", "Z")
     )
 
-    with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("[Content_Types].xml", _pptx_content_types_xml())
-        zf.writestr("_rels/.rels", _pptx_root_rels_xml())
-        zf.writestr("docProps/core.xml", _pptx_core_props_xml(now_iso))
-        zf.writestr("docProps/app.xml", _pptx_app_props_xml())
-        zf.writestr(
-            "ppt/presentation.xml",
-            _pptx_presentation_xml(slide_cx=slide_cx, slide_cy=slide_cy),
-        )
-        zf.writestr("ppt/_rels/presentation.xml.rels", _pptx_presentation_rels_xml())
-        zf.writestr(
-            "ppt/slides/slide1.xml",
-            _pptx_slide_xml(slide_cx=slide_cx, slide_cy=slide_cy),
-        )
-        zf.writestr("ppt/slides/_rels/slide1.xml.rels", _pptx_slide_rels_xml())
-        zf.writestr("ppt/slideLayouts/slideLayout1.xml", _pptx_slide_layout_xml())
-        zf.writestr(
-            "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
-            _pptx_slide_layout_rels_xml(),
-        )
-        zf.writestr("ppt/slideMasters/slideMaster1.xml", _pptx_slide_master_xml())
-        zf.writestr(
-            "ppt/slideMasters/_rels/slideMaster1.xml.rels",
-            _pptx_slide_master_rels_xml(),
-        )
-        zf.writestr("ppt/theme/theme1.xml", _pptx_theme_xml())
-        zf.writestr("ppt/presProps.xml", _pptx_pres_props_xml())
-        zf.writestr("ppt/viewProps.xml", _pptx_view_props_xml())
-        zf.writestr("ppt/media/image1.png", png_bytes)
+    _write_pptx_package(
+        output_path,
+        [
+            ("[Content_Types].xml", _pptx_content_types_xml()),
+            ("_rels/.rels", _pptx_root_rels_xml()),
+            ("docProps/core.xml", _pptx_core_props_xml(now_iso)),
+            ("docProps/app.xml", _pptx_app_props_xml()),
+            (
+                "ppt/presentation.xml",
+                _pptx_presentation_xml(slide_cx=slide_cx, slide_cy=slide_cy),
+            ),
+            ("ppt/_rels/presentation.xml.rels", _pptx_presentation_rels_xml()),
+            (
+                "ppt/slides/slide1.xml",
+                _pptx_slide_xml(slide_cx=slide_cx, slide_cy=slide_cy),
+            ),
+            ("ppt/slides/_rels/slide1.xml.rels", _pptx_slide_rels_xml()),
+            ("ppt/slideLayouts/slideLayout1.xml", _pptx_slide_layout_xml()),
+            (
+                "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
+                _pptx_slide_layout_rels_xml(),
+            ),
+            ("ppt/slideMasters/slideMaster1.xml", _pptx_slide_master_xml()),
+            (
+                "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+                _pptx_slide_master_rels_xml(),
+            ),
+            ("ppt/theme/theme1.xml", _pptx_theme_xml()),
+            ("ppt/presProps.xml", _pptx_pres_props_xml()),
+            ("ppt/viewProps.xml", _pptx_view_props_xml()),
+            ("ppt/media/image1.png", png_bytes),
+        ],
+    )
 
     logger.info("Saved PPTX with rasterized splat image: %s", output_path)
 
@@ -3107,31 +3182,38 @@ def save_pptx_with_splats(
         .replace("+00:00", "Z")
     )
 
-    with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("[Content_Types].xml", _pptx_content_types_xml())
-        zf.writestr("_rels/.rels", _pptx_root_rels_xml())
-        zf.writestr("docProps/core.xml", _pptx_core_props_xml(now_iso))
-        zf.writestr("docProps/app.xml", _pptx_app_props_xml())
-        zf.writestr(
-            "ppt/presentation.xml",
-            _pptx_presentation_xml(slide_cx=slide_cx, slide_cy=slide_cy),
-        )
-        zf.writestr("ppt/_rels/presentation.xml.rels", _pptx_presentation_rels_xml())
-        zf.writestr("ppt/slides/slide1.xml", slide_xml)
-        zf.writestr("ppt/slides/_rels/slide1.xml.rels", _pptx_vector_slide_rels_xml())
-        zf.writestr("ppt/slideLayouts/slideLayout1.xml", _pptx_slide_layout_xml())
-        zf.writestr(
-            "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
-            _pptx_slide_layout_rels_xml(),
-        )
-        zf.writestr("ppt/slideMasters/slideMaster1.xml", _pptx_slide_master_xml())
-        zf.writestr(
-            "ppt/slideMasters/_rels/slideMaster1.xml.rels",
-            _pptx_slide_master_rels_xml(),
-        )
-        zf.writestr("ppt/theme/theme1.xml", _pptx_theme_xml())
-        zf.writestr("ppt/presProps.xml", _pptx_pres_props_xml())
-        zf.writestr("ppt/viewProps.xml", _pptx_view_props_xml())
+    _write_pptx_package(
+        output_path,
+        [
+            ("[Content_Types].xml", _pptx_content_types_xml()),
+            ("_rels/.rels", _pptx_root_rels_xml()),
+            ("docProps/core.xml", _pptx_core_props_xml(now_iso)),
+            ("docProps/app.xml", _pptx_app_props_xml()),
+            (
+                "ppt/presentation.xml",
+                _pptx_presentation_xml(slide_cx=slide_cx, slide_cy=slide_cy),
+            ),
+            ("ppt/_rels/presentation.xml.rels", _pptx_presentation_rels_xml()),
+            ("ppt/slides/slide1.xml", slide_xml),
+            (
+                "ppt/slides/_rels/slide1.xml.rels",
+                _pptx_vector_slide_rels_xml(),
+            ),
+            ("ppt/slideLayouts/slideLayout1.xml", _pptx_slide_layout_xml()),
+            (
+                "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
+                _pptx_slide_layout_rels_xml(),
+            ),
+            ("ppt/slideMasters/slideMaster1.xml", _pptx_slide_master_xml()),
+            (
+                "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+                _pptx_slide_master_rels_xml(),
+            ),
+            ("ppt/theme/theme1.xml", _pptx_theme_xml()),
+            ("ppt/presProps.xml", _pptx_pres_props_xml()),
+            ("ppt/viewProps.xml", _pptx_view_props_xml()),
+        ],
+    )
 
     logger.info(
         "Saved PPTX with %s native splat shapes: %s", len(ordered_splats), output_path
@@ -3240,8 +3322,7 @@ def save_side_by_side_html(
 </html>
 """
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(html)
+    atomic_write_text(output_path, html)
 
 
 def validate_export_roundtrip(

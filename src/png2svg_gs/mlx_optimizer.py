@@ -8,27 +8,14 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import numpy as np
 
+from .mlx_runtime import is_mlx_available, require_mlx
 from .splat import GaussianSplat, RawSplat
-
-try:  # pragma: no cover - exercised in MLX-enabled environments.
-    import mlx.core as mx
-except Exception:  # pragma: no cover - optional dependency guard.
-    mx = None  # type: ignore[assignment]
-
 
 TRAINABLE_KEYS = ("position", "scale", "theta", "color", "alpha")
 
 
-def is_mlx_available() -> bool:
-    return mx is not None
-
-
 def _require_mlx() -> Any:
-    if mx is None:
-        raise RuntimeError(
-            "MLX is not installed. Install `mlx` to use MLX optimization."
-        )
-    return mx
+    return require_mlx("MLX optimization")
 
 
 def _normalize_trainable(keys: Optional[Sequence[str]]) -> tuple[str, ...]:

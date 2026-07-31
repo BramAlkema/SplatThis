@@ -29,7 +29,7 @@ By participating in this project, you agree to abide by our Code of Conduct:
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.13 or higher
 - Git
 - Basic familiarity with image processing concepts
 - Understanding of SVG and web technologies (helpful but not required)
@@ -64,7 +64,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 2. Install development dependencies:
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,rasterize]"
 ```
 
 3. Verify installation:
@@ -148,10 +148,13 @@ git checkout -b docs/documentation-improvement
 
 ```bash
 # Format code
-black src/ tests/
+black src/ tests/ tools/
 
 # Check style
-flake8 src/ tests/
+flake8 src/ tests/ tools/
+
+# Check import order
+isort --check-only src/ tests/ tools/
 
 # Type checking
 mypy src/
@@ -160,7 +163,7 @@ mypy src/
 pytest tests/ -v
 
 # Check coverage
-pytest tests/ --cov=src --cov-report=term-missing
+pytest tests/ --cov=src/png2svg_gs --cov-report=term-missing
 ```
 
 3. **Commit your changes**:
@@ -451,7 +454,7 @@ Clear description of the bug
 ## Environment
 - OS: [e.g., Ubuntu 20.04, Windows 10, macOS 12]
 - Python version: [e.g., 3.9.7]
-- SplatThis version: [e.g., 0.1.0]
+- SplatThis version: [e.g., 0.2.0]
 
 ## Steps to Reproduce
 1. Load image with `splatlify image.jpg`

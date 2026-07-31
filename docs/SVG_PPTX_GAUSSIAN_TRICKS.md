@@ -145,9 +145,38 @@ with a gradient ramp.
 
 | Format | Linear-light support |
 |---|---|
-| Canvas runtime (our JS) | **Yes**, we compute it explicitly. This is why canvas SSIM hits 0.98. |
+| Canvas runtime (our JS) | **Yes**, we compute linear alpha-over explicitly. This lets the deployed runtime match the trained forward model, but it does not by itself guarantee high SSIM at a finite splat budget. |
 | SVG | Only inside `<filter color-interpolation-filters="linearRGB">`. Inter-element compositing is sRGB. So filter-based splat rendering can be linear-light, but if we have one filter per splat the inter-splat blend reverts to sRGB. To get fully-linear blending we'd need to compose all splats inside ONE filter graph, which doesn't scale to 20k shapes. |
 | DrawingML | **No public linear-light path.** PowerPoint blends in sRGB display space throughout. The sRGB-aware training (`compositing_space="srgb"`) is our only lever. |
+
+### 2026-07-29 canvas correction
+
+The earlier canvas quality claim combined selected-image evidence with an
+internal render. It was not a full-corpus statement about the emitted HTML.
+Corpus evaluation now captures the exact Chrome canvas pixel buffer with
+`canvas.toDataURL()` and scores that PNG against the full source frame.
+
+That work also exposed a real deployment bug: the NumPy proxy and JavaScript
+canvas bounded rotated anisotropic splats with unrotated `sx`/`sy` rectangles.
+The MLX/Torch tiled training renderers did not, so the optimizer saw complete
+ellipses while the emitted canvas clipped their rotated major axes. Both
+runtime paths now use the exact rotated ellipse AABB. On the full-frame
+chameleon 4k calibration, corrected browser SSIM is within roughly 0.001 of
+the final MLX acceptance SSIM.
+
+At the existing requested-2k budget, the corrected full 21-image canvas corpus
+has median browser SSIM 0.7751 and median LPIPS 0.2443. Six images reach 0.90
+SSIM, three reach 0.95, and none reaches 0.99. Canvas is therefore the cleanest
+representation for a budget/convergence experiment, not evidence that 0.99 is
+automatic.
+
+The completed effective-4k corpus raises median browser SSIM to 0.8406 and
+lowers median LPIPS to 0.1612; all 21 images improve both metrics, but none
+reaches 0.99. The run also found destructive low-alpha pruning and
+loss-improving/deployed-regressing later stages. Canvas export now selects
+checkpoints and postprocessing with deployed-model accept-or-revert gates. See
+[`canvas-scaling-mvp.md`](canvas-scaling-mvp.md) for paired per-image results,
+costs, and the selective-8k decision.
 
 ---
 

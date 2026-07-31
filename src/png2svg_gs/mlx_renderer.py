@@ -11,13 +11,8 @@ from typing import Any, Optional, Sequence, Union
 
 import numpy as np
 
+from .mlx_runtime import is_mlx_available, require_mlx
 from .splat import GaussianSplat, render_importance_for_raw
-
-try:  # pragma: no cover - exercised only in MLX-enabled environments.
-    import mlx.core as mx
-except Exception:  # pragma: no cover - import guard for optional dependency.
-    mx = None  # type: ignore[assignment]
-
 
 ArrayLike = Union[np.ndarray, Any]
 
@@ -35,18 +30,8 @@ class MlxTilePlan:
     tile_size: int
 
 
-def is_mlx_available() -> bool:
-    """Return whether MLX imported successfully."""
-
-    return mx is not None
-
-
 def _require_mlx() -> Any:
-    if mx is None:
-        raise RuntimeError(
-            "MLX is not installed. Install `mlx` to use mlx-batched rendering."
-        )
-    return mx
+    return require_mlx("MLX batched rendering")
 
 
 def mlx_linear_to_srgb(x: Any) -> Any:
@@ -122,8 +107,9 @@ class MlxBatchedGaussianRenderer:
         width: int,
         height: int,
         tile_size: int = 16,
-        batch_tile_count: int = 16,
+        batch_tile_count: int = 8,
         blend_mode: str = "alpha-over",
+        normalized_top_k: int = 10,
         background_color: Optional[Sequence[float]] = None,
         culling_sigma: float = 3.0,
         max_active_splats_per_tile: Optional[int] = None,
@@ -132,14 +118,15 @@ class MlxBatchedGaussianRenderer:
         pptx_alpha_scale: float = 0.25,
         pptx_sigma_scale: float = 0.92,
     ):
-        _require_mlx()
+        mlx = _require_mlx()
         self.width = int(width)
         self.height = int(height)
         self.tile_size = int(max(1, tile_size))
         self.batch_tile_count = int(max(1, batch_tile_count))
         self.blend_mode = str(blend_mode).strip().lower()
-        if self.blend_mode not in {"alpha-over", "weighted"}:
+        if self.blend_mode not in {"alpha-over", "weighted", "normalized-topk"}:
             raise ValueError(f"Unsupported blend mode: {blend_mode}")
+        self.normalized_top_k = int(max(1, normalized_top_k))
         self.compositing_space = str(compositing_space).strip().lower()
         if self.compositing_space not in {"linear", "srgb"}:
             raise ValueError(f"Unsupported compositing space: {compositing_space}")
@@ -164,7 +151,7 @@ class MlxBatchedGaussianRenderer:
             if background.size != 3:
                 raise ValueError("background_color must have exactly 3 values")
             background = np.clip(background, 0.0, 1.0)
-        self.background = mx.array(background.astype(np.float32))  # type: ignore[union-attr]
+        self.background = mlx.array(background.astype(np.float32))
         self._black_background = bool(np.max(np.abs(background)) <= 1e-8)
 
     def build_plan(self, table: ArrayLike) -> MlxTilePlan:
@@ -437,9 +424,56 @@ class MlxBatchedGaussianRenderer:
             return self._render_weighted_batch(
                 weights, colors, alphas, batch_size, plan.max_active
             )
+        if self.blend_mode == "normalized-topk":
+            return self._render_normalized_topk_batch(
+                weights, colors, batch_size, plan.max_active
+            )
         return self._render_alpha_over_batch(
             weights, colors, alphas, batch_size, plan.max_active
         )
+
+    def _render_normalized_topk_batch(
+        self,
+        weights: Any,
+        colors: Any,
+        batch_size: int,
+        max_active: int,
+    ) -> Any:
+        """Image-GS teacher equation: normalize the K strongest responses.
+
+        Membership selection is discrete, as in the Torch reference. Gradients
+        continue through the selected Gaussian responses and colors; alpha and
+        drawing order do not participate in the equation.
+        """
+
+        mlx = _require_mlx()
+        k = min(self.normalized_top_k, max_active)
+        split = max_active - k
+        selected_indices = mlx.argpartition(weights, split, axis=-1)[..., -k:]
+        selected_weights = mlx.take_along_axis(weights, selected_indices, axis=-1)
+        color_table = mlx.broadcast_to(
+            mlx.reshape(colors, (batch_size, 1, 1, max_active, 3)),
+            (
+                batch_size,
+                self.tile_size,
+                self.tile_size,
+                max_active,
+                3,
+            ),
+        )
+        color_indices = mlx.broadcast_to(
+            mlx.expand_dims(selected_indices, -1),
+            (*selected_indices.shape, 3),
+        )
+        selected_colors = mlx.take_along_axis(color_table, color_indices, axis=3)
+        total_weight = mlx.sum(selected_weights, axis=-1, keepdims=True)
+        color_sum = mlx.sum(
+            mlx.expand_dims(selected_weights, -1) * selected_colors,
+            axis=3,
+        )
+        normalized = color_sum / mlx.maximum(total_weight, 1e-8)
+        background = mlx.reshape(self.background, (1, 1, 1, 3))
+        return mlx.where(total_weight > 1e-8, normalized, background)
 
     def _render_weighted_batch(
         self,

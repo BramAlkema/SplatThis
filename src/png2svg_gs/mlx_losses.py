@@ -5,20 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
-try:  # pragma: no cover - exercised in MLX-enabled environments.
-    import mlx.core as mx
-except Exception:  # pragma: no cover - optional dependency guard.
-    mx = None  # type: ignore[assignment]
-
-
-def is_mlx_available() -> bool:
-    return mx is not None
+from .mlx_runtime import is_mlx_available, require_mlx
 
 
 def _require_mlx() -> Any:
-    if mx is None:
-        raise RuntimeError("MLX is not installed. Install `mlx` to use MLX losses.")
-    return mx
+    return require_mlx("MLX losses")
 
 
 def linear_l1_loss(rendered: Any, target: Any, weights: Optional[Any] = None) -> Any:

@@ -38,6 +38,7 @@ from .io import (
     SVG_PALETTE_QUANTIZED_RECIPE,
     SVG_SCRIPTED_MATRIX_RECIPE,
     _normalize_svg_export_recipe,
+    atomic_write_text,
     compute_quality_metrics,
     evaluate_svg_export_quality,
     generate_canvas_html,
@@ -115,23 +116,33 @@ class PNG2SVGConverter:
         self.requested_max_splats = int(max_splats)
         self.max_splats = int(max_splats)
         self.k_sigma = k_sigma
-        self.stages = stages or [200, 150, 100, 50]
+        profile_defaults = self._get_profile_defaults(quality_profile)
+        self.stages = list(
+            stages or profile_defaults.get("stages", [200, 150, 100, 50])
+        )
         self.target_size = target_size
         self.gradient_method = gradient_method
         self.device = torch.device(device)
         self.renderer_backend = renderer_backend
         self.optimizer_backend = self._normalize_optimizer_backend(optimizer_backend)
         if self.optimizer_backend == "mlx":
-            from .mlx_stage import is_mlx_available
+            from .mlx_runtime import is_mlx_available, is_mlx_imported
 
             if not is_mlx_available():
-                # Fail at construction, not mid-run: fresh installs (or any
-                # non-Apple-Silicon host) don't ship mlx, and the CLI default
-                # backend is mlx. Torch is always a declared dependency.
+                if is_mlx_imported():
+                    reason = (
+                        "the installed MLX runtime has no Metal device; this "
+                        "usually means the session is headless, sandboxed, or "
+                        "virtualized"
+                    )
+                else:
+                    reason = "the optional MLX package is not installed"
+                # Fail over before a long run starts. Torch is a required
+                # dependency and is the supported cross-platform backend.
                 logger.warning(
-                    "Optimizer backend 'mlx' requested but the mlx package is "
-                    "not installed; falling back to 'torch'. Install it with "
-                    "`pip install splat-this[mlx]` on Apple Silicon."
+                    "Optimizer backend 'mlx' requested but %s; falling back to "
+                    "'torch'. Use an Apple-Silicon Metal session for MLX.",
+                    reason,
                 )
                 self.optimizer_backend = "torch"
         self.resolved_renderer_backend = resolve_renderer_backend(
@@ -164,8 +175,6 @@ class PNG2SVGConverter:
             if apple_silicon_splat_cap is None or int(apple_silicon_splat_cap) <= 0
             else int(apple_silicon_splat_cap)
         )
-
-        profile_defaults = self._get_profile_defaults(quality_profile)
 
         # Phase 1 baseline: L1 + SSIM.
         self.loss_weights = loss_weights or profile_defaults["loss_weights"].copy()
@@ -1217,6 +1226,14 @@ class PNG2SVGConverter:
             artifacts_dir=artifacts_path,
             structure_primary=structure_primary,
             structure_anisotropy=structure_anisotropy,
+            monotonic_stage_selection=(
+                output_format == "canvas"
+                and bool(
+                    self.refinement_config.get(
+                        "canvas_monotonic_stage_selection_enabled", True
+                    )
+                )
+            ),
         )
         timings["optimize_splats"] = float(time.perf_counter() - phase_t0)
         manifest["stages"].extend(stage_metrics)
@@ -1230,7 +1247,30 @@ class PNG2SVGConverter:
         if verbose:
             logger.info("Post-processing splats...")
         phase_t0 = time.perf_counter()
-        splats = self._postprocess_splats(splats=splats, image=image, rng=rng)
+        optimized_splats = list(splats)
+        postprocessed_splats = self._postprocess_splats(
+            splats=splats, image=image, rng=rng
+        )
+        if output_format == "canvas" and bool(
+            self.refinement_config.get("canvas_monotonic_postprocess_enabled", True)
+        ):
+            splats, postprocess_gate = self._select_monotonic_canvas_postprocess(
+                optimized_splats=optimized_splats,
+                postprocessed_splats=postprocessed_splats,
+                image=image,
+            )
+            manifest["canvas_postprocess_gate"] = postprocess_gate
+            if verbose and not postprocess_gate["accepted"]:
+                logger.info(
+                    "Reverted canvas post-processing: SSIM_sRGB %.4f -> %.4f, "
+                    "PSNR_sRGB %.2f -> %.2f",
+                    float(postprocess_gate["before"]["ssim_srgb"]),
+                    float(postprocess_gate["candidate"]["ssim_srgb"]),
+                    float(postprocess_gate["before"]["psnr_srgb"]),
+                    float(postprocess_gate["candidate"]["psnr_srgb"]),
+                )
+        else:
+            splats = postprocessed_splats
         timings["postprocess_splats"] = float(time.perf_counter() - phase_t0)
         if verbose:
             logger.info(
@@ -1460,7 +1500,7 @@ class PNG2SVGConverter:
                 if verbose:
                     logger.info("Saved PPTX: %s", output_path)
             elif output_format == "canvas":
-                Path(output_path).write_text(output_content, encoding="utf-8")
+                atomic_write_text(output_path, output_content)
                 if verbose:
                     logger.info("Saved canvas HTML: %s", output_path)
             else:
@@ -1604,11 +1644,12 @@ class PNG2SVGConverter:
             )
             timings["roundtrip_validation"] = float(time.perf_counter() - phase_t0)
 
-        # Optional preview and side-by-side artifacts.
+        # Optional internal splat proxy and side-by-side artifacts. This image
+        # is not a screenshot/rasterization of the emitted SVG or PPTX.
         preview_path = preview_png_path
         if preview_path is None and output_path:
             preview_path = str(
-                Path(output_path).with_name(f"{Path(output_path).stem}_preview.png")
+                Path(output_path).with_name(f"{Path(output_path).stem}_splat_proxy.png")
             )
         if preview_path:
             phase_t0 = time.perf_counter()
@@ -1620,11 +1661,11 @@ class PNG2SVGConverter:
                 background_linear_rgb=self._background_linear_rgb,
                 compositing_space=self._deployed_compositing_space(),
             )
-            timings["preview_png"] = float(time.perf_counter() - phase_t0)
+            timings["splat_proxy_png"] = float(time.perf_counter() - phase_t0)
             if verbose:
                 logger.info(
-                    "Rendered preview PNG in %.2fs: %s",
-                    timings["preview_png"],
+                    "Rendered internal splat proxy PNG in %.2fs: %s",
+                    timings["splat_proxy_png"],
                     preview_path,
                 )
         if side_by_side_html:
@@ -1667,6 +1708,41 @@ class PNG2SVGConverter:
         manifest["acceptance_metric_source"] = (
             "export" if use_export_for_acceptance else "internal"
         )
+        if output_format == "svg" and use_export_for_acceptance:
+            evaluation_kind = "svg-rasterization"
+            evaluation_renderer = export_method
+            is_deployed_artifact = True
+        elif output_format == "pptx":
+            evaluation_kind = "pptx-proxy"
+            evaluation_renderer = "internal-splat-renderer"
+            is_deployed_artifact = False
+        elif output_format == "canvas":
+            evaluation_kind = "canvas-runtime-model"
+            evaluation_renderer = "internal-splat-renderer"
+            is_deployed_artifact = False
+        else:
+            evaluation_kind = "internal-proxy"
+            evaluation_renderer = "internal-splat-renderer"
+            is_deployed_artifact = False
+        manifest["artifact_evaluation"] = {
+            "render_kind": evaluation_kind,
+            "renderer": evaluation_renderer,
+            "is_deployed_artifact": is_deployed_artifact,
+            "metric_source": manifest["acceptance_metric_source"],
+        }
+        manifest["artifacts"] = {
+            "primary": {
+                "path": str(output_path) if output_path else None,
+                "format": output_format,
+                "is_deployed_artifact": bool(output_path),
+            },
+            "splat_proxy": {
+                "path": preview_path,
+                "render_kind": "internal-splat-proxy",
+                "renderer": "render_splats_numpy",
+                "is_deployed_artifact": False,
+            },
+        }
         manifest["acceptance"] = acceptance_result
         if roundtrip_result is not None:
             manifest["roundtrip_validation"] = roundtrip_result
@@ -2187,6 +2263,7 @@ class PNG2SVGConverter:
         artifacts_dir: Optional[Path] = None,
         structure_primary: Optional[np.ndarray] = None,
         structure_anisotropy: Optional[np.ndarray] = None,
+        monotonic_stage_selection: bool = False,
     ) -> Tuple[List[GaussianSplat], List[Dict[str, Any]]]:
         """Progressive optimization of splats."""
         height, width = image.shape[:2]
@@ -2215,6 +2292,30 @@ class PNG2SVGConverter:
 
         current_splats = splats.copy()
         stage_metrics: List[Dict[str, Any]] = []
+        best_canvas_splats: Optional[List[GaussianSplat]] = None
+        best_canvas_metrics: Optional[Dict[str, float]] = None
+        best_canvas_label: Optional[str] = None
+
+        def consider_canvas_checkpoint(
+            label: str,
+            candidate_splats: List[GaussianSplat],
+            metric: Dict[str, float],
+        ) -> None:
+            nonlocal best_canvas_splats, best_canvas_metrics, best_canvas_label
+            if not monotonic_stage_selection:
+                return
+            if best_canvas_metrics is None or self._prefer_canvas_checkpoint(
+                candidate=metric,
+                candidate_count=len(candidate_splats),
+                incumbent=best_canvas_metrics,
+                incumbent_count=(
+                    len(best_canvas_splats) if best_canvas_splats is not None else 0
+                ),
+            ):
+                best_canvas_splats = copy.deepcopy(candidate_splats)
+                best_canvas_metrics = dict(metric)
+                best_canvas_label = label
+
         residual_detail_enabled = bool(
             self.refinement_config.get("residual_detail_enabled", False)
         )
@@ -2293,6 +2394,21 @@ class PNG2SVGConverter:
             stage_metric.update(quality)
             stage_metric["stage"] = stage_idx + 1
             stage_metric["splat_count"] = len(current_splats)
+            if monotonic_stage_selection:
+                deployed_quality = self._score_canvas_runtime_model(
+                    current_splats, image
+                )
+                stage_metric.update(
+                    {
+                        f"deployed_{key}": float(value)
+                        for key, value in deployed_quality.items()
+                    }
+                )
+                consider_canvas_checkpoint(
+                    f"stage-{stage_idx + 1}",
+                    current_splats,
+                    deployed_quality,
+                )
             remaining = self._time_budget_seconds_remaining()
             if remaining is not None:
                 stage_metric["time_budget_remaining_sec"] = max(0.0, float(remaining))
@@ -2388,6 +2504,19 @@ class PNG2SVGConverter:
                 edge_map=edge_map,
                 verbose=verbose,
             )
+        if monotonic_stage_selection and residual_metrics:
+            deployed_quality = self._score_canvas_runtime_model(current_splats, image)
+            residual_metrics[-1].update(
+                {
+                    f"deployed_{key}": float(value)
+                    for key, value in deployed_quality.items()
+                }
+            )
+            consider_canvas_checkpoint(
+                "residual-final",
+                current_splats,
+                deployed_quality,
+            )
         for metric in residual_metrics:
             stage_metrics.append(metric)
             pass_idx = int(metric.get("residual_pass", len(stage_metrics)))
@@ -2397,6 +2526,32 @@ class PNG2SVGConverter:
                 current_splats,
                 metric,
             )
+
+        if monotonic_stage_selection and best_canvas_splats is not None:
+            selected_count = len(best_canvas_splats)
+            current_count = len(current_splats)
+            selection_decision = (
+                "keep-final"
+                if best_canvas_label == "residual-final"
+                else "revert-to-best-checkpoint"
+            )
+            stage_metrics.append(
+                {
+                    "stage": -3,
+                    "stage_type": "canvas_monotonic_stage_selection",
+                    "decision": selection_decision,
+                    "selected_checkpoint": best_canvas_label,
+                    "selected_splat_count": selected_count,
+                    "final_candidate_splat_count": current_count,
+                    "selected_ssim_srgb": float(
+                        best_canvas_metrics.get("ssim_srgb", 0.0)
+                    ),
+                    "selected_psnr_srgb": float(
+                        best_canvas_metrics.get("psnr_srgb", 0.0)
+                    ),
+                }
+            )
+            current_splats = best_canvas_splats
 
         return current_splats, stage_metrics
 
@@ -2651,12 +2806,12 @@ class PNG2SVGConverter:
         tile_size = int(
             np.clip(self.refinement_config.get("renderer_tile_size", 16), 4, 128)
         )
-        # MLX renderer prefers a larger tile batch than the torch renderer because
-        # mx.compile fuses fewer-but-bigger batches more effectively. Sweet spot
-        # on a 400px M-series run was ~128 (40% faster vs 16); above ~256 memory
-        # pressure dominates.
+        # The release benchmark on three real 384 px corpus checkpoints found
+        # eight tiles consistently faster than 16/32/128 for a forward+backward
+        # pass (12-47% depending on content).  Keep this MLX-specific default
+        # separate from the Torch renderer's larger batch default.
         batch_tile_count = int(
-            max(1, self.refinement_config.get("renderer_batch_tile_count", 128))
+            max(1, self.refinement_config.get("renderer_batch_tile_count", 8))
         )
         max_active_raw = self.refinement_config.get(
             "renderer_max_active_splats_per_tile"
@@ -4304,6 +4459,132 @@ class PNG2SVGConverter:
         )
         return splats
 
+    def _select_monotonic_canvas_postprocess(
+        self,
+        optimized_splats: List[GaussianSplat],
+        postprocessed_splats: List[GaussianSplat],
+        image: np.ndarray,
+    ) -> Tuple[List[GaussianSplat], Dict[str, Any]]:
+        """Accept canvas post-processing only when deployed-model quality holds.
+
+        Low-alpha splats can be individually weak but collectively essential,
+        especially for dense dark images.  The historical fixed alpha cutoff
+        could therefore destroy a converged solution after its final metrics
+        had already improved.  Score both populations with the exact NumPy
+        counterpart of the emitted canvas and revert material regressions.
+        """
+
+        before = self._score_canvas_runtime_model(optimized_splats, image)
+        candidate = self._score_canvas_runtime_model(postprocessed_splats, image)
+        max_ssim_regression = float(
+            max(
+                0.0,
+                self.refinement_config.get(
+                    "canvas_postprocess_max_ssim_regression", 5e-4
+                ),
+            )
+        )
+        max_psnr_regression = float(
+            max(
+                0.0,
+                self.refinement_config.get(
+                    "canvas_postprocess_max_psnr_regression", 0.10
+                ),
+            )
+        )
+        accepted = bool(
+            float(candidate["ssim_srgb"])
+            >= float(before["ssim_srgb"]) - max_ssim_regression
+            and float(candidate["psnr_srgb"])
+            >= float(before["psnr_srgb"]) - max_psnr_regression
+        )
+        selected = postprocessed_splats if accepted else optimized_splats
+        return selected, {
+            "enabled": True,
+            "accepted": accepted,
+            "decision": "accept" if accepted else "revert",
+            "before_count": len(optimized_splats),
+            "candidate_count": len(postprocessed_splats),
+            "selected_count": len(selected),
+            "max_ssim_srgb_regression": max_ssim_regression,
+            "max_psnr_srgb_regression": max_psnr_regression,
+            "before": {
+                "ssim_srgb": float(before["ssim_srgb"]),
+                "psnr_srgb": float(before["psnr_srgb"]),
+            },
+            "candidate": {
+                "ssim_srgb": float(candidate["ssim_srgb"]),
+                "psnr_srgb": float(candidate["psnr_srgb"]),
+            },
+        }
+
+    def _score_canvas_runtime_model(
+        self,
+        splats: List[GaussianSplat],
+        image: np.ndarray,
+    ) -> Dict[str, float]:
+        """Score splats with the exact NumPy counterpart of emitted canvas JS."""
+
+        height, width = image.shape[:2]
+        rendered = render_splats_numpy(
+            splats,
+            width=width,
+            height=height,
+            background_linear_rgb=self._background_linear_rgb,
+            compositing_space=self._deployed_compositing_space(),
+        )
+        return compute_quality_metrics(
+            np.asarray(image[:, :, :3], dtype=np.float32),
+            rendered,
+        )
+
+    def _prefer_canvas_checkpoint(
+        self,
+        *,
+        candidate: Dict[str, float],
+        candidate_count: int,
+        incumbent: Dict[str, float],
+        incumbent_count: int,
+    ) -> bool:
+        """Return whether a deployed-model checkpoint should replace the best.
+
+        A denser checkpoint must buy a material SSIM gain and may not materially
+        regress PSNR. Within the SSIM tolerance, only a smaller checkpoint can
+        win. This prevents a loss-optimized later stage from silently replacing
+        a better and cheaper deployed canvas.
+        """
+
+        min_ssim_gain = float(
+            max(
+                0.0,
+                self.refinement_config.get("canvas_stage_min_ssim_gain", 5e-4),
+            )
+        )
+        max_ssim_regression = float(
+            max(
+                0.0,
+                self.refinement_config.get("canvas_stage_max_ssim_regression", 5e-4),
+            )
+        )
+        max_psnr_regression = float(
+            max(
+                0.0,
+                self.refinement_config.get("canvas_stage_max_psnr_regression", 0.10),
+            )
+        )
+        candidate_ssim = float(candidate.get("ssim_srgb", 0.0))
+        incumbent_ssim = float(incumbent.get("ssim_srgb", 0.0))
+        candidate_psnr = float(candidate.get("psnr_srgb", 0.0))
+        incumbent_psnr = float(incumbent.get("psnr_srgb", 0.0))
+        psnr_safe = candidate_psnr >= incumbent_psnr - max_psnr_regression
+        if candidate_ssim >= incumbent_ssim + min_ssim_gain:
+            return psnr_safe
+        return bool(
+            candidate_count < incumbent_count
+            and candidate_ssim >= incumbent_ssim - max_ssim_regression
+            and psnr_safe
+        )
+
     def _generate_svg(
         self, splats: List[GaussianSplat], width: int, height: int
     ) -> str:
@@ -4417,8 +4698,10 @@ class PNG2SVGConverter:
 
         if metrics is not None:
             metrics_path = artifacts_dir / f"{stage_name}.metrics.json"
-            with open(metrics_path, "w", encoding="utf-8") as f:
-                json.dump(metrics, f, indent=2, sort_keys=True)
+            atomic_write_text(
+                metrics_path,
+                json.dumps(metrics, indent=2, sort_keys=True),
+            )
 
     def _write_manifest(
         self, artifacts_dir: Optional[Path], manifest: Dict[str, Any]
@@ -4427,8 +4710,10 @@ class PNG2SVGConverter:
         if artifacts_dir is None:
             return
         manifest_path = artifacts_dir / "run_manifest.json"
-        with open(manifest_path, "w", encoding="utf-8") as f:
-            json.dump(manifest, f, indent=2, sort_keys=True)
+        atomic_write_text(
+            manifest_path,
+            json.dumps(manifest, indent=2, sort_keys=True),
+        )
 
     def _evaluate_acceptance(
         self, metrics: Dict[str, float], criteria: Dict[str, float]
@@ -5147,7 +5432,7 @@ class PNG2SVGConverter:
         scaled_h = max(1, int(round(base_h * self.resolution_scale)))
         return (scaled_w, scaled_h)
 
-    def _get_profile_defaults(self, profile: str) -> Dict[str, Dict[str, Any]]:
+    def _get_profile_defaults(self, profile: str) -> Dict[str, Any]:
         """Return tuned defaults for quality profile (see profiles.py)."""
         return get_profile_defaults(profile)
 

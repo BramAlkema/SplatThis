@@ -10,11 +10,41 @@ from typing import List, Optional, Tuple
 
 from PIL import Image
 
-from .converter import TIME_BUDGET_ALIASES, TIME_BUDGET_PRESETS, PNG2SVGConverter
+from ._version import __version__
+from .budgets import TIME_BUDGET_ALIASES, TIME_BUDGET_PRESETS
+from .converter import PNG2SVGConverter
 
 DEFAULT_MAX_SPLATS = 2000
 DEFAULT_APPLE_SILICON_SPLAT_CAP = 2000
 DISABLE_APPLE_SILICON_SPLAT_CAP = 0
+
+
+def _positive_int(text: str) -> int:
+    value = int(text)
+    if value <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return value
+
+
+def _non_negative_int(text: str) -> int:
+    value = int(text)
+    if value < 0:
+        raise argparse.ArgumentTypeError("must be zero or a positive integer")
+    return value
+
+
+def _non_negative_float(text: str) -> float:
+    value = float(text)
+    if value < 0:
+        raise argparse.ArgumentTypeError("must be zero or positive")
+    return value
+
+
+def _initial_splat_fraction(text: str) -> float:
+    value = float(text)
+    if not 0.05 <= value <= 1.0:
+        raise argparse.ArgumentTypeError("must be between 0.05 and 1.0")
+    return value
 
 
 def _parse_stages(text: str) -> List[int]:
@@ -99,11 +129,16 @@ def build_parser() -> argparse.ArgumentParser:
         prog="splatlify",
         description="Convert a PNG/JPG image to an SVG (or PPTX) using 2D Gaussian splatting.",
     )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
     parser.add_argument("input", help="Input image path (PNG/JPG)")
     parser.add_argument("-o", "--output", help="Output path (default: <input>.svg)")
     parser.add_argument(
         "--splats",
-        type=int,
+        type=_positive_int,
         default=None,
         help="Max number of splats (default: 2000, or exact photo preset count).",
     )
@@ -130,8 +165,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--stages",
         type=_parse_stages,
-        default=_parse_stages("200,150,100,50"),
-        help="Per-stage iteration schedule, comma-separated (default: 200,150,100,50)",
+        default=None,
+        help="Per-stage iteration schedule, comma-separated. Defaults to the "
+        "selected profile (max-fidelity: 1000,500,250).",
     )
     parser.add_argument(
         "--profile",
@@ -175,7 +211,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--mlx-tile-plan-rebuild-interval",
-        type=int,
+        type=_positive_int,
         default=None,
         help="For --mlx-tile-plan periodic, rebuild tile membership every N iterations.",
     )
@@ -186,25 +222,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--renderer-tile-size",
-        type=int,
+        type=_positive_int,
         default=None,
         help="Override renderer tile size for backend tuning.",
     )
     parser.add_argument(
         "--renderer-batch-tile-count",
-        type=int,
+        type=_positive_int,
         default=None,
         help="For torch-batched, render this many tiles per tensor batch.",
     )
     parser.add_argument(
         "--renderer-max-active-splats-per-tile",
-        type=int,
+        type=_positive_int,
         default=None,
         help="For torch-batched, cap padded active splats per tile; default is uncapped.",
     )
     parser.add_argument(
         "--canvas-parallax-strength",
-        type=float,
+        type=_non_negative_float,
         default=None,
         help="For --format=canvas: enable mouse-driven parallax with this max "
         "pixel offset for the foreground layer (e.g. 24-40). Splats are "
@@ -216,7 +252,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--initial-splat-cap",
-        type=int,
+        type=_positive_int,
         default=None,
         help="Hard cap on the initial splat population before staged densification "
         "(default 1200). Raise this when --splats is large and you want the "
@@ -225,7 +261,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--initial-splat-fraction",
-        type=float,
+        type=_initial_splat_fraction,
         default=None,
         help="Fraction of --splats to seed the initial population with before "
         "densification (default 0.50). Clipped to [0.05, 1.0].",
@@ -238,7 +274,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--max-edge",
-        type=int,
+        type=_positive_int,
         default=None,
         help="Downscale so the longest edge is at most N px",
     )
@@ -309,7 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--svg-optimize-precision",
-        type=int,
+        type=_non_negative_int,
         default=2,
         help="Decimal precision for --svg-optimize (default: 2). Below 2 is "
         "measurably lossy for splats: stop-opacity quantization collapses the "
@@ -327,14 +363,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--svg-proxy-postfit-iters",
-        type=int,
+        type=_non_negative_int,
         default=0,
         help="For SVG output, run N post-fit iterations on color/alpha using a "
         "browser-like SVG compositing proxy (default: 0).",
     )
     parser.add_argument(
         "--pptx-proxy-postfit-iters",
-        type=int,
+        type=_non_negative_int,
         default=0,
         help="For PPTX output, run N post-fit iterations on color/alpha using a "
         "PowerPoint soft-edge proxy with contrast/saturation terms (default: 0). "
@@ -344,7 +380,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--blur-postfit-iters",
-        type=int,
+        type=_non_negative_int,
         default=0,
         help="For blur-recipe output (--svg-recipe blur or --pptx-splat-style "
         "blur), run N post-fit iterations on color/alpha against a Gaussian-"
@@ -403,12 +439,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[List[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
-    logging.basicConfig(
-        level=logging.INFO if args.verbose else logging.WARNING, format="%(message)s"
-    )
-
+def _run_conversion(args: argparse.Namespace) -> int:
     input_path = args.input
     if not Path(input_path).is_file():
         print(f"error: input not found: {input_path}", file=sys.stderr)
@@ -509,6 +540,21 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     print(f"Wrote {output}")
     return 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = build_parser().parse_args(argv)
+    logging.basicConfig(
+        level=logging.INFO if args.verbose else logging.WARNING, format="%(message)s"
+    )
+    try:
+        return _run_conversion(args)
+    except (OSError, RuntimeError, ValueError) as exc:
+        if args.verbose:
+            logging.getLogger(__name__).exception("Conversion failed")
+        else:
+            print(f"error: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":  # pragma: no cover

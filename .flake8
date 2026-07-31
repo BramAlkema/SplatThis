@@ -23,4 +23,12 @@ per-file-ignores =
     converter.py:C901
     io.py:C901
     mlx_stage.py:C901
+    # Experimental portfolios and benchmark orchestration intentionally keep
+    # their decision trees together until an MVP is promoted into the core.
+    distillation.py:C901
+    mixed_primitives.py:C901
+    tools/combined_portfolio_mvp.py:C901
+    tools/corpus_benchmark.py:C901
+    tools/full_corpus_mvp.py:C901
+    tools/mixed_primitives_mvp.py:C901
 max-complexity = 10

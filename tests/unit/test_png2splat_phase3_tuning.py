@@ -47,6 +47,26 @@ def test_quality_profiles_provide_distinct_tuning_defaults():
         > fast.refinement_config["densify_fraction"]
     )
     assert max_fid.svg_export_recipe == "standard"
+    assert max_fid.stages == [1000, 500, 250]
+    assert fast.mlx_tile_plan == "static"
+    assert fast.mlx_trainable_groups == ("color", "alpha")
+    assert balanced.mlx_tile_plan == "periodic"
+    assert balanced.mlx_trainable_groups == (
+        "position",
+        "scale",
+        "theta",
+        "color",
+        "alpha",
+    )
+    assert max_fid.mlx_tile_plan == "periodic"
+    assert max_fid.mlx_tile_plan_rebuild_interval == 10
+    assert max_fid.mlx_trainable_groups == (
+        "position",
+        "scale",
+        "theta",
+        "color",
+        "alpha",
+    )
 
 
 def test_export_roundtrip_validation_reports_consistent_counts():
@@ -103,6 +123,13 @@ def test_converter_manifest_includes_roundtrip_validation_when_enabled(tmp_path:
         (artifacts_path / "run_manifest.json").read_text(encoding="utf-8")
     )
     assert manifest["config"]["quality_profile"] == "max-fidelity"
+    assert (tmp_path / "output_splat_proxy.png").exists()
+    assert manifest["artifacts"]["splat_proxy"]["render_kind"] == (
+        "internal-splat-proxy"
+    )
+    assert manifest["artifacts"]["splat_proxy"]["is_deployed_artifact"] is False
+    assert manifest["artifact_evaluation"]["render_kind"] == "svg-rasterization"
+    assert manifest["artifact_evaluation"]["is_deployed_artifact"] is True
     assert "roundtrip_validation" in manifest
     assert manifest["roundtrip_validation"]["pass"]
 

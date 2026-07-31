@@ -1,11 +1,22 @@
 import numpy as np
 import pytest
 
+from png2svg_gs import mlx_runtime
 from png2svg_gs.cli import build_parser
 from png2svg_gs.converter import PNG2SVGConverter
 from png2svg_gs.mlx_optimizer import MlxSplatParams, table_to_splats
 from png2svg_gs.mlx_stage import MlxStageConfig, is_mlx_available, optimize_stage_mlx
 from png2svg_gs.splat import GaussianSplat, RawSplat
+
+
+class _UnavailableMetal:
+    @staticmethod
+    def is_available() -> bool:
+        return False
+
+
+class _HeadlessMlx:
+    metal = _UnavailableMetal()
 
 
 def test_table_to_splats_preserves_template_layer_without_mlx() -> None:
@@ -40,7 +51,7 @@ def test_mlx_param_guard_when_mlx_is_absent() -> None:
     if is_mlx_available():
         pytest.skip("MLX is available in this environment")
 
-    with pytest.raises(RuntimeError, match="MLX is not installed"):
+    with pytest.raises(RuntimeError, match="MLX is not installed|no Metal device"):
         MlxSplatParams.from_table(np.zeros((1, 11), dtype=np.float32))
 
 
@@ -48,7 +59,7 @@ def test_mlx_stage_guard_when_mlx_is_absent() -> None:
     if is_mlx_available():
         pytest.skip("MLX is available in this environment")
 
-    with pytest.raises(RuntimeError, match="MLX is not installed"):
+    with pytest.raises(RuntimeError, match="MLX is not installed|no Metal device"):
         optimize_stage_mlx(
             [],
             np.zeros((2, 2, 3), dtype=np.float32),
@@ -57,6 +68,24 @@ def test_mlx_stage_guard_when_mlx_is_absent() -> None:
             1,
             config=MlxStageConfig(),
         )
+
+
+def test_mlx_runtime_distinguishes_missing_metal_device(monkeypatch) -> None:
+    monkeypatch.setattr(mlx_runtime, "mx", _HeadlessMlx())
+
+    assert mlx_runtime.is_mlx_imported() is True
+    assert mlx_runtime.is_mlx_available() is False
+    with pytest.raises(RuntimeError, match="no Metal device"):
+        mlx_runtime.require_mlx("test optimization")
+
+
+def test_converter_falls_back_to_torch_without_metal(monkeypatch, caplog) -> None:
+    monkeypatch.setattr(mlx_runtime, "mx", _HeadlessMlx())
+
+    converter = PNG2SVGConverter(optimizer_backend="mlx")
+
+    assert converter.optimizer_backend == "torch"
+    assert "no Metal device" in caplog.text
 
 
 def test_cli_accepts_mlx_optimizer_flags() -> None:
@@ -91,7 +120,10 @@ def test_converter_rejects_geometry_groups_for_static_mlx_plan() -> None:
     with pytest.raises(ValueError, match="color/alpha with static tile plans"):
         PNG2SVGConverter(
             optimizer_backend="mlx",
-            refinement_config={"mlx_trainable_groups": "position,color"},
+            refinement_config={
+                "mlx_tile_plan": "static",
+                "mlx_trainable_groups": "position,color",
+            },
         )
 
 

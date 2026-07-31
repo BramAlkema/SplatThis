@@ -129,3 +129,4 @@ examples/output/
 # corpus.json (the manifest with hashes) and results.jsonl ARE tracked.
 /result/corpus/images/
 /result/corpus/runs/
+/result/corpus/index.html

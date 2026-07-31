@@ -9,9 +9,9 @@ from __future__ import annotations
 from typing import Any, Dict
 
 
-def get_profile_defaults(profile: str) -> Dict[str, Dict[str, Any]]:
+def get_profile_defaults(profile: str) -> Dict[str, Any]:
     """Return tuned defaults for quality profile."""
-    profiles: Dict[str, Dict[str, Dict[str, Any]]] = {
+    profiles: Dict[str, Dict[str, Any]] = {
         "m4-fast-loop": {
             "learning_rates": {
                 "position": 0.0095,
@@ -94,6 +94,12 @@ def get_profile_defaults(profile: str) -> Dict[str, Dict[str, Any]]:
             },
             "loss_weights": {"l1_weight": 1.0, "ssim_weight": 0.18},
             "refinement": {
+                # Fast MLX runs are an explicit color/alpha post-fit. Geometry
+                # remains frozen, so this profile must never be presented as a
+                # full reconstruction search.
+                "mlx_tile_plan": "static",
+                "mlx_tile_plan_rebuild_interval": 10,
+                "mlx_trainable_groups": "color,alpha",
                 "densify_percentile": 90.0,
                 "densify_fraction": 0.18,
                 "base_layer_fraction": 0.45,
@@ -166,6 +172,11 @@ def get_profile_defaults(profile: str) -> Dict[str, Dict[str, Any]]:
             },
             "loss_weights": {"l1_weight": 1.0, "ssim_weight": 0.2},
             "refinement": {
+                # Balanced still searches geometry, but rebuilds tile
+                # membership less often than max-fidelity.
+                "mlx_tile_plan": "periodic",
+                "mlx_tile_plan_rebuild_interval": 20,
+                "mlx_trainable_groups": "position,scale,theta,color,alpha",
                 "densify_percentile": 85.0,
                 "densify_fraction": 0.25,
                 "base_layer_fraction": 0.40,
@@ -229,6 +240,9 @@ def get_profile_defaults(profile: str) -> Dict[str, Dict[str, Any]]:
             },
         },
         "max-fidelity": {
+            # Corpus measurements showed that the historical four short stages
+            # underfit full geometry. Callers can still override this schedule.
+            "stages": [1000, 500, 250],
             "learning_rates": {
                 "position": 0.0075,
                 "scale": 0.0055,
@@ -242,6 +256,12 @@ def get_profile_defaults(profile: str) -> Dict[str, Dict[str, Any]]:
                 "gradient_weight": 0.08,
             },
             "refinement": {
+                # A max-fidelity MLX run must optimize the complete splat
+                # geometry. The old implicit static/color-alpha defaults made
+                # longer runs incapable of repairing placement or shape.
+                "mlx_tile_plan": "periodic",
+                "mlx_tile_plan_rebuild_interval": 10,
+                "mlx_trainable_groups": "position,scale,theta,color,alpha",
                 "densify_percentile": 74.0,
                 "densify_fraction": 0.40,
                 "base_layer_fraction": 0.32,

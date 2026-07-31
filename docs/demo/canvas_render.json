@@ -1,0 +1,12 @@
+{
+  "render_kind": "canvas-pixel-buffer",
+  "renderer": "Google Chrome via Playwright",
+  "is_deployed_artifact": true,
+  "canvas_html_sha256": "00c07036a3354cf6aaffbeb414eadd743d2c26e5f700e72241ac5c88bd3e8509",
+  "source_png_sha256": "3456266e2caf6cd8c0d4c388f3fb2011c7dec5c10de8747c23970b41b9ddb14e",
+  "render_png_sha256": "472574c572f0ae9348b9741c660dc8eed175d63fd7538aab7c5fac06a10b2ea4",
+  "native_canvas_size": [379, 400],
+  "published_size": [476, 502],
+  "published_resize": "ImageMagick Lanczos",
+  "ssim_srgb_at_published_size": 0.8937
+}

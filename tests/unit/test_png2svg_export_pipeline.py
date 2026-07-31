@@ -5,11 +5,13 @@ import zipfile
 from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from png2svg_gs.converter import PNG2SVGConverter
 from png2svg_gs.io import (
     PPTX_GRADIENT_ALPHA_SCALE,
+    atomic_output_path,
     generate_svg_content,
     save_pptx_with_splat_png,
     save_pptx_with_splats,
@@ -298,6 +300,14 @@ def test_converter_exports_pptx_and_comparison_artifacts(tmp_path: Path):
     assert manifest["config"]["pptx_splat_style"] == "gradient"
     assert manifest["config"]["layered_saliency"] is True
     assert manifest["layered_saliency"]["enabled"] is True
+    assert manifest["artifact_evaluation"] == {
+        "render_kind": "pptx-proxy",
+        "renderer": "internal-splat-renderer",
+        "is_deployed_artifact": False,
+        "metric_source": "internal",
+    }
+    assert manifest["artifacts"]["splat_proxy"]["path"] == str(preview_path)
+    assert manifest["artifacts"]["splat_proxy"]["is_deployed_artifact"] is False
 
 
 def test_converter_can_postfit_scripted_svg_proxy(tmp_path: Path):
@@ -658,6 +668,46 @@ def test_parallax_canvas_html_embeds_strength_and_canvas():
     # Layer canvases are created by the JS runtime, not as static tags.
     assert "canvas" in html.lower()
     assert "const STRENGTH = 7.500;" in html
+    assert 'data-layers="1"' in html
+    assert "splats.sort" not in html
+
+
+@pytest.mark.parametrize("width,height", [(0, 32), (32, 0), (-1, 32)])
+def test_canvas_html_rejects_non_positive_dimensions(width, height):
+    from png2svg_gs.io import generate_canvas_html, generate_parallax_canvas_html
+
+    for generator in (generate_canvas_html, generate_parallax_canvas_html):
+        with pytest.raises(ValueError, match="must be positive"):
+            generator([], width=width, height=height)
+
+
+def test_canvas_html_escapes_title_and_embeds_presorted_splats():
+    from png2svg_gs.io import generate_canvas_html
+
+    splats = _demo_splats(4)
+    html = generate_canvas_html(
+        list(reversed(splats)),
+        width=32,
+        height=32,
+        title='unsafe <title> & "quote"',
+    )
+
+    assert "<title>unsafe &lt;title&gt; &amp; &quot;quote&quot;</title>" in html
+    assert "SPLATS.sort" not in html
+
+
+def test_atomic_output_keeps_existing_destination_on_failure(tmp_path):
+    destination = tmp_path / "nested" / "artifact.svg"
+    destination.parent.mkdir()
+    destination.write_text("old")
+
+    with pytest.raises(RuntimeError, match="interrupted"):
+        with atomic_output_path(destination) as temporary:
+            temporary.write_text("new")
+            raise RuntimeError("interrupted")
+
+    assert destination.read_text() == "old"
+    assert list(destination.parent.glob(f".{destination.name}.*.tmp")) == []
 
 
 def test_canvas_html_compositing_space_flag_and_color_encoding():
@@ -675,8 +725,81 @@ def test_canvas_html_compositing_space_flag_and_color_encoding():
     )
     assert "const SRGB_IN = false;" in html_lin
     assert "const SRGB_IN = true;" in html_srgb
+    assert "dataset.splatthisRenderDone = 'true'" in html_lin
+    assert "Math.sqrt((sx*ct)*(sx*ct) + (sy*st)*(sy*st))" in html_lin
     encoded = float(linear_to_srgb(np.array([0.2], dtype=np.float32))[0])
     assert f"{encoded:.4f}"[:5] in html_srgb or f"{encoded:.6f}"[:6] in html_srgb
+
+
+def test_canvas_postprocess_gate_reverts_a_quality_regression():
+    converter = PNG2SVGConverter(
+        max_splats=2,
+        quality_profile="max-fidelity",
+        apple_silicon_splat_cap=None,
+    )
+    optimized = [
+        create_isotropic_splat(
+            center=np.array([5.0, 8.0]),
+            sigma=3.0,
+            color=np.array([0.9, 0.1, 0.1]),
+            alpha=0.8,
+        ),
+        create_isotropic_splat(
+            center=np.array([11.0, 8.0]),
+            sigma=3.0,
+            color=np.array([0.1, 0.2, 0.9]),
+            alpha=0.8,
+        ),
+    ]
+    target = render_splats_numpy(
+        optimized,
+        width=16,
+        height=16,
+        background_linear_rgb=np.zeros(3, dtype=np.float32),
+    )
+    destructive_candidate = [optimized[0]]
+
+    selected, gate = converter._select_monotonic_canvas_postprocess(
+        optimized_splats=optimized,
+        postprocessed_splats=destructive_candidate,
+        image=target,
+    )
+
+    assert selected is optimized
+    assert gate["accepted"] is False
+    assert gate["decision"] == "revert"
+    assert gate["before_count"] == 2
+    assert gate["candidate_count"] == 1
+    assert gate["selected_count"] == 2
+    assert gate["candidate"]["ssim_srgb"] < gate["before"]["ssim_srgb"]
+
+
+def test_canvas_checkpoint_selection_requires_gain_or_smaller_equivalent():
+    converter = PNG2SVGConverter(
+        max_splats=4000,
+        quality_profile="max-fidelity",
+        apple_silicon_splat_cap=None,
+    )
+    incumbent = {"ssim_srgb": 0.9794, "psnr_srgb": 44.73}
+
+    assert not converter._prefer_canvas_checkpoint(
+        candidate={"ssim_srgb": 0.9722, "psnr_srgb": 44.07},
+        candidate_count=3680,
+        incumbent=incumbent,
+        incumbent_count=2000,
+    )
+    assert converter._prefer_canvas_checkpoint(
+        candidate={"ssim_srgb": 0.9810, "psnr_srgb": 44.70},
+        candidate_count=3680,
+        incumbent=incumbent,
+        incumbent_count=2000,
+    )
+    assert converter._prefer_canvas_checkpoint(
+        candidate={"ssim_srgb": 0.9792, "psnr_srgb": 44.70},
+        candidate_count=1500,
+        incumbent=incumbent,
+        incumbent_count=2000,
+    )
 
 
 def test_drawingml_blur_style_alpha_uses_peak_opacity_target():

@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from png2svg_gs import __version__
 from png2svg_gs.cli import main
 from png2svg_gs.mlx_stage import is_mlx_available
 
@@ -35,7 +36,7 @@ def _run_cli(args):
 
 def test_cli_smoke_torch_svg(tmp_path):
     img = _write_fixture_image(tmp_path)
-    out_svg = tmp_path / "out.svg"
+    out_svg = tmp_path / "nested" / "out.svg"
     code = _run_cli(
         [
             str(img),
@@ -53,6 +54,27 @@ def test_cli_smoke_torch_svg(tmp_path):
     assert out_svg.is_file()
     root = ET.parse(out_svg).getroot()
     assert root.tag.endswith("svg")
+
+
+def test_cli_version(capsys):
+    assert _run_cli(["--version"]) == 0
+    assert capsys.readouterr().out.strip() == f"splatlify {__version__}"
+
+
+def test_cli_rejects_invalid_resource_limit():
+    with pytest.raises(SystemExit) as exc:
+        main(["source.png", "--splats", "0"])
+    assert exc.value.code == 2
+
+
+def test_cli_reports_corrupt_image_without_traceback(tmp_path, capsys):
+    corrupt = tmp_path / "corrupt.png"
+    corrupt.write_bytes(b"not an image")
+
+    assert _run_cli([str(corrupt), "--optimizer-backend", "torch"]) == 1
+    captured = capsys.readouterr()
+    assert captured.err.startswith("error:")
+    assert "Traceback" not in captured.err
 
 
 @pytest.mark.skipif(not is_mlx_available(), reason="MLX is not installed")

@@ -19,27 +19,15 @@ from .mlx_optimizer import (
     tree_to_numpy_table,
 )
 from .mlx_renderer import MlxBatchedGaussianRenderer, MlxTilePlan, splats_to_numpy_table
+from .mlx_runtime import is_mlx_available, require_mlx
 from .optimizer import DEFAULT_LEARNING_RATES
 from .splat import GaussianSplat
-
-try:  # pragma: no cover - exercised in MLX-enabled environments.
-    import mlx.core as mx
-except Exception:  # pragma: no cover - optional dependency guard.
-    mx = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
 
-def is_mlx_available() -> bool:
-    return mx is not None
-
-
 def _require_mlx() -> Any:
-    if mx is None:
-        raise RuntimeError(
-            "MLX is not installed. Install `mlx` to use MLX stage optimization."
-        )
-    return mx
+    return require_mlx("MLX stage optimization")
 
 
 def _array_scalar(value: Any) -> float:
@@ -49,8 +37,9 @@ def _array_scalar(value: Any) -> float:
 @dataclass(frozen=True)
 class MlxRendererConfig:
     tile_size: int = 16
-    batch_tile_count: int = 16
+    batch_tile_count: int = 8
     blend_mode: str = "alpha-over"
+    normalized_top_k: int = 10
     background_color: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     culling_sigma: float = 3.0
     max_active_splats_per_tile: Optional[int] = None
@@ -168,6 +157,7 @@ def optimize_stage_mlx(
         tile_size=stage_config.renderer.tile_size,
         batch_tile_count=stage_config.renderer.batch_tile_count,
         blend_mode=stage_config.renderer.blend_mode,
+        normalized_top_k=stage_config.renderer.normalized_top_k,
         background_color=stage_config.renderer.background_color,
         culling_sigma=stage_config.renderer.culling_sigma,
         max_active_splats_per_tile=stage_config.renderer.max_active_splats_per_tile,

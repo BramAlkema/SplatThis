@@ -1,185 +1,173 @@
 # SplatThis
 
-**Photo → SVG / PPTX / HTML via 2D Gaussian splatting. Apple-Silicon native.**
+Image to SVG, native PowerPoint, or self-contained HTML Canvas via 2D Gaussian
+splatting.
 
-Takes a PNG, fits a few thousand 2D Gaussian splats to it, and emits one of:
+SplatThis fits anisotropic 2D Gaussians to a bitmap and deploys the result in
+three different compositors:
 
-- **SVG** — editable, scalable, browser-friendly
-- **PPTX** — drop-in PowerPoint slide with native DrawingML shapes
-- **Canvas HTML** — JS runtime that does linear-light alpha-over (near-photorealistic)
+- **Canvas HTML** reproduces the trained alpha-over model most closely and can
+  add layered mouse parallax.
+- **SVG** emits real vector gradients or blur primitives that remain editable.
+- **PPTX** emits native DrawingML shapes, not a PNG disguised as a slide.
+
+These formats are not interchangeable. SVG and PowerPoint composite shapes
+differently from the linear-light Canvas runtime, so training and evaluation
+are target-aware.
 
 ## Gallery
 
-| Source | Canvas (HTML) | SVG |
+| Source | Canvas capture | SVG rasterization |
 |---|---|---|
 | ![source](docs/demo/source.png) | ![canvas](docs/demo/canvas_render.png) | ![svg](docs/demo/svg_render.png) |
-| docs/demo/source.png · 476×502 | LPIPS **0.11** · PSNR 29 dB | LPIPS **0.32** · 1 MB editable |
 
-Same 2 000-splat set, ~8 min training on Apple Silicon. Files:
-[chameleon.svg](docs/demo/chameleon.svg) (1 MB, opens in any vector editor),
-[canvas.html](docs/demo/canvas.html) (interactive, 350 KB self-contained
-JS runtime — opens in any browser).
+Example artifacts:
+[chameleon.svg](docs/demo/chameleon.svg) and
+[canvas.html](docs/demo/canvas.html).
+The development history is recorded in [docs/journey](docs/journey/).
 
-**[How we got here](docs/journey/)** — ten months of getting to that render, in fourteen frames: the first four splats on black, the coverage hole, the density ladder that proved more splats were never the answer, and the π/2 rotation that finally straightened the edges.
+## Install
 
-Most other Gaussian-splatting projects optimize for 3D scenes or training-throughput on
-CUDA GPUs. This one optimizes for **deployable vector documents**: SVG you can put
-in a webpage, PPTX you can paste into a deck.
-
-## What it's good at
-
-- Photo backgrounds in slide decks that don't look mosaic-like.
-- Painterly / abstracted photo representations in editable vector form.
-- HTML5 canvas renders that match the optimizer's linear-light math exactly.
-- Running on Apple Silicon — MLX optimizer is ~5× faster than torch on M-series.
-
-## What it's not for
-
-- Photorealistic SVG at arbitrary scale — there's a perceptual ceiling around
-  LPIPS 0.30 on photo content (see `docs/SVG_PPTX_GAUSSIAN_TRICKS.md`).
-- Crisp text or icons — use real vectors, not splats.
-- Real-time 3D scenes — use [gsplat](https://github.com/nerfstudio-project/gsplat).
-- Highest training throughput — CUDA-native splatters (gsplat, original 3DGS) are faster.
-
-## Quick start
+Python 3.13 or newer is required.
 
 ```bash
 git clone https://github.com/BramAlkema/SplatThis.git
 cd SplatThis
-python -m venv venv && source venv/bin/activate
-pip install -e ".[dev]"
-
-# Canvas (HTML, near-photorealistic, large file)
-splatlify input.png -o out.html --format canvas \
-  --splats 4000 --stages 500,250,125
-
-# SVG (small file, editable, perceptual cap ~LPIPS 0.30)
-splatlify input.png -o out.svg --format svg --training-export-target svg \
-  --splats 2000 --stages 1000,500,250
-
-# PPTX (PowerPoint native shapes)
-splatlify input.png -o out.pptx --format pptx --pptx-splat-style blur \
-  --splats 2000 --blur-postfit-iters 120
+python3.13 -m venv venv
+source venv/bin/activate
+pip install -e ".[dev,rasterize]"
 ```
 
-## Recommended recipe per deploy target
+On Apple Silicon, install the optional MLX backend:
 
-The dominant lever is **training time, not splat count**. Both formats hit a
-perceptual ceiling, but with format-specific training you get there cleanly.
+```bash
+pip install -e ".[mlx]"
+```
 
-| Target | Splats | Stages | Notes |
-|---|---|---|---|
-| Canvas (HTML) | 2 k – 4 k | `--stages 500,250,125` | Best perceptual quality (LPIPS ≈ 0.10). |
-| SVG | 500 – 2 k | `--stages 1000,500,250` | Fewer splats with more iters wins — fewer gradient-stop fan artifacts. |
-| PPTX | 2 k – 4 k | `--stages 500,250,125 --blur-postfit-iters 120` | Use `--pptx-splat-style blur` and the blur-aware postfit. |
+If MLX is absent, or the process has no Metal device, `splatlify` falls back to
+Torch before training starts. Use `--optimizer-backend torch` explicitly for
+CPU or CUDA runs.
 
-For both SVG and PPTX, pass `--training-export-target <format>` so the optimizer
-trains against the deploy compositor, not a generic loss. ~17% perceptual lift on
-SVG vs naive train-once-emit-anywhere.
+## Quick start
 
-## Three things this project actually does that others don't
+```bash
+# Highest-fidelity deploy target; self-contained HTML.
+splatlify input.png -o output.html --format canvas \
+  --splats 4000 --initial-splat-cap 4000
 
-1. **PPTX export from splats, calibrated against real PowerPoint.** DrawingML's
-   `<a:blur>` calibration constant (σ = rad / 3.25) was measured via erf-fit
-   edge-response in real PowerPoint. See `docs/SVG_PPTX_GAUSSIAN_TRICKS.md` and
-   the writeup in [svg2ooxml's research notes](https://github.com/BramAlkema/svg2ooxml).
+# Static editable SVG, trained for the SVG compositor.
+splatlify input.png -o output.svg --format svg --splats 2000
 
-2. **Format-aware training pipeline.** `--training-export-target {canvas, svg,
-   pptx-softedge}` — the trainer optimizes against the deploy format's compositor
-   during training, not as a postfit afterthought. Closes ~0.07 LPIPS on SVG.
+# Native editable PowerPoint shapes. Gradient is the conservative default.
+splatlify input.png -o output.pptx --format pptx \
+  --pptx-splat-style gradient --splats 2000
+```
 
-3. **Documented perceptual ceilings.** SVG caps around LPIPS 0.30, PPTX around
-   0.40, canvas keeps improving with splat count. The catalog
-   (`docs/SVG_PPTX_GAUSSIAN_TRICKS.md`) shows the LPIPS-vs-SSIM table that
-   surfaced these ceilings — SSIM systematically over-ranks the blur recipe;
-   LPIPS reverses several findings.
+`--training-export-target auto` is the default. It resolves to `svg` for SVG
+and to `canvas` for Canvas and PPTX. Use `pptx-softedge` only when deliberately
+training for the real-PowerPoint soft-edge primitive; it may look washed out in
+other viewers.
 
-## Honest quality numbers
+## Full-corpus results
 
-Measured against the chameleon test image (`docs/demo/source.png`, 476×502) at 2 k splats
-with `--stages 1000,500,250` and `--training-export-target` matching the format:
+The table below uses all 21 stored corpus images at a maximum edge of roughly
+384 px, seed 0. Canvas is scored from the exact Chrome canvas pixel buffer,
+SVG from the emitted and rasterized SVG, and PPTX from Microsoft PowerPoint
+slideshow captures. Values are medians, not a claim about every picture.
 
-| Format | SSIM | LPIPS↓ | PSNR | File size |
-|---|---|---|---|---|
-| Canvas (HTML JS runtime) | 0.92 | **0.09** | 30 dB | 700 KB |
-| SVG (standard recipe) | 0.76 | **0.32** | 22 dB | 1.0 MB |
-| PPTX (blur recipe) | 0.55 | ~0.40 | 14 dB | 100 KB |
+| Deployed artifact | Budget | Final splats | SSIM ↑ | LPIPS ↓ | Size | Training |
+|---|---:|---:|---:|---:|---:|---:|
+| Canvas HTML | requested 2k | 1,395 | 0.7751 | 0.2443 | 226 KB | 3.6 min |
+| Canvas HTML | effective 4k | 2,382 | 0.8406 | 0.1612 | 391 KB | 9.9 min |
+| SVG | requested 2k | 1,389 | 0.6022 | 0.4002 | 765 KB | 4.2 min |
+| PowerPoint | requested 2k | 1,374 | 0.6091 | 0.3843 | 127 KB | 6.6 min |
 
-LPIPS: ~0.10 excellent, ~0.20 acceptable, ~0.30 visibly different, ~0.50 clearly
-different. SSIM in isolation mis-ranks splat-rendered output — always cross-check
-with LPIPS or visual judgment.
+Effective-4k Canvas rendered in a median 105 ms in the capture browser. All 21
+images improved in both SSIM and LPIPS over requested-2k, but none reached
+0.99 SSIM. Chameleon improves from 0.9140 at 2k to 0.9438 at effective 4k and
+0.9631 at effective 8k. The project therefore does not promise near-0.99
+fidelity at small budgets.
+
+See [the Canvas scaling MVP](docs/canvas-scaling-mvp.md) for paired per-image
+statistics and [the format findings](docs/SVG_PPTX_GAUSSIAN_TRICKS.md) for the
+SVG and PowerPoint compositor analysis.
+
+If editability, target-specific animation, or the splat representation is not
+needed, a normal PNG/JPEG is usually smaller and more faithful. SplatThis is
+useful when those document-native properties matter.
+
+## Recommended use
+
+| Target | Practical starting point | Main trade-off |
+|---|---|---|
+| Canvas | 2k for speed, effective 4k for quality | Best fidelity; JS runtime and browser work |
+| SVG | 1k-2k, `standard` recipe | Fully editable; compositor imposes a visible ceiling |
+| PPTX | 1k-2k, `gradient` style | Native shapes; viewer-specific rendering |
+
+More splats help Canvas when the initialization population is also allowed to
+grow. A nominal `--splats 4000` with a low initial cap is not an effective 4k
+experiment.
+
+Layered Canvas parallax is available with:
+
+```bash
+splatlify input.png -o parallax.html --format canvas \
+  --layered-saliency --canvas-parallax-strength 28
+```
+
+Mouse-over or grid-triggered PowerPoint parallax is documented as an MVP idea;
+it is not part of the released PPTX exporter.
 
 ## How it works
 
-1. **Content-adaptive initialization** — 2D Gaussians seeded where image
-   gradients say there's detail.
-2. **Differentiable optimization** (MLX on Apple Silicon, torch elsewhere) —
-   refines position, anisotropic covariance, color, alpha against L1+SSIM loss.
-3. **Progressive densification & pruning** — staged loop adds splats in
-   high-error regions and prunes low-impact ones, up to the splat budget.
-4. **Format-specific postfit** — color/alpha refinement against the deploy
-   format's compositor proxy. `--svg-proxy-postfit-iters`,
-   `--pptx-proxy-postfit-iters`, `--blur-postfit-iters`.
-5. **Emit** — SVG with quantized-sigma `<feGaussianBlur>` filters, PPTX with
-   calibrated `<a:blur>`, or HTML with a JS canvas runtime doing real
-   linear-light alpha-over.
+1. Content-adaptive initialization places splats where the image needs them.
+2. Torch or MLX optimizes position, scale, rotation, color, and alpha.
+3. Progressive densification adds detail while pruning low-impact splats.
+4. Target-aware post-fit stages approximate the deploy compositor.
+5. Monotonic gates retain a candidate only when deployed-model quality holds.
+6. SVG, Canvas, or native DrawingML is written atomically.
 
-## Architecture
+The MLX renderer default is eight tiles per batch. On Chameleon, Retina, and
+Grass checkpoints this reduced median forward-and-backward latency by 12-34%
+versus a 16-tile batch; the Chameleon converter-default comparison was 23%
+faster than 128 tiles. Render math is unchanged. The emitted Canvas and corpus
+overview also avoid repeated browser-side sorting; the overview lazily renders
+cards near the viewport.
 
-```
-src/png2svg_gs/
-├── cli.py         # `splatlify` entry point
-├── converter.py   # orchestration, training stages, postfit dispatch
-├── renderer.py    # differentiable renderer + L1+SSIM loss
-├── splat.py       # GaussianSplat model + raw schema
-├── io.py          # SVG / PPTX / Canvas emit + quality metrics
-├── mlx_stage.py   # MLX-native optimizer (Apple Silicon)
-├── mlx_renderer.py
-├── mlx_losses.py
-└── ...
-```
+## Important flags
 
-## Development
+| Flag | Meaning |
+|---|---|
+| `--format {svg,pptx,canvas}` | Output container and compositor |
+| `--training-export-target {auto,canvas,svg,pptx-softedge}` | Optimization target |
+| `--optimizer-backend {mlx,torch}` | Optimizer implementation |
+| `--splats N` | Maximum splat population |
+| `--initial-splat-cap N` | Initial population ceiling |
+| `--stages a,b,c` | Per-stage iteration schedule |
+| `--svg-recipe {standard,blur,palette-quantized,...}` | SVG primitive family |
+| `--pptx-splat-style {gradient,soft-edge,blur}` | DrawingML primitive family |
+| `--fidelity-stage {off,balanced,max}` | Accept-or-revert SVG artifact polish |
+| `--artifacts-dir DIR` | Manifest and stage checkpoints |
+
+Top-K distillation and mixed primitives live in experimental modules and MVP
+tools. They are not default release paths because their gains are not yet
+robust across the full corpus.
+
+## Development and release verification
 
 ```bash
-PYTHONPATH=. pytest tests/unit/ --cov=src --cov-report=term-missing --tb=short
-
-# Lint
-black src/ tests/
-flake8 src/ tests/
-mypy src/
+source venv/bin/activate
+isort --check-only src tests tools
+black --check src tests tools
+flake8 src tests tools
+pytest tests/unit --cov=src/png2svg_gs --cov-report=term-missing
+python -m build
+python -m twine check dist/*
 ```
 
-Requires Python ≥ 3.13. On Apple Silicon, MLX 0.31+ is the default optimizer
-backend; pass `--optimizer-backend torch` for CUDA/CPU runs.
-
-## Useful flags
-
-| Flag | What it does |
-|---|---|
-| `--format {svg,pptx,canvas}` | Output format. |
-| `--training-export-target {auto,canvas,svg,pptx-softedge}` | Loss-target compositor. |
-| `--pptx-splat-style {gradient,soft-edge,blur}` | DrawingML primitive (`blur` recommended). |
-| `--svg-recipe {standard,blur,palette-quantized,…}` | SVG emit recipe (`standard` is best perceptual). |
-| `--splats N` | Splat budget. |
-| `--stages a,b,c` | Per-stage iteration counts. |
-| `--blur-postfit-iters N` | Color/alpha refinement against Gaussian-conv proxy. |
-| `--optimizer-backend {mlx,torch}` | MLX is default on Apple Silicon. |
-| `--max-edge N` | Downscale long edge to N px. |
-| `--artifacts-dir DIR` | Save per-stage splat snapshots + run manifest. |
-
-## Related work
-
-- **[gsplat](https://github.com/nerfstudio-project/gsplat)** — CUDA-native
-  Gaussian rasterizer; cloned locally under `external/gsplat/` (not committed).
-  Faster training, no vector export.
-- **[Image-GS](https://github.com/NYU-ICL/image-gs)** — academic 2D splat work
-  (Zhang et al., SIGGRAPH 2025); cloned locally under `external/image-gs/` (not committed).
-- **[3D Gaussian Splatting](https://github.com/graphdeco-inria/gaussian-splatting)**
-  — Kerbl et al. 2023, the reference 3DGS implementation.
-- **[svg2ooxml](https://github.com/BramAlkema/svg2ooxml)** — sibling project for
-  SVG → OOXML conversion; the `<a:blur>` calibration research lives there.
+Strict mypy is run in CI as an informational migration check. See
+[CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-MIT.
+[MIT](LICENSE)

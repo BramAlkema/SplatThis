@@ -110,6 +110,7 @@ def create_renderer(
     tile_bin_padding: float = 0.0,
     batch_tile_count: int = 32,
     max_active_splats_per_tile: Optional[int] = None,
+    normalized_top_k: int = 10,
 ) -> nn.Module:
     """Factory for renderer backends."""
     resolved = resolve_renderer_backend(backend, device)
@@ -132,6 +133,7 @@ def create_renderer(
             tile_bin_padding=tile_bin_padding,
             batch_tile_count=batch_tile_count,
             max_active_splats_per_tile=max_active_splats_per_tile,
+            normalized_top_k=normalized_top_k,
         )
     else:
         renderer = GaussianRenderer(
@@ -143,6 +145,7 @@ def create_renderer(
             compositing_space=compositing_space,
             tile_bin_rebuild_interval=tile_bin_rebuild_interval,
             tile_bin_padding=tile_bin_padding,
+            normalized_top_k=normalized_top_k,
         )
     return renderer.to(device)
 
@@ -207,6 +210,7 @@ class GaussianRenderer(nn.Module):
         compositing_space: str = "linear",
         tile_bin_rebuild_interval: int = 1,
         tile_bin_padding: float = 0.0,
+        normalized_top_k: int = 10,
     ):
         super().__init__()
         self.width = width
@@ -217,6 +221,7 @@ class GaussianRenderer(nn.Module):
         self.tile_bin_rebuild_interval = int(max(1, tile_bin_rebuild_interval))
         self.tile_bin_padding = float(max(0.0, tile_bin_padding))
         self.blend_mode = str(blend_mode).strip().lower()
+        self.normalized_top_k = int(max(1, normalized_top_k))
         # "linear": composite in linear RGB (physically correct).
         # "srgb": composite in gamma-encoded sRGB, matching how browsers blend
         # overlapping SVG shapes -- so the optimizer's solution matches the
@@ -224,7 +229,7 @@ class GaussianRenderer(nn.Module):
         self.compositing_space = str(compositing_space).strip().lower()
         if self.compositing_space not in {"linear", "srgb"}:
             raise ValueError(f"Unsupported compositing space: {compositing_space}")
-        if self.blend_mode not in {"weighted", "alpha-over"}:
+        if self.blend_mode not in {"weighted", "alpha-over", "normalized-topk"}:
             raise ValueError(f"Unsupported blend mode: {blend_mode}")
         if background_color is None:
             background = torch.zeros(3, dtype=torch.float32)
@@ -518,6 +523,25 @@ class GaussianRenderer(nn.Module):
             delta, sx, sy, theta
         )  # [tile_h, tile_w, N]
 
+        # Image-GS teacher path: retain the K strongest Gaussian responses at
+        # each pixel, then normalize those responses to sum to one. Alpha and
+        # importance/order intentionally do not participate in this equation.
+        # The discrete top-K membership is non-differentiable, while gradients
+        # still flow through the selected response values and splat parameters.
+        if self.blend_mode == "normalized-topk":
+            k = min(self.normalized_top_k, num_splats)
+            selected_weights, selected_indices = torch.topk(
+                weights, k=k, dim=-1, largest=True, sorted=False
+            )
+            selected_colors = colors[selected_indices]
+            total_weight = torch.sum(selected_weights, dim=-1, keepdim=True)
+            color_sum = torch.sum(
+                selected_weights.unsqueeze(-1) * selected_colors, dim=2
+            )
+            normalized = color_sum / torch.clamp(total_weight, min=1e-8)
+            background = self.background.view(1, 1, 3).to(device)
+            return torch.where(total_weight > 1e-8, normalized, background)
+
         # Convert gaussian responses to per-layer alpha and composite front-to-back.
         if self.blend_mode == "weighted":
             weighted = weights * alphas.view(1, 1, -1)
@@ -621,6 +645,7 @@ class TorchBatchedGaussianRenderer(GaussianRenderer):
         tile_bin_padding: float = 0.0,
         batch_tile_count: int = 32,
         max_active_splats_per_tile: Optional[int] = None,
+        normalized_top_k: int = 10,
     ):
         super().__init__(
             width=width,
@@ -633,6 +658,7 @@ class TorchBatchedGaussianRenderer(GaussianRenderer):
             compositing_space=compositing_space,
             tile_bin_rebuild_interval=tile_bin_rebuild_interval,
             tile_bin_padding=tile_bin_padding,
+            normalized_top_k=normalized_top_k,
         )
         self.batch_tile_count = int(max(1, batch_tile_count))
         if max_active_splats_per_tile is None:
@@ -886,6 +912,30 @@ class TorchBatchedGaussianRenderer(GaussianRenderer):
         weights = weights * active_mask.view(batch_size, 1, 1, -1)
 
         background = self.background.to(device=device, dtype=dtype).view(1, 1, 1, 3)
+
+        if self.blend_mode == "normalized-topk":
+            k = min(self.normalized_top_k, int(weights.shape[-1]))
+            selected_weights, selected_indices = torch.topk(
+                weights, k=k, dim=-1, largest=True, sorted=False
+            )
+            color_table = active_colors.view(batch_size, 1, 1, -1, 3).expand(
+                batch_size,
+                self.tile_size,
+                self.tile_size,
+                -1,
+                3,
+            )
+            selected_colors = torch.gather(
+                color_table,
+                dim=3,
+                index=selected_indices.unsqueeze(-1).expand(-1, -1, -1, -1, 3),
+            )
+            total_weight = torch.sum(selected_weights, dim=-1, keepdim=True)
+            color_sum = torch.sum(
+                selected_weights.unsqueeze(-1) * selected_colors, dim=3
+            )
+            normalized = color_sum / torch.clamp(total_weight, min=1e-8)
+            return torch.where(total_weight > 1e-8, normalized, background)
 
         if self.blend_mode == "weighted":
             weighted = weights * active_alphas.view(batch_size, 1, 1, -1)
@@ -1299,8 +1349,17 @@ def iter_splat_footprints(
         sy = max(float(raw.sy), 1e-4)
         theta = float(raw.theta)
 
-        radius_x = max(1, int(np.ceil(max(1.0, footprint_sigma) * sx)))
-        radius_y = max(1, int(np.ceil(max(1.0, footprint_sigma) * sy)))
+        cos_t = float(np.cos(theta))
+        sin_t = float(np.sin(theta))
+        footprint = max(1.0, footprint_sigma)
+        # Axis-aligned extent of the rotated footprint ellipse. Using sx/sy
+        # directly clips the major axis whenever an anisotropic splat rotates;
+        # the MLX/Torch tile renderers use a conservative max(sx, sy) square
+        # and therefore did not share that canvas/NumPy bug.
+        extent_x = footprint * float(np.sqrt((sx * cos_t) ** 2 + (sy * sin_t) ** 2))
+        extent_y = footprint * float(np.sqrt((sx * sin_t) ** 2 + (sy * cos_t) ** 2))
+        radius_x = max(1, int(np.ceil(extent_x)))
+        radius_y = max(1, int(np.ceil(extent_y)))
         x0 = max(0, int(np.floor(cx - radius_x)))
         x1 = min(width, int(np.ceil(cx + radius_x + 1)))
         y0 = max(0, int(np.floor(cy - radius_y)))
@@ -1310,8 +1369,6 @@ def iter_splat_footprints(
 
         dx = np.arange(x0, x1, dtype=np.float32).reshape(1, -1) - cx
         dy = np.arange(y0, y1, dtype=np.float32).reshape(-1, 1) - cy
-        cos_t = float(np.cos(theta))
-        sin_t = float(np.sin(theta))
         u = cos_t * dx + sin_t * dy
         v = -sin_t * dx + cos_t * dy
         quadratic = (u * u) / (sx * sx) + (v * v) / (sy * sy)

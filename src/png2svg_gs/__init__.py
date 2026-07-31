@@ -5,6 +5,7 @@ A lean, practical tool for converting PNG images to SVG using anisotropic 2D Gau
 Based on Image-GS methodology but optimized for real-world PNG→SVG conversion.
 """
 
+from ._version import __version__
 from .converter import PNG2SVGConverter
 from .io import (
     evaluate_svg_export_quality,
@@ -19,8 +20,8 @@ from .io import (
 )
 from .splat import GaussianSplat, RawSplat
 
-__version__ = "0.1.0"
 __all__ = [
+    "__version__",
     "GaussianSplat",
     "RawSplat",
     "load_png",

@@ -48,7 +48,9 @@ def _gradient_energy(gray: np.ndarray) -> np.ndarray:
     return np.sqrt(gx * gx + gy * gy)
 
 
-def _best_detail_crop_box(image: Image.Image, crop_size: int) -> Tuple[int, int, int, int]:
+def _best_detail_crop_box(
+    image: Image.Image, crop_size: int
+) -> Tuple[int, int, int, int]:
     rgb = np.asarray(image.convert("RGB"), dtype=np.float32) / 255.0
     gray = 0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :, 2]
     energy = _gradient_energy(gray)
@@ -63,7 +65,9 @@ def _best_detail_crop_box(image: Image.Image, crop_size: int) -> Tuple[int, int,
     integral = np.pad(np.cumsum(np.cumsum(energy, axis=0), axis=1), ((1, 0), (1, 0)))
 
     def box_sum(x0: int, y0: int, x1: int, y1: int) -> float:
-        return float(integral[y1, x1] - integral[y0, x1] - integral[y1, x0] + integral[y0, x0])
+        return float(
+            integral[y1, x1] - integral[y0, x1] - integral[y1, x0] + integral[y0, x0]
+        )
 
     best_score = -1.0
     best_x = 0
@@ -184,21 +188,46 @@ def _score(psnr: float, ssim: float, coverage: float, runtime_sec: float) -> flo
     psnr_term = min(psnr / 30.0, 1.0)
     coverage_term = min(coverage, 1.0)
     runtime_penalty = min(runtime_sec / 120.0, 1.0)
-    return 0.42 * psnr_term + 0.42 * ssim + 0.22 * coverage_term - 0.06 * runtime_penalty
+    return (
+        0.42 * psnr_term + 0.42 * ssim + 0.22 * coverage_term - 0.06 * runtime_penalty
+    )
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Fast PNG2splat fidelity iteration harness")
+    parser = argparse.ArgumentParser(
+        description="Fast PNG2splat fidelity iteration harness"
+    )
     parser.add_argument("input", help="Input image path")
     parser.add_argument("--output-dir", default="fidelity_lab", help="Output directory")
-    parser.add_argument("--longest-edge", type=int, default=224, help="Downscaled full-image longest edge")
-    parser.add_argument("--crop-size", type=int, default=192, help="High-detail crop size")
+    parser.add_argument(
+        "--longest-edge",
+        type=int,
+        default=224,
+        help="Downscaled full-image longest edge",
+    )
+    parser.add_argument(
+        "--crop-size", type=int, default=192, help="High-detail crop size"
+    )
     parser.add_argument("--max-splats", type=int, default=500, help="Trial max splats")
-    parser.add_argument("--stages", type=str, default="2,1,1", help="Trial stage schedule")
-    parser.add_argument("--quality-profile", type=str, default="max-fidelity", help="Converter quality profile")
-    parser.add_argument("--blend-mode", type=str, default="alpha-over", help="Converter blend mode")
+    parser.add_argument(
+        "--stages", type=str, default="2,1,1", help="Trial stage schedule"
+    )
+    parser.add_argument(
+        "--quality-profile",
+        type=str,
+        default="max-fidelity",
+        help="Converter quality profile",
+    )
+    parser.add_argument(
+        "--blend-mode", type=str, default="alpha-over", help="Converter blend mode"
+    )
     parser.add_argument("--seed", type=int, default=7, help="Deterministic seed")
-    parser.add_argument("--trials-file", type=str, default="", help="Optional JSON file with trial definitions")
+    parser.add_argument(
+        "--trials-file",
+        type=str,
+        default="",
+        help="Optional JSON file with trial definitions",
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -227,9 +256,13 @@ def main() -> int:
 
         combined_psnr = 0.55 * full_metrics["psnr"] + 0.45 * crop_metrics["psnr"]
         combined_ssim = 0.55 * full_metrics["ssim"] + 0.45 * crop_metrics["ssim"]
-        combined_coverage = 0.55 * full_metrics["coverage"] + 0.45 * crop_metrics["coverage"]
+        combined_coverage = (
+            0.55 * full_metrics["coverage"] + 0.45 * crop_metrics["coverage"]
+        )
         combined_runtime = full_metrics["runtime_sec"] + crop_metrics["runtime_sec"]
-        combined_score = _score(combined_psnr, combined_ssim, combined_coverage, combined_runtime)
+        combined_score = _score(
+            combined_psnr, combined_ssim, combined_coverage, combined_runtime
+        )
 
         results.append(
             {
@@ -292,4 +325,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
