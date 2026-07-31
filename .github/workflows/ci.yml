@@ -10,6 +10,9 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
+      # Let every platform finish so one environment-specific failure does not
+      # hide the Linux/Windows results needed to diagnose cross-OS behavior.
+      fail-fast: false
       # Single Python version (3.13), three OSes. We don't gain coverage
       # from older Pythons — MLX and the venv are 3.13. Cross-OS still
       # catches pathlib / line-ending / shell quirks.

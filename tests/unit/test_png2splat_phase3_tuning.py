@@ -128,8 +128,29 @@ def test_converter_manifest_includes_roundtrip_validation_when_enabled(tmp_path:
         "internal-splat-proxy"
     )
     assert manifest["artifacts"]["splat_proxy"]["is_deployed_artifact"] is False
-    assert manifest["artifact_evaluation"]["render_kind"] == "svg-rasterization"
-    assert manifest["artifact_evaluation"]["is_deployed_artifact"] is True
+    export_quality = manifest["export_quality"]
+    artifact_evaluation = manifest["artifact_evaluation"]
+    if export_quality["used_fallback"]:
+        # Bare CI runners may have neither a usable CairoSVG backend nor
+        # rsvg-convert. The manifest must then identify the internal proxy
+        # honestly instead of claiming that the deployed SVG was measured.
+        assert export_quality["method"] == "proxy-fallback"
+        assert artifact_evaluation == {
+            "render_kind": "internal-proxy",
+            "renderer": "internal-splat-renderer",
+            "is_deployed_artifact": False,
+            "metric_source": "internal",
+        }
+    else:
+        # When an actual rasterizer is available, keep enforcing deployed-SVG
+        # evaluation rather than allowing a silent proxy regression.
+        assert export_quality["method"] in {"cairosvg", "rsvg-convert"}
+        assert artifact_evaluation == {
+            "render_kind": "svg-rasterization",
+            "renderer": export_quality["method"],
+            "is_deployed_artifact": True,
+            "metric_source": "export",
+        }
     assert "roundtrip_validation" in manifest
     assert manifest["roundtrip_validation"]["pass"]
 
