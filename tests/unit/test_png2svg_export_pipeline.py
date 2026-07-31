@@ -788,10 +788,10 @@ def test_blur_recipe_filter_region_and_peak_opacity_target():
 
 
 def test_parallax_canvas_html_embeds_strength_and_canvas():
-    from png2svg_gs.io import generate_parallax_canvas_html
+    from png2svg_gs.io import generate_parallax_pixel_runtime_html
 
     splats = _demo_splats(4)
-    html = generate_parallax_canvas_html(
+    html = generate_parallax_pixel_runtime_html(
         splats, width=32, height=32, parallax_strength=7.5
     )
     # Layer canvases are created by the JS runtime, not as static tags.
@@ -915,15 +915,15 @@ def test_pixel_runtime_rejects_unknown_backend():
 @pytest.mark.parametrize("width,height", [(0, 32), (32, 0), (-1, 32)])
 def test_canvas_html_rejects_non_positive_dimensions(width, height):
     from png2svg_gs.io import (
-        generate_canvas_html,
         generate_css_splat_html,
         generate_native_canvas_html,
-        generate_parallax_canvas_html,
+        generate_parallax_pixel_runtime_html,
+        generate_pixel_runtime_html,
     )
 
     for generator in (
-        generate_canvas_html,
-        generate_parallax_canvas_html,
+        generate_pixel_runtime_html,
+        generate_parallax_pixel_runtime_html,
         generate_css_splat_html,
         generate_native_canvas_html,
     ):
@@ -932,10 +932,10 @@ def test_canvas_html_rejects_non_positive_dimensions(width, height):
 
 
 def test_canvas_html_escapes_title_and_embeds_presorted_splats():
-    from png2svg_gs.io import generate_canvas_html
+    from png2svg_gs.io import generate_pixel_runtime_html
 
     splats = _demo_splats(4)
-    html = generate_canvas_html(
+    html = generate_pixel_runtime_html(
         list(reversed(splats)),
         width=32,
         height=32,
@@ -961,7 +961,7 @@ def test_atomic_output_keeps_existing_destination_on_failure(tmp_path):
 
 
 def test_canvas_html_compositing_space_flag_and_color_encoding():
-    from png2svg_gs.io import generate_canvas_html, linear_to_srgb
+    from png2svg_gs.io import generate_pixel_runtime_html, linear_to_srgb
 
     splat = create_isotropic_splat(
         center=np.array([16.0, 16.0]),
@@ -969,8 +969,8 @@ def test_canvas_html_compositing_space_flag_and_color_encoding():
         color=np.array([0.2, 0.2, 0.2]),
         alpha=0.9,
     )
-    html_lin = generate_canvas_html([splat], width=32, height=32)
-    html_srgb = generate_canvas_html(
+    html_lin = generate_pixel_runtime_html([splat], width=32, height=32)
+    html_srgb = generate_pixel_runtime_html(
         [splat], width=32, height=32, compositing_space="srgb"
     )
     assert "const SRGB_IN = false;" in html_lin
@@ -1180,6 +1180,35 @@ def test_preview_png_srgb_mode_differs_from_linear(tmp_path):
     lin_img = np.asarray(Image.open(lin_path), dtype=np.int16)
     srgb_img = np.asarray(Image.open(srgb_path), dtype=np.int16)
     assert np.abs(lin_img - srgb_img).max() > 1
+
+
+def test_cached_linear_framebuffer_writer_matches_preview_renderer(tmp_path):
+    from png2svg_gs.io import render_splats_preview_png, save_linear_rgb_png
+    from png2svg_gs.renderer import render_splats_numpy
+
+    splats = _demo_splats(4)
+    background = np.array([0.2, 0.3, 0.4], dtype=np.float32)
+    rendered = render_splats_numpy(
+        splats,
+        width=32,
+        height=24,
+        background_linear_rgb=background,
+        compositing_space="srgb",
+    )
+    cached_path = tmp_path / "cached.png"
+    direct_path = tmp_path / "direct.png"
+
+    save_linear_rgb_png(rendered, str(cached_path))
+    render_splats_preview_png(
+        splats,
+        width=32,
+        height=24,
+        output_path=str(direct_path),
+        background_linear_rgb=background,
+        compositing_space="srgb",
+    )
+
+    assert cached_path.read_bytes() == direct_path.read_bytes()
 
 
 def test_convert_restores_run_mutated_config(tmp_path):

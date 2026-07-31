@@ -488,6 +488,17 @@ metrics.
 ## Implementation map
 
 - Fidelity stage: `src/png2svg_gs/fidelity/`
+- Browser pixel-runtime emission: `src/png2svg_gs/pixel_runtime.py`
+- Shared NumPy color transforms: `src/png2svg_gs/color.py`
+- Shared export policy and geometry: `src/png2svg_gs/export_common.py`
+- Image, JSON, preview, metric, and artifact I/O:
+  `src/png2svg_gs/artifact_io.py`
+- CSS and native Canvas emission: `src/png2svg_gs/browser_export.py`
+- Static SVG emission and optimization: `src/png2svg_gs/svg_export.py`
+- DrawingML emission and PPTX packaging: `src/png2svg_gs/pptx_export.py`
+- Packaged SVG, DrawingML, and PPTX XML templates:
+  `src/png2svg_gs/templates/`
+- Backward-compatible legacy import facade: `src/png2svg_gs/io.py`
 - Converter integration and pixel-runtime gates: `src/png2svg_gs/converter.py`
 - Top-K student/teacher experiment: `src/png2svg_gs/distillation.py`
 - Mixed native primitives: `src/png2svg_gs/mixed_primitives.py`
@@ -500,6 +511,8 @@ metrics.
   `src/png2svg_gs/adaptive_compute.py`, `src/png2svg_gs/converter.py`, and
   `tools/simulate_adaptive_canvas.py`
 - Online adaptive MVP evidence: `data/adaptive-online-mvp.json`
+- MLX throughput policy and full-frame batch evidence:
+  `docs/mlx-throughput-mvp.md` and `data/mlx-batch-tile-mvp.json`
 - Exact full-corpus hard-target replay: `data/adaptive-exact-replay.json`
 - Pixel-runtime checkpoint parity calibration: `src/png2svg_gs/canvas_parity.py`,
   `tools/calibrate_canvas_checkpoint_parity.py`, and

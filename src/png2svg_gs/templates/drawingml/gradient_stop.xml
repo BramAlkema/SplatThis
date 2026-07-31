@@ -1,0 +1,3 @@
+              <a:gs pos="@@POSITION@@">
+                <a:srgbClr val="@@COLOR_HEX@@"><a:alpha val="@@ALPHA_UNITS@@"/></a:srgbClr>
+              </a:gs>

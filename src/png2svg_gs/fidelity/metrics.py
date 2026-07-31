@@ -8,21 +8,14 @@ from typing import Dict, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
+from ..color import linear_to_srgb_float32 as _np_linear_to_srgb
+
 logger = logging.getLogger(__name__)
 
 Roi = Tuple[int, int, int, int]  # (y0, x0, y1, x1)
 
 _LPIPS_NET = None
 _LPIPS_FAILED = False
-
-
-def _np_linear_to_srgb(x: np.ndarray) -> np.ndarray:
-    x = np.clip(x, 0.0, 1.0)
-    return np.where(
-        x <= 0.0031308,
-        12.92 * x,
-        1.055 * np.power(np.maximum(x, 1e-12), 1.0 / 2.4) - 0.055,
-    ).astype(np.float32)
 
 
 def linear_rgb_to_oklab_np(rgb: np.ndarray) -> np.ndarray:
@@ -214,7 +207,7 @@ def compute_fidelity_metrics(
     mse_srgb = float(np.mean((target_srgb - rendered_srgb) ** 2))
     psnr_srgb = float(-10.0 * np.log10(max(mse_srgb, 1e-12)))
 
-    from ..io import _image_ssim
+    from ..quality import _image_ssim
 
     ssim_srgb = float(_image_ssim(rendered_srgb, target_srgb))
 

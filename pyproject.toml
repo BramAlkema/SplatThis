@@ -30,7 +30,7 @@ dependencies = [
     "Pillow>=9.0.0",
     "numpy>=1.21.0",
     "scikit-image>=0.19.0",
-    # Direct imports in png2svg_gs (io.py, features.py, converter.py); do not
+    # Direct imports in png2svg_gs (features.py and mixed_primitives.py); do not
     # rely on it arriving transitively via scikit-image.
     "scipy>=1.10",
     "psutil>=5.9.0",
@@ -81,6 +81,14 @@ where = ["src"]
 
 [tool.setuptools.package-dir]
 "" = "src"
+
+[tool.setuptools.package-data]
+png2svg_gs = [
+    "templates/**/*.html",
+    "templates/**/*.js",
+    "templates/**/*.svg",
+    "templates/**/*.xml",
+]
 
 [tool.black]
 line-length = 88

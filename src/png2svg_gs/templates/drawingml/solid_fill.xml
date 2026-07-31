@@ -1,0 +1,3 @@
+          <a:solidFill>
+            <a:srgbClr val="@@COLOR_HEX@@"><a:alpha val="@@ALPHA_UNITS@@"/></a:srgbClr>
+          </a:solidFill>

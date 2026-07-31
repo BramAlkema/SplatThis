@@ -20,9 +20,9 @@ per-file-ignores =
     # exceeds the default 10; refactor passes happen incrementally, not by
     # gating CI. Per-file ignores let new code stay strict while the legacy
     # heavy methods don't block the build.
-    converter.py:C901
-    io.py:C901
+    browser_export.py:C901
     mlx_stage.py:C901
+    svg_export.py:C901
     # Experimental portfolios and benchmark orchestration intentionally keep
     # their decision trees together until an MVP is promoted into the core.
     distillation.py:C901

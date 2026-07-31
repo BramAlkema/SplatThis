@@ -97,6 +97,12 @@ def get_profile_defaults(profile: str) -> Dict[str, Any]:
                 # Fast MLX runs are an explicit color/alpha post-fit. Geometry
                 # remains frozen, so this profile must never be presented as a
                 # full reconstruction search.
+                # A 21-image, 512-splat full-frame sweep made 32-tile MLX
+                # batches 42% faster in the optimizer median than 8-tile
+                # batches. Keep this throughput choice scoped to `fast`:
+                # floating-point grouping moved per-image SSIM both ways, so
+                # balanced/max-fidelity retain the conservative default.
+                "renderer_batch_tile_count": 32,
                 "mlx_tile_plan": "static",
                 "mlx_tile_plan_rebuild_interval": 10,
                 "mlx_trainable_groups": "color,alpha",

@@ -120,7 +120,7 @@ class FidelityEvaluator:
             self._fixed_rois = analysis.fixed_rois
 
         # Cheap fast-reject before paying emit + rasterize + LPIPS.
-        from ..io import _image_ssim
+        from ..quality import _image_ssim
         from .metrics import _np_linear_to_srgb
 
         proxy_ssim = float(

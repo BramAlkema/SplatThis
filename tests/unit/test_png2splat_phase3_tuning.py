@@ -53,6 +53,7 @@ def test_quality_profiles_provide_distinct_tuning_defaults():
     assert balanced.svg_compositor_gate is False
     assert max_fid.stages == [1000, 500, 250]
     assert fast.mlx_tile_plan == "static"
+    assert fast.refinement_config["renderer_batch_tile_count"] == 32
     assert fast.mlx_trainable_groups == ("color", "alpha")
     assert balanced.mlx_tile_plan == "periodic"
     assert balanced.mlx_trainable_groups == (
@@ -136,7 +137,8 @@ def test_converter_manifest_includes_roundtrip_validation_when_enabled(tmp_path:
         "high",
     }
     assert manifest["svg_compositor_gate"]["enabled"] is True
-    assert (tmp_path / "output_splat_proxy.png").exists()
+    assert not (tmp_path / "output_splat_proxy.png").exists()
+    assert manifest["artifacts"]["splat_proxy"]["path"] is None
     assert manifest["artifacts"]["splat_proxy"]["render_kind"] == (
         "internal-splat-proxy"
     )

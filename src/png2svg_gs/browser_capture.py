@@ -27,7 +27,8 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 
-from .io import atomic_output_path, srgb_to_linear
+from .color import srgb_to_linear
+from .storage import atomic_output_path
 
 DEFAULT_CHROME_EXECUTABLE = Path(
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"

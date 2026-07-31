@@ -188,8 +188,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--backend",
         default="auto",
-        choices=["auto", "torch", "torch-batched", "gsplat"],
-        help="Renderer backend. 'torch-batched' batches tiles for MPS/GPU experiments.",
+        choices=["auto", "torch", "torch-batched"],
+        help="Renderer backend. 'auto' uses the portable Torch reference; "
+        "'torch-batched' batches tiles for MPS/GPU experiments.",
     )
     parser.add_argument(
         "--optimizer-backend",
@@ -370,10 +371,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Native PPTX splat primitive style. 'gradient' (default) uses "
         "DrawingML radial gradients with per-stop alpha falloff -- each splat's "
         "color stays radially confined and there is no inter-splat color "
-        "spreading. 'soft-edge' fills each splat's bounding ellipse with a "
-        "uniform color plus an outer feather; in PowerPoint that spreads pink "
-        "splats placed near (e.g.) the chameleon's eye across the surrounding "
-        "teal body. Use --pptx-proxy-postfit-iters 40-120 for an additional "
+        "spreading. 'soft-edge' fills each splat's bounding ellipse uniformly "
+        "and feathers only its outer ring, which can spread local colors into "
+        "neighbouring regions. Use --pptx-proxy-postfit-iters 40-120 for an additional "
         "post-fit color/alpha refinement against the gradient compositor.",
     )
     parser.add_argument(
@@ -421,7 +421,7 @@ def build_parser() -> argparse.ArgumentParser:
         "'scripted-matrix' stores compact splat rows and expands "
         "browser-compatible gradients at load time (JS required). "
         "'palette-quantized' k-means-clusters splat colors into a small "
-        "palette (default 128 colors), defines one shared <radialGradient> "
+        "palette (default 128 colors), defines one shared radial gradient "
         "per palette color, and references it per-splat with per-element "
         "opacity for the alpha scale. ~3-4x smaller than 'standard' at "
         "high splat counts and renders in any SVG-capable surface "

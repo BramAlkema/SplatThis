@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import re
+import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,7 +12,9 @@ import numpy as np
 from scipy import ndimage
 from skimage import measure
 
-from .io import linear_to_srgb, pptx_emu_scale, px_to_emu
+from .color import linear_to_srgb
+from .export_common import pptx_emu_scale, px_to_emu
+from .template_assets import load_template, render_template
 
 
 @dataclass(frozen=True)
@@ -258,24 +260,34 @@ def edge_strokes_to_svg_group(
 ) -> str:
     """Emit editable native SVG line elements; no raster fallback."""
 
-    lines = [
-        f'  <g id="{group_id}" class="mixed-primitives edge-strokes" ' 'fill="none">'
-    ]
+    children: list[str] = []
     for index, stroke in enumerate(strokes):
         rgb = tuple(
             int(np.clip(np.round(channel * 255.0), 0, 255))
             for channel in stroke.color_srgb
         )
-        lines.append(
-            f'    <line id="edge-stroke-{index}" '
-            f'x1="{stroke.x1:.3f}" y1="{stroke.y1:.3f}" '
-            f'x2="{stroke.x2:.3f}" y2="{stroke.y2:.3f}" '
-            f'stroke="rgb({rgb[0]},{rgb[1]},{rgb[2]})" '
-            f'stroke-opacity="{stroke.opacity:.4f}" '
-            f'stroke-width="{stroke.width:.3f}" stroke-linecap="round"/>'
+        children.append(
+            render_template(
+                "svg/edge_line.svg",
+                index=index,
+                x1=f"{stroke.x1:.3f}",
+                y1=f"{stroke.y1:.3f}",
+                x2=f"{stroke.x2:.3f}",
+                y2=f"{stroke.y2:.3f}",
+                stroke=f"rgb({rgb[0]},{rgb[1]},{rgb[2]})",
+                opacity=f"{stroke.opacity:.4f}",
+                width=f"{stroke.width:.3f}",
+            ).rstrip("\n")
         )
-    lines.append("  </g>")
-    return "\n".join(lines)
+    child_block = "\n".join(children)
+    if child_block:
+        child_block += "\n"
+    return render_template(
+        "svg/edge_group.svg",
+        group_id=group_id,
+        group_class="edge-strokes",
+        children=child_block,
+    ).rstrip("\n")
 
 
 def edge_paths_to_svg_group(
@@ -283,7 +295,7 @@ def edge_paths_to_svg_group(
     *,
     group_id: str = "residual-edge-paths",
 ) -> str:
-    lines = [f'  <g id="{group_id}" class="mixed-primitives edge-paths" fill="none">']
+    children: list[str] = []
     for index, path in enumerate(paths):
         if len(path.points) < 2:
             continue
@@ -293,15 +305,25 @@ def edge_paths_to_svg_group(
         )
         commands = [f"M {path.points[0][0]:.3f} {path.points[0][1]:.3f}"]
         commands.extend(f"L {x:.3f} {y:.3f}" for x, y in path.points[1:])
-        lines.append(
-            f'    <path id="edge-path-{index}" d="{" ".join(commands)}" '
-            f'stroke="rgb({rgb[0]},{rgb[1]},{rgb[2]})" '
-            f'stroke-opacity="{path.opacity:.4f}" '
-            f'stroke-width="{path.width:.3f}" '
-            'stroke-linecap="round" stroke-linejoin="round"/>'
+        children.append(
+            render_template(
+                "svg/edge_path.svg",
+                index=index,
+                commands=" ".join(commands),
+                stroke=f"rgb({rgb[0]},{rgb[1]},{rgb[2]})",
+                opacity=f"{path.opacity:.4f}",
+                width=f"{path.width:.3f}",
+            ).rstrip("\n")
         )
-    lines.append("  </g>")
-    return "\n".join(lines)
+    child_block = "\n".join(children)
+    if child_block:
+        child_block += "\n"
+    return render_template(
+        "svg/edge_group.svg",
+        group_id=group_id,
+        group_class="edge-paths",
+        children=child_block,
+    ).rstrip("\n")
 
 
 def _edge_segment_to_drawingml(
@@ -330,31 +352,17 @@ def _edge_segment_to_drawingml(
     )
     color_hex = f"{rgb[0]:02X}{rgb[1]:02X}{rgb[2]:02X}"
     alpha_units = int(np.clip(round(path.opacity * 100000.0), 0, 100000))
-    return "\n".join(
-        [
-            "      <p:sp>",
-            "        <p:nvSpPr>",
-            f'          <p:cNvPr id="{shape_id}" name="Edge Path {shape_id}"/>',
-            '          <p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>',
-            "          <p:nvPr/>",
-            "        </p:nvSpPr>",
-            "        <p:spPr>",
-            f'          <a:xfrm rot="{rotation_units}">',
-            f'            <a:off x="{x_emu}" y="{y_emu}"/>',
-            f'            <a:ext cx="{w_emu}" cy="{h_emu}"/>',
-            "          </a:xfrm>",
-            '          <a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>',
-            "          <a:solidFill>",
-            f'            <a:srgbClr val="{color_hex}"><a:alpha val="{alpha_units}"/></a:srgbClr>',
-            "          </a:solidFill>",
-            "          <a:ln><a:noFill/></a:ln>",
-            "        </p:spPr>",
-            "        <p:txBody>",
-            "          <a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr/></a:p>",
-            "        </p:txBody>",
-            "      </p:sp>",
-        ]
-    )
+    return render_template(
+        "drawingml/edge_segment.xml",
+        shape_id=shape_id,
+        rotation_units=rotation_units,
+        x_emu=x_emu,
+        y_emu=y_emu,
+        w_emu=w_emu,
+        h_emu=h_emu,
+        color_hex=color_hex,
+        alpha_units=alpha_units,
+    ).rstrip("\n")
 
 
 def inject_edge_paths_into_pptx(
@@ -375,8 +383,12 @@ def inject_edge_paths_into_pptx(
 
     with zipfile.ZipFile(source, "r") as input_zip:
         slide_xml = input_zip.read("ppt/slides/slide1.xml").decode("utf-8")
+        root = ET.fromstring(slide_xml)
         ids = [
-            int(value) for value in re.findall(r"<p:cNvPr\s+id=\"(\d+)\"", slide_xml)
+            int(value)
+            for element in root.iter()
+            if element.tag.rsplit("}", 1)[-1] == "cNvPr"
+            if (value := element.attrib.get("id")) is not None
         ]
         shape_id = max(ids, default=1) + 1
         shape_fragments = []
@@ -393,7 +405,7 @@ def inject_edge_paths_into_pptx(
                     shape_fragments.append(fragment)
                     shape_id += 1
         insertion = "\n".join(shape_fragments)
-        marker = "      </p:grpSp>"
+        marker = load_template("drawingml/close_group.xml").strip("\n")
         marker_index = slide_xml.rfind(marker)
         if marker_index < 0:
             raise ValueError("slide1.xml has no root DrawingML group close")
@@ -416,10 +428,10 @@ def inject_edge_paths_into_pptx(
 
 
 def inject_svg_before_close(svg_content: str, fragment: str) -> str:
-    marker = "</svg>"
+    marker = load_template("svg/close.svg").strip("\n")
     index = svg_content.rfind(marker)
     if index < 0:
-        raise ValueError("SVG content has no closing </svg> tag")
+        raise ValueError("SVG content has no closing root tag")
     return svg_content[:index] + fragment.rstrip() + "\n" + svg_content[index:]
 
 

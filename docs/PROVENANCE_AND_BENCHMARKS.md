@@ -34,9 +34,10 @@ All eight SHAs were re-verified against the local checkouts on 2026-07-28.
 
 The clones were removed from disk on 2026-07-28 (577 MB, never committed, no
 local modifications and no unpushed commits at deletion — every HEAD matched
-the SHAs above). Nothing in `src/` imports them: the optional gsplat path in
-`renderer.py` resolves through `_legacy_gsplat_ops()` and falls back to torch
-when the package is absent, which is the normal state on this machine.
+the SHAs above). Nothing in `src/` imports them. The former optional gsplat
+adapter depended on private legacy 2D APIs, was not a packaged dependency, and
+was removed; `auto` now resolves deterministically to the Torch reference
+renderer.
 
 To restore the exact state they were studied at:
 

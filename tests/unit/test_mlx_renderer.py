@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import torch
 
-from png2svg_gs.io import generate_canvas_html, linear_to_srgb
+from png2svg_gs.io import generate_pixel_runtime_html, linear_to_srgb
 from png2svg_gs.mlx_renderer import (
     MlxBatchedGaussianRenderer,
     is_mlx_available,
@@ -14,8 +14,8 @@ from png2svg_gs.mlx_renderer import (
 from png2svg_gs.mlx_stage import MlxRendererConfig
 from png2svg_gs.renderer import (
     create_renderer,
-    prepare_canvas_runtime_data,
-    render_canvas_runtime_numpy,
+    prepare_pixel_runtime_data,
+    render_pixel_runtime_numpy,
     render_splats_numpy,
     splats_to_tensor,
 )
@@ -32,15 +32,15 @@ def test_mlx_renderer_config_uses_benchmarked_small_tile_batch() -> None:
     assert MlxRendererConfig().batch_tile_count == 8
 
 
-def test_canvas_runtime_data_is_the_payload_serialized_into_html() -> None:
+def test_pixel_runtime_data_is_the_payload_serialized_into_html() -> None:
     splats = _sample_splats()
     background = np.asarray(BACKGROUND, dtype=np.float32)
-    rows, serialized_background, srgb_mode = prepare_canvas_runtime_data(
+    rows, serialized_background, srgb_mode = prepare_pixel_runtime_data(
         splats,
         background_linear_rgb=background,
         compositing_space="linear",
     )
-    html = generate_canvas_html(
+    html = generate_pixel_runtime_html(
         splats,
         width=WIDTH,
         height=HEIGHT,
@@ -55,8 +55,8 @@ def test_canvas_runtime_data_is_the_payload_serialized_into_html() -> None:
         assert f"{float(channel):.6f}" in html
 
 
-def test_canvas_runtime_renderer_returns_an_exact_8bit_srgb_framebuffer() -> None:
-    rendered = render_canvas_runtime_numpy(
+def test_pixel_runtime_renderer_returns_an_exact_8bit_srgb_framebuffer() -> None:
+    rendered = render_pixel_runtime_numpy(
         _sample_splats(),
         width=WIDTH,
         height=HEIGHT,
@@ -69,9 +69,9 @@ def test_canvas_runtime_renderer_returns_an_exact_8bit_srgb_framebuffer() -> Non
     assert np.allclose(display_codes, np.round(display_codes), atol=2e-4)
 
 
-def test_canvas_runtime_renderer_validates_dimensions() -> None:
+def test_pixel_runtime_renderer_validates_dimensions() -> None:
     with pytest.raises(ValueError, match="positive integers"):
-        render_canvas_runtime_numpy([], width=0, height=10)
+        render_pixel_runtime_numpy([], width=0, height=10)
 
 
 def _sample_splats() -> List[GaussianSplat]:

@@ -589,7 +589,7 @@ def run_distillation_mvp(
 def summarize_mvp_metrics(
     result: DistillationMvpResult, target_linear_rgb: np.ndarray
 ) -> Dict[str, Dict[str, float]]:
-    from .io import compute_quality_metrics
+    from .quality import compute_quality_metrics
 
     return {
         name: compute_quality_metrics(

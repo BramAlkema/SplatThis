@@ -1,12 +1,5 @@
-"""
-Differentiable renderer for Gaussian splats.
+"""Differentiable Torch renderers and the exact pixel-runtime model."""
 
-Includes:
-- `GaussianRenderer`: pure PyTorch fallback renderer.
-- `GsplatRenderer`: optional gsplat-backed renderer (legacy 2D ops).
-"""
-
-import logging
 import math
 from typing import List, Literal, Optional, Tuple, Union
 
@@ -14,9 +7,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from .color import linear_to_srgb_float32 as _np_linear_to_srgb
+from .color import srgb_to_linear_float32 as _np_srgb_to_linear
 from .splat import GaussianSplat, render_importance_for_raw, render_order_key
-
-logger = logging.getLogger(__name__)
 
 
 def _splats_to_numpy_table(splats: List[GaussianSplat]) -> np.ndarray:
@@ -43,56 +36,29 @@ def _splats_to_numpy_table(splats: List[GaussianSplat]) -> np.ndarray:
 
 def _normalize_backend_name(
     backend: str,
-) -> Literal["auto", "torch", "torch-batched", "gsplat"]:
+) -> Literal["auto", "torch", "torch-batched"]:
     normalized = str(backend).strip().lower()
     normalized = normalized.replace("_", "-")
-    if normalized not in {"auto", "torch", "torch-batched", "gsplat"}:
+    if normalized not in {"auto", "torch", "torch-batched"}:
         raise ValueError(f"Unsupported renderer backend: {backend}")
     return normalized  # type: ignore[return-value]
 
 
-def _legacy_gsplat_ops():
-    """
-    Resolve legacy 2D gsplat ops used by GaussianImage/image-gs style pipelines.
-
-    Returns:
-        `(project_gaussians_2d_scale_rot, rasterize_gaussians_sum)` or `(None, None)`.
-    """
-    try:
-        from gsplat.project_gaussians_2d_scale_rot import (  # type: ignore
-            project_gaussians_2d_scale_rot,
-        )
-        from gsplat.rasterize_sum import rasterize_gaussians_sum  # type: ignore
-
-        return project_gaussians_2d_scale_rot, rasterize_gaussians_sum
-    except Exception:
-        return None, None
-
-
-def can_use_gsplat(device: torch.device) -> bool:
-    """Return whether gsplat backend is usable in this runtime."""
-    project_fn, rasterize_fn = _legacy_gsplat_ops()
-    if project_fn is None or rasterize_fn is None:
-        return False
-    return device.type == "cuda" and torch.cuda.is_available()
-
-
 def resolve_renderer_backend(
     backend: str, device: torch.device
-) -> Literal["torch", "torch-batched", "gsplat"]:
+) -> Literal["torch", "torch-batched"]:
     """
     Resolve backend mode against runtime constraints.
 
-    `auto` picks `gsplat` when available on CUDA, otherwise falls back to `torch`.
+    ``auto`` deliberately resolves to the portable Torch reference renderer.
+    The retired gsplat adapter depended on private legacy 2D APIs, was not a
+    packaged dependency, and could make an environment silently change render
+    semantics merely because an unrelated gsplat build happened to be installed.
     """
+    del device  # Reserved for future packaged backends with device constraints.
     normalized = _normalize_backend_name(backend)
     if normalized == "auto":
-        return "gsplat" if can_use_gsplat(device) else "torch"
-    if normalized == "gsplat" and not can_use_gsplat(device):
-        raise RuntimeError(
-            "Requested backend 'gsplat' is unavailable. "
-            "Install a gsplat build exposing legacy 2D ops and use CUDA."
-        )
+        return "torch"
     return normalized  # type: ignore[return-value]
 
 
@@ -115,14 +81,7 @@ def create_renderer(
 ) -> nn.Module:
     """Factory for renderer backends."""
     resolved = resolve_renderer_backend(backend, device)
-    if resolved == "gsplat":
-        renderer = GsplatRenderer(
-            width=width,
-            height=height,
-            tile_size=tile_size,
-            background_color=background_color,
-        )
-    elif resolved == "torch-batched":
+    if resolved == "torch-batched":
         renderer = TorchBatchedGaussianRenderer(
             width=width,
             height=height,
@@ -1004,102 +963,6 @@ class TorchBatchedGaussianRenderer(GaussianRenderer):
         return torch.exp(-0.5 * quadratic)
 
 
-class GsplatRenderer(nn.Module):
-    """
-    Optional gsplat-backed 2D renderer.
-
-    This adapter targets legacy 2D ops commonly used by GaussianImage/image-gs:
-    `project_gaussians_2d_scale_rot` + `rasterize_gaussians_sum`.
-    """
-
-    def __init__(
-        self,
-        width: int,
-        height: int,
-        tile_size: int = 16,
-        background_color: Optional[
-            Union[torch.Tensor, np.ndarray, List[float], Tuple[float, float, float]]
-        ] = None,
-    ):
-        super().__init__()
-        self.width = int(width)
-        self.height = int(height)
-        self.tile_size = int(tile_size)
-        self.project_gaussians_2d_scale_rot, self.rasterize_gaussians_sum = (
-            _legacy_gsplat_ops()
-        )
-        if (
-            self.project_gaussians_2d_scale_rot is None
-            or self.rasterize_gaussians_sum is None
-        ):
-            raise RuntimeError(
-                "gsplat backend requested, but legacy 2D ops are unavailable "
-                "(project_gaussians_2d_scale_rot / rasterize_gaussians_sum)."
-            )
-        if background_color is None:
-            background = torch.zeros(3, dtype=torch.float32)
-        else:
-            background = torch.as_tensor(
-                background_color, dtype=torch.float32
-            ).flatten()
-            if background.numel() != 3:
-                raise ValueError("background_color must have exactly 3 values")
-            background = torch.clamp(background, 0.0, 1.0)
-        self.register_buffer("background", background)
-
-    def forward(self, splats_tensor: torch.Tensor) -> torch.Tensor:
-        if len(splats_tensor) == 0:
-            return (
-                self.background.view(1, 1, 3)
-                .expand(self.height, self.width, 3)
-                .to(splats_tensor.device)
-            )
-
-        if splats_tensor.device.type != "cuda":
-            raise RuntimeError("GsplatRenderer requires CUDA tensors.")
-
-        mu = splats_tensor[:, :2]
-        scales = torch.clamp(splats_tensor[:, 2:4], min=1e-4)
-        rotation = torch.remainder(splats_tensor[:, 4:5], 2.0 * torch.pi)
-        colors = splats_tensor[:, 6:9]
-        opacities = splats_tensor[:, 9:10]
-
-        means = self._pixel_to_ndc(mu)
-
-        tile_bounds = (
-            (self.width + self.tile_size - 1) // self.tile_size,
-            (self.height + self.tile_size - 1) // self.tile_size,
-            1,
-        )
-
-        xys, depths, radii, conics, num_tiles_hit = self.project_gaussians_2d_scale_rot(
-            means, scales, rotation, self.height, self.width, tile_bounds
-        )
-        out_img = self.rasterize_gaussians_sum(
-            xys,
-            depths,
-            radii,
-            conics,
-            num_tiles_hit,
-            colors,
-            opacities,
-            self.height,
-            self.width,
-            self.tile_size,
-            self.tile_size,
-            background=self.background.to(splats_tensor.device),
-            return_alpha=False,
-        )
-        return torch.clamp(out_img, 0.0, 1.0)
-
-    def _pixel_to_ndc(self, mu: torch.Tensor) -> torch.Tensor:
-        width_denom = max(self.width - 1, 1)
-        height_denom = max(self.height - 1, 1)
-        x_ndc = (mu[:, 0] / float(width_denom)) * 2.0 - 1.0
-        y_ndc = (mu[:, 1] / float(height_denom)) * 2.0 - 1.0
-        return torch.stack([x_ndc, y_ndc], dim=-1)
-
-
 def splats_to_tensor(
     splats: List[GaussianSplat], device: Optional[Union[torch.device, str]] = None
 ) -> torch.Tensor:
@@ -1309,24 +1172,6 @@ class L1SSIMLoss(nn.Module):
         return torch.clamp(ssim, min=-1.0, max=1.0)
 
 
-def _np_linear_to_srgb(x: np.ndarray) -> np.ndarray:
-    """Linear-RGB -> sRGB for float arrays in [0,1] (numpy mirror)."""
-    x = np.clip(x, 0.0, 1.0)
-    return np.where(
-        x <= 0.0031308,
-        12.92 * x,
-        1.055 * np.power(np.maximum(x, 1e-12), 1.0 / 2.4) - 0.055,
-    ).astype(np.float32)
-
-
-def _np_srgb_to_linear(x: np.ndarray) -> np.ndarray:
-    """sRGB -> linear-RGB for float arrays in [0,1] (numpy mirror)."""
-    x = np.clip(x, 0.0, 1.0)
-    return np.where(x <= 0.04045, x / 12.92, np.power((x + 0.055) / 1.055, 2.4)).astype(
-        np.float32
-    )
-
-
 def iter_splat_footprints(
     splats: List[GaussianSplat],
     width: int,
@@ -1449,7 +1294,7 @@ def render_splats_numpy(
     return _np_srgb_to_linear(output) if srgb_mode else output
 
 
-def prepare_canvas_runtime_data(
+def prepare_pixel_runtime_data(
     splats: List[GaussianSplat],
     background_linear_rgb: Optional[np.ndarray] = None,
     compositing_space: str = "linear",
@@ -1502,7 +1347,7 @@ def prepare_canvas_runtime_data(
     return rows, serialized_background, srgb_mode
 
 
-def render_canvas_runtime_numpy(
+def render_pixel_runtime_numpy(
     splats: List[GaussianSplat],
     width: int,
     height: int,
@@ -1519,10 +1364,10 @@ def render_canvas_runtime_numpy(
     """
 
     if int(width) <= 0 or int(height) <= 0:
-        raise ValueError("Canvas width and height must be positive integers")
+        raise ValueError("Pixel runtime width and height must be positive integers")
     width = int(width)
     height = int(height)
-    rows, background, srgb_mode = prepare_canvas_runtime_data(
+    rows, background, srgb_mode = prepare_pixel_runtime_data(
         splats,
         background_linear_rgb=background_linear_rgb,
         compositing_space=compositing_space,

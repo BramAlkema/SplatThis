@@ -306,6 +306,13 @@ format-specific analysis.
 5. Monotonic gates keep only measured improvements.
 6. The final SVG, CSS/Canvas/pixel-runtime HTML, or DrawingML package is written atomically.
 
+The public `converter.py` module is a small compatibility facade over the
+internal numerical engine and isolated prepare, fit, and deployment phases.
+Each run starts from an immutable configuration snapshot, produces one
+`SplatScene`, and delegates emission plus governing evaluation to a registered
+artifact backend. See [Architecture](docs/ARCHITECTURE.md) for the module
+boundaries and extension rules.
+
 Pixel-runtime and SVG repeat-render noise is currently zero in the calibrated
 corpus captures. Native Canvas and CSS still need their own full-corpus noise
 calibration. The versioned target floors and PowerPoint capture provenance live
@@ -361,6 +368,12 @@ pytest -q
 python -m build
 python -m twine check dist/*
 ```
+
+Corpus runs are content-addressed and resumable. Independent conversions can
+run concurrently with `python tools/corpus_benchmark.py --run --jobs 2 ...`.
+This is restricted to Torch/CPU runs: concurrent seeded MLX processes share one
+Metal device and were measurably nondeterministic. MLX therefore requires
+`--jobs 1`; result-file writes remain serialized for every backend.
 
 CI launches the installed Chrome before running the suite. See
 [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
