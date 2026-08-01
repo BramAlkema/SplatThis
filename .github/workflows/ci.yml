@@ -57,16 +57,45 @@ jobs:
         isort --check-only src/ tests/ tools/
 
     - name: Type check with mypy (informational)
-      # mypy is informational because the codebase predates strict numpy/scikit
-      # typing and has ~300 generic-arg / untyped-call findings that aren't
-      # bugs. Keep the run for trend visibility, don't block CI on it.
+      # 462 findings under `strict = true`, of which 277 are `type-arg`: bare
+      # `np.ndarray` and `Dict` that predate parameterized numpy stubs. Those
+      # are mechanical, not defects. The remainder is 48 untyped call/def and
+      # 137 assorted.
+      #
+      # This was 778 until the engine's seven mixins were given a declared
+      # shared surface (`engine_state.py`); 340 of the old total were one
+      # structural gap reported once per access site, not noise.
+      #
+      # Lift `continue-on-error` once the `type-arg` sweep lands and the
+      # remainder is triaged — not before, because a gate nobody can pass is a
+      # gate everybody learns to ignore.
       continue-on-error: true
       run: |
         mypy src/
 
     - name: Test with pytest
+      # The coverage floor is platform-dependent by construction, not by
+      # accident: MLX installs only on Apple Silicon, so the five mlx_* modules
+      # (~705 statements, 9.3% of the package) are unreachable on Linux and
+      # Windows and their tests skip there.
+      #
+      # Measured on this matrix: 87.44% macOS, 79.64% ubuntu, 79.66% windows.
+      # One global floor would be either vacuous on macOS or unmeetable
+      # everywhere else, so the condition below mirrors exactly when MLX is
+      # installed above.
+      #
+      # --cov-fail-under lives here rather than in pyproject addopts so that
+      # running a single test file locally with coverage does not fail against
+      # the project-wide total.
+      shell: bash
       run: |
-        pytest tests/ --cov=src/splatthis --cov-report=xml
+        if [ "${{ runner.os }}" = "macOS" ] && [ "${{ runner.arch }}" = "ARM64" ]; then
+          FLOOR=87
+        else
+          FLOOR=79
+        fi
+        echo "coverage floor for ${{ runner.os }}/${{ runner.arch }}: $FLOOR%"
+        pytest tests/ --cov=src/splatthis --cov-report=xml --cov-fail-under=$FLOOR
 
     - name: Upload coverage to Codecov
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'

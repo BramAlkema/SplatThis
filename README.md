@@ -25,11 +25,11 @@ deployed-fidelity claim.
 
 | Source | Pixel runtime in Chrome | Live SVG |
 |---|---|---|
-| ![source image](docs/demo/source.png) | ![Canvas render](docs/demo/canvas_render.png) | ![Browser-rendered SVG](docs/demo/chameleon.svg) |
+| ![source image](https://bramalkema.github.io/SplatThis/demo/source.png) | ![Canvas render](https://bramalkema.github.io/SplatThis/demo/canvas_render.png) | ![Browser-rendered SVG](https://bramalkema.github.io/SplatThis/demo/chameleon.svg) |
 
-Open the example [SVG](docs/demo/chameleon.svg) or the historical self-contained
-[pixel-runtime HTML](docs/demo/canvas.html). A larger corpus overview is available in
-[docs/index.html](docs/index.html).
+Open the example [SVG](https://bramalkema.github.io/SplatThis/demo/chameleon.svg) or the historical self-contained
+[pixel-runtime HTML](https://bramalkema.github.io/SplatThis/demo/canvas.html). A larger corpus overview is available in
+[docs/index.html](https://bramalkema.github.io/SplatThis/).
 
 ## Install
 
@@ -163,7 +163,7 @@ front-to-back transmittance renderer. The max-fidelity profile additionally
 browser-grades legacy order, corrected standard gradients, and corrected high
 gradients, then accepts or reverts the complete artifact. Its decision and
 fixed ROIs are stored under `svg_compositor_gate` in the manifest. See the
-[SVG compositor gate](docs/svg-compositor-gate.md).
+[SVG compositor gate](https://github.com/BramAlkema/SplatThis/blob/main/docs/svg-compositor-gate.md).
 
 The separate fidelity stage emits every splat-parameter candidate and captures it in Chromium. A proxy
 may reject a cheap loser early, but only the browser artifact can promote a
@@ -173,7 +173,7 @@ candidate. `--svg-optimize` can additionally run `svgo` when it is available on
 The bounded browser recipe study accepted palette quantization on 7 of 21
 corpus images, with 66–71% smaller accepted files and a median accepted LPIPS
 gain of 0.01014. This does not make it a universal default; see the
-[browser SVG recipe gate](docs/svg-recipe-gate-mvp.md).
+[browser SVG recipe gate](https://github.com/BramAlkema/SplatThis/blob/main/docs/svg-recipe-gate-mvp.md).
 
 ## Scriptless CSS compositor
 
@@ -230,7 +230,7 @@ order for 14 images and retained legacy for seven. The CLI therefore exposes
 both orders while retaining legacy as the default. The resumable external
 PowerPoint runner writes the accepted candidate atomically as `selected.pptx`;
 ordinary headless conversion never launches PowerPoint. See the
-[PowerPoint painter-order MVP](docs/pptx-order-compositor-mvp.md).
+[PowerPoint painter-order MVP](https://github.com/BramAlkema/SplatThis/blob/main/docs/pptx-order-compositor-mvp.md).
 
 ## Layered Canvas parallax
 
@@ -292,9 +292,9 @@ SplatThis is also not a replacement for PNG, JPEG, WebP, or AVIF compression.
 If editability, animation, or the splat representation is unnecessary, a
 normal bitmap will usually be smaller and more faithful.
 
-See [historical pixel-runtime scaling](docs/canvas-scaling-mvp.md) for paired
+See [historical pixel-runtime scaling](https://github.com/BramAlkema/SplatThis/blob/main/docs/canvas-scaling-mvp.md) for paired
 per-image results and
-[SVG/PPTX compositor findings](docs/SVG_PPTX_GAUSSIAN_TRICKS.md) for the
+[SVG/PPTX compositor findings](https://github.com/BramAlkema/SplatThis/blob/main/docs/SVG_PPTX_GAUSSIAN_TRICKS.md) for the
 format-specific analysis.
 
 ## How it works
@@ -310,13 +310,13 @@ The public `converter.py` module is a small compatibility facade over the
 internal numerical engine and isolated prepare, fit, and deployment phases.
 Each run starts from an immutable configuration snapshot, produces one
 `SplatScene`, and delegates emission plus governing evaluation to a registered
-artifact backend. See [Architecture](docs/ARCHITECTURE.md) for the module
+artifact backend. See [Architecture](https://github.com/BramAlkema/SplatThis/blob/main/docs/ARCHITECTURE.md) for the module
 boundaries and extension rules.
 
 Pixel-runtime and SVG repeat-render noise is currently zero in the calibrated
 corpus captures. Native Canvas and CSS still need their own full-corpus noise
 calibration. The versioned target floors and PowerPoint capture provenance live
-in [`data/artifact-gates.json`](data/artifact-gates.json).
+in [`data/artifact-gates.json`](https://github.com/BramAlkema/SplatThis/blob/main/data/artifact-gates.json).
 
 ## Main flags
 
@@ -355,8 +355,8 @@ and does not guarantee per backend.
 Top-K teacher/student distillation, mixed native primitives, automatic SVG
 recipe selection, adaptive compute, and PowerPoint hover parallax remain
 default-off or experimental. Their current evidence is retained under
-[`docs/`](docs/) rather than presented as release guarantees. The architecture
-and acceptance roadmap are in [ADR-003](docs/adr-003-fidelity-roadmap.md).
+[`docs/`](https://github.com/BramAlkema/SplatThis/tree/main/docs) rather than presented as release guarantees. The architecture
+and acceptance roadmap are in [ADR-003](https://github.com/BramAlkema/SplatThis/blob/main/docs/adr-003-fidelity-roadmap.md).
 
 ## Development
 
@@ -401,8 +401,8 @@ Metal device and compound the nondeterminism described above. MLX therefore
 requires `--jobs 1`; result-file writes remain serialized for every backend.
 
 CI launches the installed Chrome before running the suite. See
-[CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
+[CONTRIBUTING.md](https://github.com/BramAlkema/SplatThis/blob/main/CONTRIBUTING.md) and [CHANGELOG.md](https://github.com/BramAlkema/SplatThis/blob/main/CHANGELOG.md).
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/BramAlkema/SplatThis/blob/main/LICENSE)
