@@ -1,5 +1,6 @@
 """Release metadata must stay synchronized with the importable package."""
 
+import re
 import tomllib
 from pathlib import Path
 
@@ -27,6 +28,28 @@ def test_release_documents_exist() -> None:
         path = REPO / filename
         assert path.is_file()
         assert path.stat().st_size > 0
+
+
+def test_readme_has_no_relative_links() -> None:
+    """The README is the PyPI project description, and PyPI does not rewrite.
+
+    GitHub resolves a relative link against the repository, so ``docs/index.html``
+    works there and reads as correct. PyPI serves the same markdown at
+    ``pypi.org/project/splatthis/``, resolves the link against *that* URL, and
+    every image and document reference silently points at nothing.
+
+    The failure is only visible after publishing, and a release description is
+    immutable, so a broken link cannot be corrected without shipping a new
+    version. Links must be absolute.
+    """
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+
+    relative = [
+        target
+        for target in re.findall(r"\]\(([^)]+)\)", readme)
+        if not target.startswith(("http://", "https://", "#", "mailto:"))
+    ]
+    assert relative == [], f"README links must be absolute for PyPI: {relative}"
 
 
 def test_every_packaged_file_is_tracked_by_git() -> None:
