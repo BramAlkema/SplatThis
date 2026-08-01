@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
+from .engine_state import ConversionEngineState
 from .export_common import (
     PPTX_GRADIENT_ALPHA_SCALE,
     PPTX_SOFT_EDGE_ALPHA_SCALE,
@@ -31,7 +32,7 @@ from .splat import LAYER_BASE, GaussianSplat, create_isotropic_splat
 logger = logging.getLogger(__name__)
 
 
-class ConversionPostfitMixin:
+class ConversionPostfitMixin(ConversionEngineState):
     """Refines and prunes a fitted splat population for deployment."""
 
     def _build_postfit_renderer(self, width: int, height: int):

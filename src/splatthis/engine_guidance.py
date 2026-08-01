@@ -9,12 +9,13 @@ import numpy as np
 import torch
 from PIL import Image
 
+from .engine_state import ConversionEngineState
 from .profiles import get_profile_defaults
 from .renderer import torch_linear_rgb_to_oklab
 from .splat import GaussianSplat
 
 
-class ConversionGuidanceMixin:
+class ConversionGuidanceMixin(ConversionEngineState):
     """Builds spatial priorities and low-level coverage diagnostics."""
 
     def _normalize_map(self, values: np.ndarray) -> np.ndarray:

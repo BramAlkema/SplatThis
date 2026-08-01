@@ -198,3 +198,45 @@ def test_template_renderer_rejects_missing_values() -> None:
             width=10,
             background="",
         )
+
+
+def test_every_engine_mixin_declares_its_shared_surface() -> None:
+    """No mixin may reintroduce undeclared shared state.
+
+    ``ConversionEngine`` composes seven mixins that read each other's
+    attributes and call each other's methods. ``ConversionEngineState`` is the
+    single place that surface is declared; a mixin that skips it makes its own
+    reads unverifiable again.
+    """
+    from splatthis import conversion_engine
+    from splatthis.engine_state import ConversionEngineState
+
+    mixins = [
+        base
+        for base in conversion_engine.ConversionEngine.__mro__
+        if base.__name__.endswith("Mixin")
+    ]
+
+    assert len(mixins) == 7
+    for mixin in mixins:
+        assert issubclass(mixin, ConversionEngineState), mixin.__name__
+
+
+def test_engine_state_declares_only() -> None:
+    """The shared surface stays a declaration, never an implementation.
+
+    Anything with a runtime value here would shadow a real mixin method for
+    every class that does not override it, and would silently move state
+    ownership out of ``engine_configuration``.
+    """
+    from splatthis.conversion_engine import ConversionEngine
+    from splatthis.engine_state import ConversionEngineState
+
+    runtime_members = [
+        name for name in vars(ConversionEngineState) if not name.startswith("__")
+    ]
+    assert runtime_members == []
+    assert len(ConversionEngineState.__annotations__) >= 30
+
+    # Last in the MRO, so every real implementation resolves first.
+    assert ConversionEngine.__mro__[-2] is ConversionEngineState

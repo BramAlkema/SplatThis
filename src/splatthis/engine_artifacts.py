@@ -11,6 +11,7 @@ import numpy as np
 from PIL import Image
 
 from .color import srgb_to_linear
+from .engine_state import ConversionEngineState
 from .export_common import (
     SVG_BROWSER_COMPAT_RECIPE,
     SVG_SCRIPTED_MATRIX_RECIPE,
@@ -23,7 +24,7 @@ from .storage import atomic_write_text, save_splats_json
 logger = logging.getLogger(__name__)
 
 
-class ConversionArtifactMixin:
+class ConversionArtifactMixin(ConversionEngineState):
     """Owns legacy artifact strategies used by the deployment pipeline."""
 
     def _generate_svg(

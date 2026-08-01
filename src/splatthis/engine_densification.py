@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
+from .engine_state import ConversionEngineState
 from .features import edge_tangent_angle, estimate_local_color
 from .renderer import splats_to_tensor
 from .splat import (
@@ -22,7 +23,7 @@ from .splat import (
 logger = logging.getLogger(__name__)
 
 
-class ConversionDensificationMixin:
+class ConversionDensificationMixin(ConversionEngineState):
     """Adds detail splats from residual and saliency evidence."""
 
     def _add_error_driven_splats(  # noqa: C901

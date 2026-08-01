@@ -17,6 +17,7 @@ from .adaptive_compute import (
     OnlineAdaptiveDecision,
     evaluate_online_checkpoints,
 )
+from .engine_state import ConversionEngineState
 from .export_common import PPTX_SOFT_EDGE_ALPHA_SCALE, PPTX_SOFT_EDGE_K_SIGMA_SCALE
 from .mlx_losses import MlxLossConfig
 from .mlx_stage import MlxRendererConfig, MlxStageConfig, optimize_stage_mlx
@@ -28,7 +29,7 @@ from .splat import GaussianSplat
 logger = logging.getLogger(__name__)
 
 
-class ConversionOptimizationMixin:
+class ConversionOptimizationMixin(ConversionEngineState):
     """Fits splat parameters with Torch or MLX and grades checkpoints."""
 
     def _optimize_splats(  # noqa: C901

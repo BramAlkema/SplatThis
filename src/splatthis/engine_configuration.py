@@ -12,6 +12,7 @@ import torch
 
 from .adaptive_compute import resolve_online_adaptive_config
 from .budgets import TIME_BUDGET_ALIASES, TIME_BUDGET_PRESETS
+from .engine_state import ConversionEngineState
 from .export_common import (
     DEFAULT_PPTX_SPLAT_STYLE,
     PPTX_PAINTER_ORDER_LEGACY,
@@ -33,7 +34,7 @@ from .splat import LAYER_DETAIL, LAYER_EDGE, SPLAT_LAYER_NAMES, GaussianSplat
 logger = logging.getLogger(__name__)
 
 
-class ConversionConfigurationMixin:
+class ConversionConfigurationMixin(ConversionEngineState):
     """Normalizes settings and constructs target-aware training primitives."""
 
     def __init__(

@@ -23,6 +23,11 @@ per-file-ignores =
     browser_export.py:C901
     mlx_stage.py:C901
     svg_export.py:C901
+    # engine_state.py is declarations only: one `if TYPE_CHECKING:` block
+    # holding the cross-mixin method signatures. McCabe counts each `def` in it
+    # as a branch and reports complexity 34, which measures nothing here --
+    # there is no runtime code in the file at all.
+    engine_state.py:C901
     # Experimental portfolios and benchmark orchestration intentionally keep
     # their decision trees together until an MVP is promoted into the core.
     distillation.py:C901

@@ -7,6 +7,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
+from .engine_state import ConversionEngineState
 from .features import (
     analyze_local_structure,
     compute_gradient_magnitude,
@@ -27,7 +28,7 @@ from .splat import (
 logger = logging.getLogger(__name__)
 
 
-class ConversionInitializationMixin:
+class ConversionInitializationMixin(ConversionEngineState):
     """Constructs the initial stratified, edge-aware splat population."""
 
     def _initialize_splats(  # noqa: C901
