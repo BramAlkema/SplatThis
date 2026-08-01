@@ -101,8 +101,8 @@ examples/output/
 /tmp_profile*
 
 # Root-level scratch policy: experiment outputs and one-off scripts at the
-# repo root are never tracked. The canonical CLI lives in src/png2svg_gs/cli.py
-# (and the `png2svg` launcher, whitelisted below); durable scripts belong in
+# repo root are never tracked. The canonical CLI lives in src/splatthis/cli.py
+# and is installed as the `splatthis` entry point; durable scripts belong in
 # scripts/ or tools/, durable outputs in docs/.
 /*.py
 /*.html
@@ -111,7 +111,6 @@ examples/output/
 /*.js
 
 # Whitelisted root files
-!/png2svg
 !/pyproject.toml
 
 # Note: /*.svg is already covered by the global *.svg rule above.
