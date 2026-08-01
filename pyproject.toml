@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "splatthis"
-version = "0.2.2"
+version = "0.2.3"
 description = "Fit 2D Gaussian splats to an image and deploy them as SVG, CSS, Canvas, a pixel runtime, or editable PowerPoint shapes"
 readme = "README.md"
 license = "MIT"

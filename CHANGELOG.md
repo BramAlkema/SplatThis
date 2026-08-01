@@ -2,6 +2,35 @@
 
 All notable changes to SplatThis are documented here.
 
+## 0.2.3 - 2026-08-01
+
+### Changed
+
+- The README showcase renders all four outputs at one size and adds scriptless
+  CSS as a fourth column. The previous table sized each image by its own
+  intrinsic pixels -- 476x502, 364x384 and 728x768 -- so a three-way comparison
+  appeared at three different scales.
+
+  Sized with explicit `width` attributes rather than by resampling the files:
+  PyPI's `readme_renderer` allowlist keeps `width` and `height` on `<img>`, and
+  GitHub does too, so every asset stays at native resolution and stays crisp on
+  high-DPI displays.
+
+  CSS appears as a Chromium capture rather than live. Both platforms sanitize
+  README markup through an allowlist that omits the `<style>` tag and the
+  `style` attribute -- `readme_renderer` runs `nh3.clean()` with no CSS
+  sanitizer configured -- so a build made entirely of CSS radial gradients
+  arrives as 1,615 unstyled `<div>` elements. Each cell is labelled as live
+  vector or as a capture, and captures are noted as lower bounds: they carry
+  screen-capture and rescaling losses on top of the compositor's own.
+
+### Fixed
+
+- The relative-link guard now covers `src="..."` as well as markdown `](...)`.
+  The showcase moved to raw `<img>` tags for sizing, which had made the
+  markdown-only check blind to every image on the page -- the same class of
+  defect that put 18 dead links on the 0.2.0 project page.
+
 ## 0.2.2 - 2026-08-01
 
 ### Changed
