@@ -69,6 +69,19 @@ All notable changes to SplatThis are documented here.
 
 ### Changed
 
+- Documented what a fixed `--seed` actually guarantees per optimizer backend.
+  Torch reproduces the emitted artifact byte for byte; MLX does not. Metal
+  orders float32 reductions nondeterministically, so repeated single-process
+  seeded MLX runs differ by roughly one float32 ULP (~3e-8) in splat
+  parameters, which is enough to tip a rounded SVG attribute across a
+  formatting boundary. Reported metrics still agree to nine significant
+  figures, so the quoted four-decimal corpus medians are unaffected. The
+  previous note attributed MLX nondeterminism solely to concurrent processes
+  sharing one Metal device; it also occurs in a single process. "Reproducible
+  manifests" in the project status is now "provenance-complete manifests".
+- Corrected package metadata that would have been immutable after the first
+  release: the author contact was a placeholder for a nonexistent domain, and
+  the summary and keywords claimed SVG-only conversion.
 - Collapsed four project names onto one. The distribution is now `splatthis`
   (was `splat-this`), the import path is `splatthis` (was `png2svg_gs`), and the
   console entry point is `splatthis` (was `splatlify`). The repository, the

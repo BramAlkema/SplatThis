@@ -348,7 +348,9 @@ Run `splatthis --help` for the full research and backend surface.
 The supported path includes target-aware training, native Canvas/CSS/SVG,
 explicit pixel-runtime and PPTX export, browser pixel-runtime/Canvas/SVG/CSS
 grading, native
-PowerPoint generation, reproducible manifests, and full-corpus reporting.
+PowerPoint generation, provenance-complete manifests, and full-corpus
+reporting. See [Reproducibility](#reproducibility) for what a fixed seed does
+and does not guarantee per backend.
 
 Top-K teacher/student distillation, mixed native primitives, automatic SVG
 recipe selection, adaptive compute, and PowerPoint hover parallax remain
@@ -369,11 +371,34 @@ python -m build
 python -m twine check dist/*
 ```
 
+### Reproducibility
+
+A fixed `--seed` reproduces the reported metrics on both backends, but only
+Torch reproduces the emitted artifact byte for byte.
+
+| `--optimizer-backend` | Reported metrics | Emitted artifact |
+|---|---|---|
+| `torch` | identical | byte-identical |
+| `mlx` (default) | identical to nine significant figures | not byte-identical |
+
+MLX orders float32 reductions on the Metal device nondeterministically, so
+repeated single-process seeded runs differ by roughly one float32 ULP (~3e-8)
+in splat parameters. That is far below any quality threshold — two seeded runs
+of the same image agreed on SSIM to nine significant figures — but it is
+enough to tip a rounded SVG attribute across a formatting boundary, so
+artifact hashes are not stable under MLX. The differences observed so far have
+been geometrically inert, such as the `rotate()` angle of an isotropic splat,
+where rotation is a no-op. Select `--optimizer-backend torch` when you need
+bit-identical output or a stable artifact hash.
+
+The corpus medians quoted above are unaffected: they are reported to four
+decimal places, five orders of magnitude above this noise.
+
 Corpus runs are content-addressed and resumable. Independent conversions can
 run concurrently with `python tools/corpus_benchmark.py --run --jobs 2 ...`.
 This is restricted to Torch/CPU runs: concurrent seeded MLX processes share one
-Metal device and were measurably nondeterministic. MLX therefore requires
-`--jobs 1`; result-file writes remain serialized for every backend.
+Metal device and compound the nondeterminism described above. MLX therefore
+requires `--jobs 1`; result-file writes remain serialized for every backend.
 
 CI launches the installed Chrome before running the suite. See
 [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).

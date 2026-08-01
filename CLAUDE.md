@@ -54,6 +54,14 @@ MLX is the default optimizer backend (falls back to torch with a warning when
 mlx is missing). Torch is the cross-platform reference; keep the two in parity —
 `tests/unit/test_mlx_losses.py` and `test_mlx_renderer.py` pin it.
 
+**A fixed `--seed` does not give byte-identical output under MLX.** Metal
+orders float32 reductions nondeterministically, so repeated single-process
+seeded runs differ by ~1 float32 ULP (3e-8) in splat params — enough to tip a
+rounded SVG attribute across a formatting boundary. Metrics still agree to
+nine significant figures. Never diff artifacts or compare hashes to detect a
+regression under MLX; use `--optimizer-backend torch` (byte-identical) or
+compare metrics with a tolerance.
+
 ## Fidelity Protocol (non-negotiable)
 - Judge native Canvas, browser SVG, and CSS quality on the native-size
   **Playwright Chromium capture** — never on librsvg, CairoSVG, or the internal
