@@ -74,13 +74,28 @@ jobs:
         mypy src/
 
     - name: Test with pytest
+      # The coverage floor is platform-dependent by construction, not by
+      # accident: MLX installs only on Apple Silicon, so the five mlx_* modules
+      # (~705 statements, 9.3% of the package) are unreachable on Linux and
+      # Windows and their tests skip there.
+      #
+      # Measured on this matrix: 87.44% macOS, 79.64% ubuntu, 79.66% windows.
+      # One global floor would be either vacuous on macOS or unmeetable
+      # everywhere else, so the condition below mirrors exactly when MLX is
+      # installed above.
+      #
       # --cov-fail-under lives here rather than in pyproject addopts so that
-      # running a single test file locally with coverage does not fail on the
-      # project-wide total. 88% at the time of writing; the floor allows one
-      # point of cross-platform variation (Chrome-launch paths in
-      # browser_capture.py cover differently per runner).
+      # running a single test file locally with coverage does not fail against
+      # the project-wide total.
+      shell: bash
       run: |
-        pytest tests/ --cov=src/splatthis --cov-report=xml --cov-fail-under=87
+        if [ "${{ runner.os }}" = "macOS" ] && [ "${{ runner.arch }}" = "ARM64" ]; then
+          FLOOR=87
+        else
+          FLOOR=79
+        fi
+        echo "coverage floor for ${{ runner.os }}/${{ runner.arch }}: $FLOOR%"
+        pytest tests/ --cov=src/splatthis --cov-report=xml --cov-fail-under=$FLOOR
 
     - name: Upload coverage to Codecov
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'

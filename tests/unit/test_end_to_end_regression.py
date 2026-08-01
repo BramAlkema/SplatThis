@@ -34,15 +34,22 @@ from splatthis.cli import main
 REPO = Path(__file__).resolve().parents[2]
 SOURCE = REPO / "docs" / "demo" / "source.png"
 
-# Observed identically across 3 repeats on macOS 26.5 arm64, Torch CPU, at the
-# exact invocation below: ssim_srgb 0.5167345048, psnr_srgb 18.387884, spread
-# 0.0. The floors sit below that with room for cross-platform float variation
-# (Linux and Windows use different BLAS kernels), while staying well above the
-# pipeline's own acceptance minimum of 0.50 — a floor equal to that one would
-# assert nothing this pipeline does not already enforce.
+# Provenance for these floors, measured at the exact invocation below on
+# Torch CPU, GitHub Actions runners, 2026-08-01:
 #
-# These guard against a *pipeline* regression, which is a large move. The
-# historical splat-orientation defect cost far more than this margin.
+#     macOS 3.13    ssim_srgb 0.5167345048   psnr_srgb 18.387884
+#     ubuntu 3.13   ssim_srgb 0.5165994102   psnr_srgb 18.388382
+#     windows 3.13  ssim_srgb 0.5165853723   psnr_srgb 18.388220
+#
+# Cross-platform spread is 1.5e-4 (different BLAS kernels); on a single
+# platform three repeats were bit-identical. The margin below is 44x that
+# spread, and the regression it is meant to catch is far larger still:
+# reverting the splat-orientation convention drops ssim_srgb to 0.460974,
+# which is 375x the spread.
+#
+# The floor also sits deliberately above the pipeline's own acceptance
+# minimum of 0.50 — a floor equal to that one would assert nothing the
+# pipeline does not already enforce for itself.
 MIN_SSIM_SRGB = 0.510
 MIN_PSNR_SRGB = 18.0
 
