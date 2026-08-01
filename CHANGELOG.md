@@ -69,6 +69,16 @@ All notable changes to SplatThis are documented here.
 
 ### Changed
 
+- Declared the conversion engine's shared mixin surface in `engine_state.py`:
+  35 state attributes and 32 cross-mixin method signatures, inherited by all
+  seven mixins. Only 4 of those attributes previously carried any annotation.
+  The declaration is inert — no runtime members, last in the MRO — so state
+  ownership and method implementations are unchanged, and a seeded Torch
+  conversion emits a byte-identical SVG before and after. Corrected the
+  dependency inversion where artifact backends and pipeline phases annotated
+  the public `PNG2SVGConverter` facade rather than the `ConversionEngine` base
+  they actually receive. Together: mypy 778 → 462 errors, `attr-defined`
+  340 → 1.
 - Documented what a fixed `--seed` actually guarantees per optimizer backend.
   Torch reproduces the emitted artifact byte for byte; MLX does not. Metal
   orders float32 reductions nondeterministically, so repeated single-process

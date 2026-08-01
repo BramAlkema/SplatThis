@@ -29,6 +29,7 @@ the remaining stateful algorithm by reason to change:
 
 | Module | Responsibility |
 |---|---|
+| `engine_state.py` | declares the state and cross-mixin methods the mixins share |
 | `engine_configuration.py` | constructor, normalization, budgets, renderers and losses |
 | `engine_initialization.py` | content-adaptive seeds and initial splat population |
 | `engine_optimization.py` | Torch/MLX fitting and checkpoint evaluation |
@@ -41,6 +42,14 @@ These modules are internal implementation boundaries, not additional public
 APIs. Cross-responsibility calls use the composed engine instance; deployment
 continues to cross the explicit `ConversionPipeline` and artifact-backend
 boundaries.
+
+Because those calls resolve through the composed instance, no mixin can see a
+sibling's attributes or methods on its own. `engine_state.py` declares that
+shared surface in one place and every mixin inherits it. It is a declaration,
+not an implementation: it has no runtime members, so `engine_configuration.py`
+remains the only place state is initialized and each mixin remains the only
+place its own methods are defined. New shared state or a new cross-mixin call
+is declared there.
 
 The coordinator has three explicit boundaries:
 
@@ -125,4 +134,6 @@ artifacts can be trusted.
 - vector markup stays in packaged templates;
 - the converter facade and engine composition root stay thin;
 - configuration remains detached and immutable;
-- every supported output format has a registered backend.
+- every supported output format has a registered backend;
+- every engine mixin inherits the shared-surface declaration, and that
+  declaration stays free of implementation.
