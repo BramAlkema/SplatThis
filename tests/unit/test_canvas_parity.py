@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from png2svg_gs.adaptive_compute import (
+from splatthis.adaptive_compute import (
     CANVAS_RUNTIME_CALIBRATION_CHECKPOINTS,
     CANVAS_RUNTIME_SCORER,
     DEFAULT_CHROME_PSNR_SAFETY_MARGIN,
     DEFAULT_CHROME_SSIM_SAFETY_MARGIN,
 )
-from png2svg_gs.canvas_parity import (
+from splatthis.canvas_parity import (
     CanvasParityObservation,
     ceil_margin,
     summarize_canvas_parity,

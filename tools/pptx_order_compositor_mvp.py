@@ -17,9 +17,9 @@ from typing import Any, Sequence
 import numpy as np
 from full_corpus_mvp import _capture_powerpoint_slideshow
 
-from png2svg_gs.fidelity.analysis import analyze_residual
-from png2svg_gs.fidelity.metrics import compute_fidelity_metrics
-from png2svg_gs.io import (
+from splatthis.fidelity.analysis import analyze_residual
+from splatthis.fidelity.metrics import compute_fidelity_metrics
+from splatthis.io import (
     _sort_splats_for_export,
     atomic_output_path,
     atomic_write_text,
@@ -27,7 +27,7 @@ from png2svg_gs.io import (
     load_splats_json,
     save_pptx_with_splats,
 )
-from png2svg_gs.svg_recipe_gate import SvgRecipeGatePolicy, select_recipe_candidate
+from splatthis.svg_recipe_gate import SvgRecipeGatePolicy, select_recipe_candidate
 
 
 def _parse_args() -> argparse.Namespace:

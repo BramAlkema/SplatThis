@@ -1,6 +1,6 @@
 """Composition root for the internal PNG-to-splat conversion engine.
 
-The public API lives in :mod:`png2svg_gs.converter`.  Keeping the numerical
+The public API lives in :mod:`splatthis.converter`.  Keeping the numerical
 engine in this explicitly internal module prevents its implementation details
 from becoming the package's architectural entry point.
 """

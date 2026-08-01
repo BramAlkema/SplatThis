@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from png2svg_gs.converter import PNG2SVGConverter
-from png2svg_gs.splat import create_isotropic_splat
+from splatthis.converter import PNG2SVGConverter
+from splatthis.splat import create_isotropic_splat
 
 
 def _make_gradient_image(size: int = 32) -> np.ndarray:

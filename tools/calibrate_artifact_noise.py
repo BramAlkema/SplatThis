@@ -32,17 +32,17 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 
-from png2svg_gs.artifact_gates import (
+from splatthis.artifact_gates import (
     ARTIFACT_TARGETS,
     ArtifactGateCalibration,
     calibrate_artifact_observations,
 )
-from png2svg_gs.browser_capture import (
+from splatthis.browser_capture import (
     get_shared_svg_renderer,
     render_svg_in_browser_to_linear_rgb,
 )
-from png2svg_gs.fidelity.metrics import compute_fidelity_metrics
-from png2svg_gs.io import linear_to_srgb, load_png
+from splatthis.fidelity.metrics import compute_fidelity_metrics
+from splatthis.io import linear_to_srgb, load_png
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_CORPUS = REPO / "result" / "corpus"

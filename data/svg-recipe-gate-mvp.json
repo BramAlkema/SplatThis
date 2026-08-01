@@ -154,7 +154,7 @@
   "decision": {
     "automatic_recipe_selector": "eligible-for-default-off-integration",
     "reason": "Seven safe Chrome wins clear the predeclared minimum of five corpus images.",
-    "runtime_status": "not yet wired into splatlify",
+    "runtime_status": "not yet wired into splatthis",
     "manual_recipe_availability": "palette-quantized remains an explicit target-specific option",
     "next_operator": "default-off-browser-recipe-selection"
   },

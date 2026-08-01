@@ -2,8 +2,8 @@ from pathlib import Path
 
 import numpy as np
 
-from png2svg_gs.io import load_splats_json, save_splats_json
-from png2svg_gs.splat import GaussianSplat, RawSplat
+from splatthis.io import load_splats_json, save_splats_json
+from splatthis.splat import GaussianSplat, RawSplat
 from tools.combined_portfolio_mvp import (
     RECIPE_NAMES,
     _build_foreground_hybrid,

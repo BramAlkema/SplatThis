@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from png2svg_gs.adaptive_compute import (
+from splatthis.adaptive_compute import (
     DEFAULT_CHROME_PSNR_SAFETY_MARGIN,
     DEFAULT_CHROME_SSIM_SAFETY_MARGIN,
     AdaptiveComputePolicy,

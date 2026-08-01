@@ -12,12 +12,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from png2svg_gs.io import (
+from splatthis.io import (
     SVG_OPTIMIZE_MIN_SAFE_PRECISION,
     generate_svg_content,
     optimize_svg_file,
 )
-from png2svg_gs.splat import create_isotropic_splat
+from splatthis.splat import create_isotropic_splat
 
 HAVE_SVGO = shutil.which("svgo") is not None
 
@@ -159,7 +159,7 @@ def test_converter_records_optimization_in_manifest(tmp_path):
 
     from PIL import Image
 
-    from png2svg_gs.converter import PNG2SVGConverter
+    from splatthis.converter import PNG2SVGConverter
 
     img = tmp_path / "tiny.png"
     Image.fromarray(

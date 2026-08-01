@@ -23,9 +23,9 @@ from typing import Any, Iterable
 import numpy as np
 from PIL import Image
 
-from png2svg_gs.browser_capture import render_svg_in_browser_to_linear_rgb
-from png2svg_gs.converter import PNG2SVGConverter
-from png2svg_gs.fidelity import (
+from splatthis.browser_capture import render_svg_in_browser_to_linear_rgb
+from splatthis.converter import PNG2SVGConverter
+from splatthis.fidelity import (
     FidelityCandidate,
     FidelityConfig,
     FidelityEvaluator,
@@ -33,8 +33,8 @@ from png2svg_gs.fidelity import (
     RecolorOperator,
     compute_fidelity_metrics,
 )
-from png2svg_gs.fidelity.metrics import _np_linear_to_srgb, linear_rgb_to_oklab_np
-from png2svg_gs.io import (
+from splatthis.fidelity.metrics import _np_linear_to_srgb, linear_rgb_to_oklab_np
+from splatthis.io import (
     compute_quality_metrics,
     generate_svg_content,
     load_png,
@@ -44,13 +44,13 @@ from png2svg_gs.io import (
     save_splats_json,
     save_svg,
 )
-from png2svg_gs.mixed_primitives import (
+from splatthis.mixed_primitives import (
     edge_paths_to_svg_group,
     inject_edge_paths_into_pptx,
     inject_svg_before_close,
     propose_residual_edge_paths,
 )
-from png2svg_gs.splat import GaussianSplat
+from splatthis.splat import GaussianSplat
 
 RECIPE_NAMES = (
     "standard",

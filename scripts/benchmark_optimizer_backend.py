@@ -19,17 +19,17 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from png2svg_gs.io import (  # noqa: E402
+from splatthis.io import (  # noqa: E402
     compute_quality_metrics,
     load_png,
     load_splats_json,
 )
-from png2svg_gs.mlx_losses import MlxLossConfig  # noqa: E402
-from png2svg_gs.mlx_renderer import (  # noqa: E402
+from splatthis.mlx_losses import MlxLossConfig  # noqa: E402
+from splatthis.mlx_renderer import (  # noqa: E402
     MlxBatchedGaussianRenderer,
     splats_to_numpy_table,
 )
-from png2svg_gs.mlx_stage import (  # noqa: E402
+from splatthis.mlx_stage import (  # noqa: E402
     MlxRendererConfig,
     MlxStageConfig,
     is_mlx_available,

@@ -2,14 +2,14 @@
 
 from pathlib import Path
 
-from png2svg_gs.io import (
+from splatthis.io import (
     EMU_PER_PX,
     PPTX_PAINTER_ORDER_BACK_TO_FRONT,
     generate_drawingml_slide_content,
     px_to_emu,
     save_drawingml,
 )
-from png2svg_gs.splat import create_isotropic_splat
+from splatthis.splat import create_isotropic_splat
 
 
 def test_px_to_emu_conversion():

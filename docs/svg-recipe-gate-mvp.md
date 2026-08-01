@@ -68,7 +68,7 @@ selected size and capture-time change are both zero.
 
 The verdict is **eligible for default-off browser selector integration**: 7
 safe wins clear the predeclared minimum of 5. This is evidence to implement the
-selector, not a claim that `splatlify` already invokes Playwright or selects a
+selector, not a claim that `splatthis` already invokes Playwright or selects a
 recipe automatically. `palette-quantized` remains available explicitly.
 
 The earlier librsvg run accepted only Cell, Chameleon, Retina, and Rocket. That

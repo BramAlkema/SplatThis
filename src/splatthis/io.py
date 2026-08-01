@@ -1,7 +1,7 @@
 """Backward-compatible export facade.
 
 Implementations live in focused modules. New code should import those modules
-directly; this file preserves the established png2svg_gs.io API.
+directly; this file preserves the established splatthis.io API.
 """
 
 from .artifact_io import (  # noqa: F401

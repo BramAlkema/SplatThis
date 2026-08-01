@@ -14,7 +14,7 @@ _TOKEN = re.compile(r"@@([A-Z0-9_]+)@@")
 def load_template(name: str) -> str:
     """Read one UTF-8 template from the installed package once."""
 
-    path = files("png2svg_gs.templates").joinpath(name)
+    path = files("splatthis.templates").joinpath(name)
     return path.read_text(encoding="utf-8")
 
 

@@ -256,7 +256,7 @@ The repository also contains working MVP code for:
 - full-corpus actual-artifact scoring; and
 - real Microsoft PowerPoint slideshow capture.
 
-These tools generate evidence. They are not implicitly part of `splatlify`,
+These tools generate evidence. They are not implicitly part of `splatthis`,
 and their presence does not make their algorithms production defaults.
 
 ## Roadmap
@@ -356,7 +356,7 @@ selected blur. The wins had median LPIPS gain `0.01014`, median OKLab-p95 gain
 `0.01101`, and 66-71% smaller SVGs. They clear the predeclared minimum of five
 accepted images. Automatic browser recipe selection is therefore eligible for
 a separate default-off integration slice; it is not yet wired into
-`splatlify`. The earlier librsvg run accepted four images and remains
+`splatthis`. The earlier librsvg run accepted four images and remains
 cross-renderer evidence rather than the governing browser result. Bounded
 center movement remains the next independent geometry operator after selector
 integration.
@@ -487,37 +487,37 @@ metrics.
 
 ## Implementation map
 
-- Fidelity stage: `src/png2svg_gs/fidelity/`
-- Browser pixel-runtime emission: `src/png2svg_gs/pixel_runtime.py`
-- Shared NumPy color transforms: `src/png2svg_gs/color.py`
-- Shared export policy and geometry: `src/png2svg_gs/export_common.py`
+- Fidelity stage: `src/splatthis/fidelity/`
+- Browser pixel-runtime emission: `src/splatthis/pixel_runtime.py`
+- Shared NumPy color transforms: `src/splatthis/color.py`
+- Shared export policy and geometry: `src/splatthis/export_common.py`
 - Image, JSON, preview, metric, and artifact I/O:
-  `src/png2svg_gs/artifact_io.py`
-- CSS and native Canvas emission: `src/png2svg_gs/browser_export.py`
-- Static SVG emission and optimization: `src/png2svg_gs/svg_export.py`
-- DrawingML emission and PPTX packaging: `src/png2svg_gs/pptx_export.py`
+  `src/splatthis/artifact_io.py`
+- CSS and native Canvas emission: `src/splatthis/browser_export.py`
+- Static SVG emission and optimization: `src/splatthis/svg_export.py`
+- DrawingML emission and PPTX packaging: `src/splatthis/pptx_export.py`
 - Packaged SVG, DrawingML, and PPTX XML templates:
-  `src/png2svg_gs/templates/`
-- Backward-compatible legacy import facade: `src/png2svg_gs/io.py`
-- Converter integration and pixel-runtime gates: `src/png2svg_gs/converter.py`
-- Top-K student/teacher experiment: `src/png2svg_gs/distillation.py`
-- Mixed native primitives: `src/png2svg_gs/mixed_primitives.py`
+  `src/splatthis/templates/`
+- Backward-compatible legacy import facade: `src/splatthis/io.py`
+- Converter integration and pixel-runtime gates: `src/splatthis/converter.py`
+- Top-K student/teacher experiment: `src/splatthis/distillation.py`
+- Mixed native primitives: `src/splatthis/mixed_primitives.py`
 - Corpus and capture tooling: `tools/corpus_benchmark.py`
 - Combined artifact portfolio: `tools/combined_portfolio_mvp.py`
 - Versioned artifact gates: `data/artifact-gates.json`
-- Repeat-render calibration: `src/png2svg_gs/artifact_gates.py` and
+- Repeat-render calibration: `src/splatthis/artifact_gates.py` and
   `tools/calibrate_artifact_noise.py`
 - Online and retrospective adaptive compute:
-  `src/png2svg_gs/adaptive_compute.py`, `src/png2svg_gs/converter.py`, and
+  `src/splatthis/adaptive_compute.py`, `src/splatthis/converter.py`, and
   `tools/simulate_adaptive_canvas.py`
 - Online adaptive MVP evidence: `data/adaptive-online-mvp.json`
 - MLX throughput policy and full-frame batch evidence:
   `docs/mlx-throughput-mvp.md` and `data/mlx-batch-tile-mvp.json`
 - Exact full-corpus hard-target replay: `data/adaptive-exact-replay.json`
-- Pixel-runtime checkpoint parity calibration: `src/png2svg_gs/canvas_parity.py`,
+- Pixel-runtime checkpoint parity calibration: `src/splatthis/canvas_parity.py`,
   `tools/calibrate_canvas_checkpoint_parity.py`, and
   `data/canvas-checkpoint-parity.json`
-- SVG recipe gate: `src/png2svg_gs/svg_recipe_gate.py`,
+- SVG recipe gate: `src/splatthis/svg_recipe_gate.py`,
   `tools/evaluate_svg_recipe_gate.py`, and `data/svg-recipe-gate-mvp.json`
 - Fidelity tests: `tests/unit/test_fidelity_stage.py`
 - Pixel-runtime gate tests: `tests/unit/test_png2svg_export_pipeline.py`

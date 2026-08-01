@@ -23,7 +23,7 @@ absent; the Chameleon MVP found no defensible quality/cost trade-off for them.
 The CLI exposes both policies:
 
 ```bash
-splatlify input.png --format svg -o output.svg \
+splatthis input.png --format svg -o output.svg \
   --svg-gradient-quality high
 ```
 

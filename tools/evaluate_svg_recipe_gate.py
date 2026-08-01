@@ -25,17 +25,17 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 
-from png2svg_gs.browser_capture import PlaywrightSvgRenderer, resolve_browser_executable
-from png2svg_gs.fidelity.analysis import analyze_residual
-from png2svg_gs.fidelity.metrics import compute_fidelity_metrics
-from png2svg_gs.io import (
+from splatthis.browser_capture import PlaywrightSvgRenderer, resolve_browser_executable
+from splatthis.fidelity.analysis import analyze_residual
+from splatthis.fidelity.metrics import compute_fidelity_metrics
+from splatthis.io import (
     atomic_write_text,
     load_png,
     load_splats_json,
     save_svg,
     srgb_to_linear,
 )
-from png2svg_gs.svg_recipe_gate import (
+from splatthis.svg_recipe_gate import (
     SvgRecipeGatePolicy,
     metric_deltas,
     select_recipe_candidate,

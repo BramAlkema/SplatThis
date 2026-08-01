@@ -5,14 +5,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import png2svg_gs.browser_capture as browser_capture
-from png2svg_gs.browser_capture import (
+import splatthis.browser_capture as browser_capture
+from splatthis.browser_capture import (
     PlaywrightSvgRenderer,
     SvgCaptureResult,
     read_svg_pixel_size,
     resolve_browser_executable,
 )
-from png2svg_gs.io import (
+from splatthis.io import (
     atomic_write_text,
     evaluate_css_export_quality,
     evaluate_native_canvas_export_quality,
@@ -22,8 +22,8 @@ from png2svg_gs.io import (
     generate_webgl_pixel_runtime_html,
     linear_to_srgb,
 )
-from png2svg_gs.renderer import render_splats_numpy
-from png2svg_gs.splat import GaussianSplat
+from splatthis.renderer import render_splats_numpy
+from splatthis.splat import GaussianSplat
 
 
 def test_read_svg_pixel_size_prefers_explicit_dimensions(tmp_path: Path) -> None:

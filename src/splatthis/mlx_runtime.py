@@ -44,7 +44,7 @@ def require_mlx(feature: str) -> Any:
 
     if mx is None:
         raise RuntimeError(
-            f"MLX is not installed. Install `splat-this[mlx]` to use {feature}."
+            f"MLX is not installed. Install `splatthis[mlx]` to use {feature}."
         )
     if not is_mlx_available():
         raise RuntimeError(

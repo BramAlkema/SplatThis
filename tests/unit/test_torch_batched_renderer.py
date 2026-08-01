@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from png2svg_gs.renderer import create_renderer, resolve_renderer_backend
+from splatthis.renderer import create_renderer, resolve_renderer_backend
 
 
 def _sample_splats() -> torch.Tensor:

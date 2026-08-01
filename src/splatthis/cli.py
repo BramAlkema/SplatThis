@@ -1,4 +1,4 @@
-"""Command-line interface for the png2svg_gs PNG->SVG Gaussian-splatting pipeline."""
+"""Command-line interface for the splatthis PNG->SVG Gaussian-splatting pipeline."""
 
 from __future__ import annotations
 
@@ -137,7 +137,7 @@ def _resolve_cli_resource_limits(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="splatlify",
+        prog="splatthis",
         description="Convert a PNG/JPG image to an SVG (or PPTX) using 2D Gaussian splatting.",
     )
     parser.add_argument(

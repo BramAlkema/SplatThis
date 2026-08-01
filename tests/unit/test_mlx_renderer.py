@@ -5,21 +5,21 @@ import numpy as np
 import pytest
 import torch
 
-from png2svg_gs.io import generate_pixel_runtime_html, linear_to_srgb
-from png2svg_gs.mlx_renderer import (
+from splatthis.io import generate_pixel_runtime_html, linear_to_srgb
+from splatthis.mlx_renderer import (
     MlxBatchedGaussianRenderer,
     is_mlx_available,
     splats_to_numpy_table,
 )
-from png2svg_gs.mlx_stage import MlxRendererConfig
-from png2svg_gs.renderer import (
+from splatthis.mlx_stage import MlxRendererConfig
+from splatthis.renderer import (
     create_renderer,
     prepare_pixel_runtime_data,
     render_pixel_runtime_numpy,
     render_splats_numpy,
     splats_to_tensor,
 )
-from png2svg_gs.splat import GaussianSplat, RawSplat
+from splatthis.splat import GaussianSplat, RawSplat
 
 WIDTH = 23
 HEIGHT = 19
@@ -304,7 +304,7 @@ def test_mlx_normalized_topk_has_finite_gradients() -> None:
 
 @pytest.mark.skipif(not is_mlx_available(), reason="MLX is not installed")
 def test_mlx_pptx_softedge_mode_matches_torch_proxy_renderer() -> None:
-    from png2svg_gs.converter import _PPTXSoftEdgeProxyRenderer
+    from splatthis.converter import _PPTXSoftEdgeProxyRenderer
 
     splats = _sample_splats()
 

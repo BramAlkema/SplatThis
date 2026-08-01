@@ -3,7 +3,7 @@ requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "splat-this"
+name = "splatthis"
 version = "0.2.0"
 description = "Convert images to SVG using 2D Gaussian splatting"
 readme = "README.md"
@@ -30,7 +30,7 @@ dependencies = [
     "Pillow>=9.0.0",
     "numpy>=1.21.0",
     "scikit-image>=0.19.0",
-    # Direct imports in png2svg_gs (features.py and mixed_primitives.py); do not
+    # Direct imports in splatthis (features.py and mixed_primitives.py); do not
     # rely on it arriving transitively via scikit-image.
     "scipy>=1.10",
     "psutil>=5.9.0",
@@ -69,7 +69,7 @@ mlx = [
 ]
 
 [project.scripts]
-splatlify = "png2svg_gs.cli:main"
+splatthis = "splatthis.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/BramAlkema/SplatThis"
@@ -83,7 +83,7 @@ where = ["src"]
 "" = "src"
 
 [tool.setuptools.package-data]
-png2svg_gs = [
+splatthis = [
     "templates/**/*.html",
     "templates/**/*.js",
     "templates/**/*.svg",

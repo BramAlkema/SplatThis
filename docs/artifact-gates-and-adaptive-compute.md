@@ -9,14 +9,14 @@ expansion rejected by the corpus compute gate
 The ADR-003 measurement foundation now has:
 
 - one shared target-specific calibration schema in
-  `src/png2svg_gs/artifact_gates.py`;
+  `src/splatthis/artifact_gates.py`;
 - a versioned current calibration in `data/artifact-gates.json`;
 - repeated pixel-runtime, SVG, and PowerPoint capture in
   `tools/calibrate_artifact_noise.py`;
 - optional retention of every Chrome canvas repeat in
   `tools/capture_canvas_html.py`;
 - a reusable retrospective policy model in
-  `src/png2svg_gs/adaptive_compute.py`;
+  `src/splatthis/adaptive_compute.py`;
 - a full-corpus replay tool in `tools/simulate_adaptive_canvas.py`;
 - a resumable full-frame checkpoint parity calibrator in
   `tools/calibrate_canvas_checkpoint_parity.py`;
@@ -278,7 +278,7 @@ native-dimension Playwright Chromium gate accepted palette-quantized on Brick,
 Cell, Chameleon, Hubble deep field, Immunohistochemistry, Retina, and Rocket.
 Its 7/21 wins clear the predeclared minimum of five; automatic browser recipe
 selection is eligible for a separate default-off integration slice but is not
-yet in `splatlify`. See `docs/svg-recipe-gate-mvp.md` and
+yet in `splatthis`. See `docs/svg-recipe-gate-mvp.md` and
 `data/svg-recipe-gate-mvp.json`.
 
 That selector integration is the next slice. Bounded center adjustment remains

@@ -8,15 +8,15 @@ import pytest
 import torch
 from PIL import Image
 
-from png2svg_gs.converter import PNG2SVGConverter
-from png2svg_gs.features import (
+from splatthis.converter import PNG2SVGConverter
+from splatthis.features import (
     analyze_local_structure,
     compute_structure_field,
     init_seeds_content_adaptive,
 )
-from png2svg_gs.io import load_splats_json, save_splats_json
-from png2svg_gs.renderer import L1SSIMLoss, splats_to_tensor, tensor_to_splats
-from png2svg_gs.splat import GaussianSplat, RawSplat, create_isotropic_splat
+from splatthis.io import load_splats_json, save_splats_json
+from splatthis.renderer import L1SSIMLoss, splats_to_tensor, tensor_to_splats
+from splatthis.splat import GaussianSplat, RawSplat, create_isotropic_splat
 
 
 def test_raw_splat_validation_rejects_invalid_scale():

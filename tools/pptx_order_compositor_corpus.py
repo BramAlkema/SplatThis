@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from png2svg_gs.io import atomic_output_path, atomic_write_text
+from splatthis.io import atomic_output_path, atomic_write_text
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_CORPUS = REPO / "result" / "corpus"

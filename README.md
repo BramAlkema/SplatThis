@@ -57,7 +57,7 @@ pip install -e ".[capture,mlx]"
 On CPU or CUDA machines, select Torch explicitly:
 
 ```bash
-splatlify input.png --optimizer-backend torch
+splatthis input.png --optimizer-backend torch
 ```
 
 If Chrome is unavailable, pixel-runtime, native Canvas, SVG, and CSS exports
@@ -70,25 +70,25 @@ Create each supported output from the same image:
 
 ```bash
 # Highest-fidelity runtime; accelerated splat equations with exact CPU fallbacks.
-splatlify input.png --format pixel-runtime -o output-pixels.html
+splatthis input.png --format pixel-runtime -o output-pixels.html
 
 # Browser-native Canvas 2D gradient splats.
-splatlify input.png --format canvas -o output-canvas.html
+splatthis input.png --format canvas -o output-canvas.html
 
 # Scriptless DOM/CSS splats; no canvas, SVG, JavaScript, or embedded bitmap.
-splatlify input.png --format css -o output-css.html
+splatthis input.png --format css -o output-css.html
 
 # Static, editable SVG evaluated in Chromium.
-splatlify input.png --format svg -o output.svg
+splatthis input.png --format svg -o output.svg
 
 # Native DrawingML splats; gradient is the conservative default.
-splatlify input.png --format pptx -o output.pptx
+splatthis input.png --format pptx -o output.pptx
 ```
 
 Keep a complete audit trail with `--artifacts-dir`:
 
 ```bash
-splatlify input.png --format svg -o output.svg \
+splatthis input.png --format svg -o output.svg \
   --artifacts-dir ./tmp/input-svg-run
 ```
 
@@ -102,11 +102,11 @@ and training are allowed to use them.
 
 ```bash
 # Practical larger pixel-runtime run.
-splatlify input.png --format pixel-runtime -o output-4k.html \
+splatthis input.png --format pixel-runtime -o output-4k.html \
   --splats 4000 --initial-splat-cap 4000
 
 # Bound resolution and let a preset choose the schedule and detail budget.
-splatlify input.png --format pixel-runtime -o output.html \
+splatthis input.png --format pixel-runtime -o output.html \
   --max-edge 384 --time-budget 10m
 ```
 
@@ -115,7 +115,7 @@ stop before later stages once an observed checkpoint reaches the desired exact
 CPU-boundary score; the selected final browser backend is graded separately:
 
 ```bash
-splatlify input.png --format pixel-runtime -o output.html \
+splatthis input.png --format pixel-runtime -o output.html \
   --splats 4000 --initial-splat-cap 4000 \
   --adaptive-compute --adaptive-target-ssim-srgb 0.98
 ```
@@ -147,14 +147,14 @@ The standard recipe is the safe static default. Other recipes are explicit:
 | `browser-compatible` | Conservative browser-gradient encoding |
 
 ```bash
-splatlify input.png --format svg -o compact.svg \
+splatthis input.png --format svg -o compact.svg \
   --svg-recipe palette-quantized
 
-splatlify input.png --format svg -o polished.svg \
+splatthis input.png --format svg -o polished.svg \
   --fidelity-stage max --artifacts-dir ./tmp/polished-svg-run
 
 # Force the stricter adaptive stop policy without artifact search.
-splatlify input.png --format svg -o high.svg \
+splatthis input.png --format svg -o high.svg \
   --svg-gradient-quality high --no-svg-compositor-gate
 ```
 
@@ -184,10 +184,10 @@ composition; SplatThis does not pre-render a pixel buffer.
 
 ```bash
 # Static CSS splats.
-splatlify input.png --format css -o splats.html
+splatthis input.png --format css -o splats.html
 
 # Scriptless 10x10 hover-grid parallax from saliency depth layers.
-splatlify input.png --format css -o parallax-css.html \
+splatthis input.png --format css -o parallax-css.html \
   --layered-saliency --css-parallax-strength 28
 ```
 
@@ -205,15 +205,15 @@ a slide:
 
 ```bash
 # Recommended general-purpose PowerPoint output.
-splatlify input.png --format pptx -o output.pptx \
+splatthis input.png --format pptx -o output.pptx \
   --pptx-splat-style gradient
 
 # Explicit corrected painter-order candidate; legacy remains the default.
-splatlify input.png --format pptx -o output-corrected.pptx \
+splatthis input.png --format pptx -o output-corrected.pptx \
   --pptx-painter-order back-to-front
 
 # Deliberately target real PowerPoint's soft-edge compositor.
-splatlify input.png --format pptx -o output-softedge.pptx \
+splatthis input.png --format pptx -o output-softedge.pptx \
   --pptx-splat-style soft-edge \
   --training-export-target pptx-softedge
 ```
@@ -237,7 +237,7 @@ ordinary headless conversion never launches PowerPoint. See the
 Splat layers can be displaced by mouse position to suggest depth:
 
 ```bash
-splatlify input.png --format canvas -o parallax.html \
+splatthis input.png --format canvas -o parallax.html \
   --layered-saliency --canvas-parallax-strength 28
 ```
 
@@ -341,7 +341,7 @@ in [`data/artifact-gates.json`](data/artifact-gates.json).
 | `--css-parallax-strength PX` | Enable scriptless CSS hover parallax |
 | `--artifacts-dir DIR` | Retain the manifest and intermediate checkpoints |
 
-Run `splatlify --help` for the full research and backend surface.
+Run `splatthis --help` for the full research and backend surface.
 
 ## Project status
 

@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from png2svg_gs.distillation import run_distillation_mvp
-from png2svg_gs.mlx_renderer import is_mlx_available
-from png2svg_gs.splat import create_isotropic_splat
+from splatthis.distillation import run_distillation_mvp
+from splatthis.mlx_renderer import is_mlx_available
+from splatthis.splat import create_isotropic_splat
 
 
 def test_distillation_mvp_runs_all_three_arms_and_reduces_student_loss() -> None:

@@ -70,7 +70,7 @@ pip install -e ".[dev,capture]"
 3. Verify installation:
 
 ```bash
-splatlify --help
+splatthis --help
 pytest tests/ -v
 ```
 
@@ -163,7 +163,7 @@ mypy src/
 pytest tests/ -v
 
 # Check coverage
-pytest tests/ --cov=src/png2svg_gs --cov-report=term-missing
+pytest tests/ --cov=src/splatthis --cov-report=term-missing
 ```
 
 3. **Commit your changes**:
@@ -262,8 +262,8 @@ Closes #123
 import numpy as np
 import pytest
 
-from png2svg_gs.splat import create_isotropic_splat
-from png2svg_gs.io import generate_svg_content
+from splatthis.splat import create_isotropic_splat
+from splatthis.io import generate_svg_content
 
 
 def test_svg_content_emits_one_gradient_per_splat():
@@ -290,7 +290,7 @@ def test_full_pipeline_integration(tmp_path):
     import xml.etree.ElementTree as ET
 
     from PIL import Image
-    from png2svg_gs.converter import PNG2SVGConverter
+    from splatthis.converter import PNG2SVGConverter
 
     src = tmp_path / "tiny.png"
     Image.fromarray(
@@ -434,8 +434,8 @@ def complex_function(param1: str, param2: int = 10) -> Dict[str, Any]:
 # Check documentation coverage
 python -c "
 import pydoc
-import png2svg_gs
-help(png2svg_gs)
+import splatthis
+help(splatthis)
 "
 
 # Validate examples in documentation
@@ -457,7 +457,7 @@ Clear description of the bug
 - SplatThis version: [e.g., 0.2.0]
 
 ## Steps to Reproduce
-1. Load image with `splatlify image.jpg`
+1. Load image with `splatthis image.jpg`
 2. See error message
 
 ## Expected Behavior

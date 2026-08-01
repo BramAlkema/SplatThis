@@ -3,7 +3,7 @@
 import tomllib
 from pathlib import Path
 
-from png2svg_gs import __version__
+from splatthis import __version__
 
 REPO = Path(__file__).resolve().parents[2]
 

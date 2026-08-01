@@ -29,8 +29,8 @@ jobs:
     - name: Smoke-test the built wheel
       run: |
         pip install dist/*.whl
-        splatlify --version
-        splatlify --help
+        splatthis --version
+        splatthis --help
 
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1

@@ -69,6 +69,19 @@ All notable changes to SplatThis are documented here.
 
 ### Changed
 
+- Collapsed four project names onto one. The distribution is now `splatthis`
+  (was `splat-this`), the import path is `splatthis` (was `png2svg_gs`), and the
+  console entry point is `splatthis` (was `splatlify`). The repository, the
+  GitHub Pages site, and the project name in prose are unchanged. `png2svg_gs`
+  had also become inaccurate: the package emits SVG, PPTX, native Canvas, CSS,
+  and pixel-runtime artifacts, not only SVG. No compatibility shim or alias
+  entry point is provided — the package has never been published to PyPI, so
+  there is no installed base to migrate.
+- Removed the unreferenced root-level `png2svg` launcher. It exposed an older,
+  divergent flag surface (`--max-splats`, `--output-format {svg,drawingml,pptx}`,
+  `--backend {auto,torch,gsplat}`) that no longer matched the packaged CLI, and
+  its `gsplat` backend has been retired and is now explicitly rejected. The
+  packaged `splatthis` entry point is the only supported command-line surface.
 - Replaced the state-restoring monolithic conversion run with an immutable
   `ConverterConfig`, per-call `ConversionRequest`/`RunContext`, and explicit
   prepare, fit, and deployment phases. The public converter no longer mutates
@@ -87,7 +100,7 @@ All notable changes to SplatThis are documented here.
   `artifact_io` is now also a compatibility facade, and the side-by-side HTML
   document moved to a packaged template.
 - Replaced the 3,541-line I/O monolith with focused artifact-I/O, shared export,
-  browser, SVG, PPTX, pixel-runtime, and color modules. `png2svg_gs.io` remains
+  browser, SVG, PPTX, pixel-runtime, and color modules. `splatthis.io` remains
   a 132-line compatibility facade, while production code imports the focused
   implementations directly. SVG, DrawingML, and PPTX package markup now lives
   in packaged templates rather than Python source; representative emitted

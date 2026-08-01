@@ -17,9 +17,9 @@ from typing import Any, Sequence
 import numpy as np
 from PIL import Image
 
-from png2svg_gs.browser_capture import resolve_browser_executable
-from png2svg_gs.fidelity.metrics import compute_fidelity_metrics
-from png2svg_gs.io import (
+from splatthis.browser_capture import resolve_browser_executable
+from splatthis.fidelity.metrics import compute_fidelity_metrics
+from splatthis.io import (
     ELLIPSE_OVERLAP_BOOST,
     MIN_ELLIPSE_RADIUS_PX,
     _adaptive_gradient_stops,
@@ -33,7 +33,7 @@ from png2svg_gs.io import (
     load_splats_json,
     srgb_to_linear,
 )
-from png2svg_gs.splat import GaussianSplat
+from splatthis.splat import GaussianSplat
 
 
 @dataclass(frozen=True)

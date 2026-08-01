@@ -9,12 +9,12 @@ source venv/bin/activate
 
 ## Project Structure
 
-The live pipeline is `src/png2svg_gs/` (the legacy `src/splat_this` package was
-retired). CLI entry point: `splatlify` (= `png2svg_gs.cli:main`).
+The live pipeline is `src/splatthis/` (the legacy `src/splat_this` package was
+retired). CLI entry point: `splatthis` (= `splatthis.cli:main`).
 
 | Module | Role |
 |---|---|
-| `cli.py` | `splatlify` argument parsing, resource-limit resolution |
+| `cli.py` | `splatthis` argument parsing, resource-limit resolution |
 | `converter.py` | `PNG2SVGConverter` orchestrator: init → staged optimize → densify/prune → postfit → emit |
 | `features.py` | Seeding: gradient PDF, structure tensor (`edge_tangent_angle`), Poisson disk |
 | `optimizer.py` | Torch `SplatParams` + per-group Adam LRs |
@@ -34,18 +34,18 @@ Splats flow between stages as `List[GaussianSplat]` ⇄ `[N, 11]` tensors
 ## Testing Commands
 ```bash
 # Full unit suite with coverage (what CI runs)
-PYTHONPATH=. pytest tests/unit/ --cov=src/png2svg_gs --cov-report=term-missing --tb=short
+PYTHONPATH=. pytest tests/unit/ --cov=src/splatthis --cov-report=term-missing --tb=short
 
 # Single file, fast
 PYTHONPATH=. pytest tests/unit/test_mlx_renderer.py -v --tb=short --no-cov
 
 # Formatters are pinned; CI enforces black --check
-black src/png2svg_gs/ tests/unit/
+black src/splatthis/ tests/unit/
 ```
 
 ## Running the Pipeline
 ```bash
-splatlify docs/demo/source.png -o out.svg --seed 42 --artifacts-dir artifacts/
+splatthis docs/demo/source.png -o out.svg --seed 42 --artifacts-dir artifacts/
 # Key flags: --profile (default max-fidelity), --splats, --stages, --time-budget,
 # --optimizer-backend {mlx,torch}, --format {svg,pptx,canvas,css,pixel-runtime},
 # --svg-recipe, --training-export-target {auto,pixel-runtime,browser-gradient,svg,pptx-softedge}

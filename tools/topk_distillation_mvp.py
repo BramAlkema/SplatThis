@@ -11,10 +11,10 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from png2svg_gs.browser_capture import render_svg_in_browser_to_linear_rgb
-from png2svg_gs.converter import PNG2SVGConverter
-from png2svg_gs.distillation import run_distillation_mvp, summarize_mvp_metrics
-from png2svg_gs.io import (
+from splatthis.browser_capture import render_svg_in_browser_to_linear_rgb
+from splatthis.converter import PNG2SVGConverter
+from splatthis.distillation import run_distillation_mvp, summarize_mvp_metrics
+from splatthis.io import (
     compute_quality_metrics,
     load_png,
     load_splats_json,

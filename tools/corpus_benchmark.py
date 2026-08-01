@@ -43,7 +43,7 @@ import numpy as np
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "src"))
 
-from png2svg_gs.adaptive_compute import (  # noqa: E402
+from splatthis.adaptive_compute import (  # noqa: E402
     DEFAULT_CHROME_PSNR_SAFETY_MARGIN,
     DEFAULT_CHROME_SSIM_SAFETY_MARGIN,
 )
@@ -203,8 +203,8 @@ def _lpips_score(a_srgb: np.ndarray, b_srgb: np.ndarray) -> float:
 
 def score_svg(source_png: Path, svg_path: Path) -> Optional[dict]:
     """Metrics on the emitted SVG captured in governing Chromium."""
-    from png2svg_gs.browser_capture import render_svg_in_browser_to_linear_rgb
-    from png2svg_gs.io import compute_quality_metrics, linear_to_srgb, load_png
+    from splatthis.browser_capture import render_svg_in_browser_to_linear_rgb
+    from splatthis.io import compute_quality_metrics, linear_to_srgb, load_png
 
     target_lin = load_png(str(source_png))[..., :3]
     h, w = target_lin.shape[:2]
@@ -226,13 +226,13 @@ def score_svg(source_png: Path, svg_path: Path) -> Optional[dict]:
 
 def score_pptx_proxy(source_png: Path, splats_json: Path) -> Optional[dict]:
     """Score an internal splat proxy; never label it as a PPTX render."""
-    from png2svg_gs.io import (
+    from splatthis.io import (
         compute_quality_metrics,
         linear_to_srgb,
         load_png,
         load_splats_json,
     )
-    from png2svg_gs.renderer import render_splats_numpy
+    from splatthis.renderer import render_splats_numpy
 
     if not splats_json.exists():
         return None
@@ -256,13 +256,13 @@ def score_canvas(
     source_png: Path, splats_json: Path, manifest_path: Path
 ) -> Optional[dict]:
     """Score the byte-exact ImageData pixel-runtime model."""
-    from png2svg_gs.io import (
+    from splatthis.io import (
         compute_quality_metrics,
         linear_to_srgb,
         load_png,
         load_splats_json,
     )
-    from png2svg_gs.renderer import render_pixel_runtime_numpy
+    from splatthis.renderer import render_pixel_runtime_numpy
 
     if not splats_json.exists() or not manifest_path.exists():
         return None
@@ -315,8 +315,8 @@ def score_canvas_capture(
 ) -> Optional[dict]:
     """Score the browser's exact canvas pixel buffer, not a Python proxy."""
 
-    from png2svg_gs.fidelity.metrics import compute_fidelity_metrics
-    from png2svg_gs.io import load_png
+    from splatthis.fidelity.metrics import compute_fidelity_metrics
+    from splatthis.io import load_png
 
     if not capture_png.exists():
         return None
@@ -389,7 +389,7 @@ def capture_canvas_artifact(
 
 def score_powerpoint_captures(root: Path) -> None:
     """Score slide crops captured from real Microsoft PowerPoint."""
-    from png2svg_gs.io import compute_quality_metrics, linear_to_srgb, load_png
+    from splatthis.io import compute_quality_metrics, linear_to_srgb, load_png
 
     meta = json.loads((root / "corpus.json").read_text())["images"]
     selected_runs = _latest_seed_zero_runs(root)
@@ -748,9 +748,9 @@ def _generate_legacy_proxy_html(root: Path, output: Path) -> None:
 
 def generate_canvas_corpus_html(root: Path, output: Path) -> None:
     """Build one HTML containing a live canvas-splat render for every image."""
-    from png2svg_gs.color import linear_to_srgb
-    from png2svg_gs.io import atomic_write_text, load_splats_json
-    from png2svg_gs.splat import render_importance_for_raw
+    from splatthis.color import linear_to_srgb
+    from splatthis.io import atomic_write_text, load_splats_json
+    from splatthis.splat import render_importance_for_raw
 
     corpus_path = root / "corpus.json"
     if not corpus_path.exists():
@@ -1432,7 +1432,7 @@ def jpeg_at_matched_bytes(source_png: Path, target_bytes: int) -> Optional[dict]
 
     from PIL import Image
 
-    from png2svg_gs.io import (
+    from splatthis.io import (
         compute_quality_metrics,
         linear_to_srgb,
         load_png,
@@ -1509,7 +1509,7 @@ def run_baselines(root: Path) -> None:
 def _code_fingerprint() -> str:
     """Fingerprint executable benchmark/converter code, including dirty edits."""
     digest = hashlib.sha256()
-    paths = sorted((REPO / "src" / "png2svg_gs").glob("*.py"))
+    paths = sorted((REPO / "src" / "splatthis").glob("*.py"))
     paths.append(Path(__file__))
     for path in paths:
         digest.update(str(path.relative_to(REPO)).encode("utf-8"))
@@ -1699,7 +1699,7 @@ def _build_corpus_job(
     command = [
         sys.executable,
         "-m",
-        "png2svg_gs.cli",
+        "splatthis.cli",
         str(source),
         "-o",
         str(output),
@@ -2007,8 +2007,8 @@ def capture_existing_canvas_runs(
             )
             continue
         if refresh_html:
-            from png2svg_gs.io import generate_native_canvas_html, load_splats_json
-            from png2svg_gs.pixel_runtime import generate_pixel_runtime_html
+            from splatthis.io import generate_native_canvas_html, load_splats_json
+            from splatthis.pixel_runtime import generate_pixel_runtime_html
 
             recorded_artifacts = record.get("artifacts_path")
             artifact_dir = (
