@@ -84,6 +84,9 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 splatthis = [
+    # PEP 561 marker: without it, type checkers ignore this package's
+    # annotations entirely and every consumer sees Any.
+    "py.typed",
     "templates/**/*.html",
     "templates/**/*.js",
     "templates/**/*.svg",

@@ -67,6 +67,15 @@ All notable changes to SplatThis are documented here.
   manifest provenance, and a resumable external real-PowerPoint selector that
   atomically materializes the accepted native deck as `selected.pptx`.
 
+### Added
+
+- A PEP 561 `py.typed` marker, declared in both `package-data` and
+  `MANIFEST.in`. The package exports 26 names as a library API and is annotated
+  throughout, but without the marker every consumer type-checking against the
+  installed distribution saw `Any`. Verified by installing the built wheel into
+  a clean environment and resolving `save_svg` and `GaussianSplat` to their real
+  signatures.
+
 ### Changed
 
 - Reworked the release workflow onto PyPI Trusted Publishing, matching the
