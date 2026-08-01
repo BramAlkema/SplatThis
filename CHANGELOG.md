@@ -2,6 +2,48 @@
 
 All notable changes to SplatThis are documented here.
 
+## 0.2.5 - 2026-08-02
+
+### Added
+
+- `compositor_fidelity("pixel-runtime")`. The runtime evaluates the splat
+  formula directly rather than approximating it, and measures effectively
+  lossless against the reference renderer -- median 0.9993 SSIM_sRGB against
+  SVG's 0.7540. For a consumer supplying its own splats that choice dominates
+  every other tuning decision. Published under the honest label: the corpus
+  records these rows as `canvas`, but they are the ImageData renderer, not the
+  native Canvas 2D gradient emitter, which still has no measurement and still
+  raises.
+
+### Changed
+
+- The README leads with what the corpus actually shows. "Seed-0 medians, none
+  reached 0.99" reads as a weak result; the stronger and equally honest
+  statement is that fidelity is predicted by content, not by format. Mean
+  gradient magnitude correlates with SSIM at r=-0.84 across the 21-image
+  governing corpus, and splitting at the median gradient gives 0.72 for the
+  smooth half against 0.53 for the textured half -- a gap larger than any
+  between two output formats. Quoted as full-population figures, with the LPIPS
+  relationship stated separately at r=+0.53 rather than implied equally strong.
+- Scriptless CSS renders live on the GitHub Pages site. It cannot appear in a
+  README because both GitHub and PyPI strip the `style` attribute and `<style>`
+  tag, which is the entire substance of that build.
+
+### Fixed
+
+- `paper/report.md` has no unmeasured sections. The seed noise floor is 0.029
+  SSIM_sRGB worst-case over six images and three seeds, taken as the worst case
+  rather than the median so a claim survives the least favourable image.
+- The corpus-wide SVG-versus-OOXML comparison contradicts a claim this project
+  had been carrying. PowerPoint leads by 0.012 SSIM and 0.013 LPIPS at the
+  median, both below the seed noise floor, and wins 12 of 21 images on LPIPS --
+  a coin flip. The quality difference is not claimable; the size difference is:
+  5.3x smaller at indistinguishable quality. The earlier "PPTX wins
+  perceptually" finding came from a single image that happens to favour it.
+- Corpus result rows are explicitly labelled `schema_version: 1`, so the mixed
+  evidence-level state is visible in the data rather than inferable from which
+  keys are absent.
+
 ## 0.2.4 - 2026-08-01
 
 ### Added
