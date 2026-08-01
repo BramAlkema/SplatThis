@@ -14,6 +14,8 @@ difference between them is the emitter.
     >>> band = compositor_fidelity("svg")
     >>> band.median, band.p10
     (0.754, 0.6524)
+    >>> compositor_fidelity("pixel-runtime").median
+    0.9993
 
 Deriving this by reading the corpus is possible but easy to get wrong. Two
 mistakes are worth naming, because both were made while producing it: rendering
@@ -33,7 +35,7 @@ from typing import Any, Dict, Tuple
 _DATA = Path(__file__).resolve().parent / "data" / "compositor-fidelity.json"
 
 #: Formats this measurement covers. Others raise rather than guess.
-SUPPORTED_FORMATS: Tuple[str, ...] = ("svg",)
+SUPPORTED_FORMATS: Tuple[str, ...] = ("svg", "pixel-runtime")
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,7 @@ class CompositorFidelity:
     content_gradient_correlation: float
     corpus_images: int
     content_dependence: str
+    summary: str
 
     def is_content_predictable(self) -> bool:
         """Whether content frequency meaningfully predicts this loss.
@@ -86,10 +89,10 @@ def compositor_fidelity(output_format: str = "svg") -> CompositorFidelity:
             f"no published compositor fidelity for {output_format!r}; "
             f"measured formats are {', '.join(SUPPORTED_FORMATS)}"
         )
-    data = _load()
-    if data["method"]["format"] != normalized:  # pragma: no cover - future formats
+    entry = _load()["formats"].get(normalized)
+    if entry is None:  # pragma: no cover - guarded by SUPPORTED_FORMATS
         raise ValueError(f"published data does not cover {normalized!r}")
-    expectation = data["expectation"]
+    expectation = entry["expectation"]
     return CompositorFidelity(
         output_format=normalized,
         minimum=float(expectation["ssim_srgb_min"]),
@@ -97,6 +100,7 @@ def compositor_fidelity(output_format: str = "svg") -> CompositorFidelity:
         median=float(expectation["ssim_srgb_median"]),
         maximum=float(expectation["ssim_srgb_max"]),
         content_gradient_correlation=float(expectation["content_gradient_correlation"]),
-        corpus_images=int(data["provenance"]["corpus_images"]),
+        corpus_images=int(entry["corpus_images"]),
         content_dependence=str(expectation["content_dependence"]),
+        summary=str(expectation["summary"]),
     )

@@ -1,175 +1,286 @@
 {
-  "schema": "splatthis.compositor-fidelity/1",
-  "what": "How faithfully a deployed compositor reproduces the SAME splat population that the internal reference renderer draws. This isolates compositor loss from fitting loss: both renders take identical splats, so any difference is the emitter and the browser, not the fit.",
-  "why": "A consumer that supplies its own splats -- e.g. by projecting 3D Gaussians through EWA rather than fitting a bitmap -- inherits only this term. It should not budget against source-fidelity numbers, which are dominated by fitting error it does not have.",
-  "method": {
-    "reference": "splatthis.renderer.render_splats_numpy(compositing_space='srgb')",
-    "deployed": "Playwright Chromium viewport-clipped PNG screenshot",
-    "metric": "ssim_srgb, windowed (skimage), computed in linear RGB",
-    "recipe": "standard",
-    "format": "svg"
+  "schema": "splatthis.compositor-fidelity/2",
+  "what": "How faithfully a deployed compositor reproduces the SAME splat population that the internal reference renderer draws. Both renders take identical splats, so any difference is the emitter and its runtime, not the fit.",
+  "why": "A consumer that supplies its own splats -- projecting 3D Gaussians through EWA rather than fitting a bitmap -- inherits only this term. It must not budget against source-fidelity numbers, which are dominated by fitting error it does not have.",
+  "formats": {
+    "svg": {
+      "method": {
+        "reference": "render_splats_numpy(compositing_space='srgb')",
+        "deployed": "Playwright Chromium viewport-clipped PNG screenshot",
+        "recipe": "standard",
+        "metric": "ssim_srgb, windowed"
+      },
+      "corpus_images": 21,
+      "expectation": {
+        "ssim_srgb_min": 0.5965,
+        "ssim_srgb_p10": 0.6524,
+        "ssim_srgb_median": 0.754,
+        "ssim_srgb_max": 0.8991,
+        "content_gradient_correlation": -0.47,
+        "content_dependence": "weak. Compositor loss is broadly uniform; the strong content dependence in end-to-end fidelity (r=-0.84 vs source) is almost entirely the fitting stage.",
+        "summary": "SVG radial gradients approximate a Gaussian. The approximation costs real fidelity."
+      }
+    },
+    "pixel-runtime": {
+      "method": {
+        "reference": "render_splats_numpy(compositing_space='linear')",
+        "deployed": "Google Chrome canvas.toDataURL pixel buffer",
+        "metric": "ssim_srgb, windowed"
+      },
+      "corpus_images": 21,
+      "expectation": {
+        "ssim_srgb_min": 0.9988,
+        "ssim_srgb_p10": 0.9989,
+        "ssim_srgb_median": 0.9993,
+        "ssim_srgb_max": 0.9998,
+        "content_gradient_correlation": 0.0,
+        "content_dependence": "none measurable. The runtime evaluates the splat formula directly rather than approximating it, so it is a parity model of the reference renderer.",
+        "summary": "Effectively lossless. Choose this over SVG when fidelity matters more than vector editability; the emitter costs ~0.001 SSIM instead of ~0.25."
+      }
+    }
   },
   "provenance": {
-    "corpus_images": 21,
-    "source": "tmp/svg-recipe-gate-chromium/summary.json",
+    "svg_source": "tmp/svg-recipe-gate-chromium/summary.json",
+    "pixel_runtime_source": "result/corpus/results.jsonl (seed 0)",
     "gate_generated_at": "2026-07-31T17:44:17.704997+00:00",
-    "note": "Full population. Do not quote a subset: a 7-image slice of this same data reports r=-0.854 against the full-population -0.470."
+    "label_note": "pixel-runtime rows are recorded in the corpus under the historical label 'canvas'. They are the ImageData software renderer, not the native Canvas 2D gradient emitter, which has no published measurement yet.",
+    "subset_warning": "Full populations only. A 7-image slice of the SVG data reports a content correlation of -0.854 against the full population's -0.470."
   },
-  "expectation": {
-    "ssim_srgb_min": 0.5965,
-    "ssim_srgb_median": 0.754,
-    "ssim_srgb_max": 0.8991,
-    "ssim_srgb_p10": 0.6524,
-    "content_gradient_correlation": -0.47,
-    "content_dependence": "weak. Compositor loss is broadly uniform across content; the strong content dependence reported for end-to-end fidelity (r=-0.84 vs source) lives almost entirely in the fitting stage."
-  },
-  "per_image": [
-    {
-      "image": "colorwheel",
-      "gradient": 0.04,
-      "compositor_ssim_srgb": 0.7491,
-      "compositor_psnr_srgb": 17.621,
-      "splat_count": 1706
-    },
-    {
-      "image": "cell",
-      "gradient": 0.055,
-      "compositor_ssim_srgb": 0.8726,
-      "compositor_psnr_srgb": 26.382,
-      "splat_count": 1389
-    },
-    {
-      "image": "moon",
-      "gradient": 0.063,
-      "compositor_ssim_srgb": 0.8991,
-      "compositor_psnr_srgb": 29.753,
-      "splat_count": 1239
-    },
-    {
-      "image": "retina",
-      "gradient": 0.0906,
-      "compositor_ssim_srgb": 0.5965,
-      "compositor_psnr_srgb": 14.651,
-      "splat_count": 1533
-    },
-    {
-      "image": "logo",
-      "gradient": 0.1041,
-      "compositor_ssim_srgb": 0.812,
-      "compositor_psnr_srgb": 20.184,
-      "splat_count": 1445
-    },
-    {
-      "image": "rocket",
-      "gradient": 0.112,
-      "compositor_ssim_srgb": 0.7924,
-      "compositor_psnr_srgb": 23.96,
-      "splat_count": 1325
-    },
-    {
-      "image": "chameleon",
-      "gradient": 0.1563,
-      "compositor_ssim_srgb": 0.754,
-      "compositor_psnr_srgb": 20.955,
-      "splat_count": 1615
-    },
-    {
-      "image": "chelsea",
-      "gradient": 0.2014,
-      "compositor_ssim_srgb": 0.6731,
-      "compositor_psnr_srgb": 20.438,
-      "splat_count": 1616
-    },
-    {
-      "image": "camera",
-      "gradient": 0.207,
-      "compositor_ssim_srgb": 0.8579,
-      "compositor_psnr_srgb": 24.118,
-      "splat_count": 1184
-    },
-    {
-      "image": "hubble_deep_field",
-      "gradient": 0.2111,
-      "compositor_ssim_srgb": 0.8831,
-      "compositor_psnr_srgb": 25.818,
-      "splat_count": 959
-    },
-    {
-      "image": "text",
-      "gradient": 0.2339,
-      "compositor_ssim_srgb": 0.8176,
-      "compositor_psnr_srgb": 25.115,
-      "splat_count": 962
-    },
-    {
-      "image": "coffee",
-      "gradient": 0.2378,
-      "compositor_ssim_srgb": 0.7353,
-      "compositor_psnr_srgb": 20.259,
-      "splat_count": 1389
-    },
-    {
-      "image": "brick",
-      "gradient": 0.2501,
-      "compositor_ssim_srgb": 0.8111,
-      "compositor_psnr_srgb": 23.933,
-      "splat_count": 1458
-    },
-    {
-      "image": "coins",
-      "gradient": 0.2783,
-      "compositor_ssim_srgb": 0.7959,
-      "compositor_psnr_srgb": 22.212,
-      "splat_count": 1182
-    },
-    {
-      "image": "astronaut",
-      "gradient": 0.2936,
-      "compositor_ssim_srgb": 0.7093,
-      "compositor_psnr_srgb": 18.28,
-      "splat_count": 1595
-    },
-    {
-      "image": "immunohistochemistry",
-      "gradient": 0.3387,
-      "compositor_ssim_srgb": 0.7352,
-      "compositor_psnr_srgb": 20.051,
-      "splat_count": 1714
-    },
-    {
-      "image": "stereo_motorcycle",
-      "gradient": 0.4138,
-      "compositor_ssim_srgb": 0.6969,
-      "compositor_psnr_srgb": 18.838,
-      "splat_count": 1338
-    },
-    {
-      "image": "page",
-      "gradient": 0.4361,
-      "compositor_ssim_srgb": 0.7685,
-      "compositor_psnr_srgb": 22.012,
-      "splat_count": 973
-    },
-    {
-      "image": "checkerboard",
-      "gradient": 0.5244,
-      "compositor_ssim_srgb": 0.6524,
-      "compositor_psnr_srgb": 12.466,
-      "splat_count": 1345
-    },
-    {
-      "image": "gravel",
-      "gradient": 0.5821,
-      "compositor_ssim_srgb": 0.6385,
-      "compositor_psnr_srgb": 19.283,
-      "splat_count": 1475
-    },
-    {
-      "image": "grass",
-      "gradient": 0.6402,
-      "compositor_ssim_srgb": 0.7156,
-      "compositor_psnr_srgb": 19.809,
-      "splat_count": 1290
-    }
-  ]
+  "per_image": {
+    "svg": [
+      {
+        "image": "colorwheel",
+        "gradient": 0.04,
+        "compositor_ssim_srgb": 0.7491,
+        "compositor_psnr_srgb": 17.621,
+        "splat_count": 1706
+      },
+      {
+        "image": "cell",
+        "gradient": 0.055,
+        "compositor_ssim_srgb": 0.8726,
+        "compositor_psnr_srgb": 26.382,
+        "splat_count": 1389
+      },
+      {
+        "image": "moon",
+        "gradient": 0.063,
+        "compositor_ssim_srgb": 0.8991,
+        "compositor_psnr_srgb": 29.753,
+        "splat_count": 1239
+      },
+      {
+        "image": "retina",
+        "gradient": 0.0906,
+        "compositor_ssim_srgb": 0.5965,
+        "compositor_psnr_srgb": 14.651,
+        "splat_count": 1533
+      },
+      {
+        "image": "logo",
+        "gradient": 0.1041,
+        "compositor_ssim_srgb": 0.812,
+        "compositor_psnr_srgb": 20.184,
+        "splat_count": 1445
+      },
+      {
+        "image": "rocket",
+        "gradient": 0.112,
+        "compositor_ssim_srgb": 0.7924,
+        "compositor_psnr_srgb": 23.96,
+        "splat_count": 1325
+      },
+      {
+        "image": "chameleon",
+        "gradient": 0.1563,
+        "compositor_ssim_srgb": 0.754,
+        "compositor_psnr_srgb": 20.955,
+        "splat_count": 1615
+      },
+      {
+        "image": "chelsea",
+        "gradient": 0.2014,
+        "compositor_ssim_srgb": 0.6731,
+        "compositor_psnr_srgb": 20.438,
+        "splat_count": 1616
+      },
+      {
+        "image": "camera",
+        "gradient": 0.207,
+        "compositor_ssim_srgb": 0.8579,
+        "compositor_psnr_srgb": 24.118,
+        "splat_count": 1184
+      },
+      {
+        "image": "hubble_deep_field",
+        "gradient": 0.2111,
+        "compositor_ssim_srgb": 0.8831,
+        "compositor_psnr_srgb": 25.818,
+        "splat_count": 959
+      },
+      {
+        "image": "text",
+        "gradient": 0.2339,
+        "compositor_ssim_srgb": 0.8176,
+        "compositor_psnr_srgb": 25.115,
+        "splat_count": 962
+      },
+      {
+        "image": "coffee",
+        "gradient": 0.2378,
+        "compositor_ssim_srgb": 0.7353,
+        "compositor_psnr_srgb": 20.259,
+        "splat_count": 1389
+      },
+      {
+        "image": "brick",
+        "gradient": 0.2501,
+        "compositor_ssim_srgb": 0.8111,
+        "compositor_psnr_srgb": 23.933,
+        "splat_count": 1458
+      },
+      {
+        "image": "coins",
+        "gradient": 0.2783,
+        "compositor_ssim_srgb": 0.7959,
+        "compositor_psnr_srgb": 22.212,
+        "splat_count": 1182
+      },
+      {
+        "image": "astronaut",
+        "gradient": 0.2936,
+        "compositor_ssim_srgb": 0.7093,
+        "compositor_psnr_srgb": 18.28,
+        "splat_count": 1595
+      },
+      {
+        "image": "immunohistochemistry",
+        "gradient": 0.3387,
+        "compositor_ssim_srgb": 0.7352,
+        "compositor_psnr_srgb": 20.051,
+        "splat_count": 1714
+      },
+      {
+        "image": "stereo_motorcycle",
+        "gradient": 0.4138,
+        "compositor_ssim_srgb": 0.6969,
+        "compositor_psnr_srgb": 18.838,
+        "splat_count": 1338
+      },
+      {
+        "image": "page",
+        "gradient": 0.4361,
+        "compositor_ssim_srgb": 0.7685,
+        "compositor_psnr_srgb": 22.012,
+        "splat_count": 973
+      },
+      {
+        "image": "checkerboard",
+        "gradient": 0.5244,
+        "compositor_ssim_srgb": 0.6524,
+        "compositor_psnr_srgb": 12.466,
+        "splat_count": 1345
+      },
+      {
+        "image": "gravel",
+        "gradient": 0.5821,
+        "compositor_ssim_srgb": 0.6385,
+        "compositor_psnr_srgb": 19.283,
+        "splat_count": 1475
+      },
+      {
+        "image": "grass",
+        "gradient": 0.6402,
+        "compositor_ssim_srgb": 0.7156,
+        "compositor_psnr_srgb": 19.809,
+        "splat_count": 1290
+      }
+    ],
+    "pixel-runtime": [
+      {
+        "image": "astronaut",
+        "compositor_ssim_srgb": 0.9993
+      },
+      {
+        "image": "brick",
+        "compositor_ssim_srgb": 0.9993
+      },
+      {
+        "image": "camera",
+        "compositor_ssim_srgb": 0.999
+      },
+      {
+        "image": "cell",
+        "compositor_ssim_srgb": 0.9988
+      },
+      {
+        "image": "chameleon",
+        "compositor_ssim_srgb": 0.9991
+      },
+      {
+        "image": "checkerboard",
+        "compositor_ssim_srgb": 0.9996
+      },
+      {
+        "image": "chelsea",
+        "compositor_ssim_srgb": 0.9994
+      },
+      {
+        "image": "coffee",
+        "compositor_ssim_srgb": 0.9992
+      },
+      {
+        "image": "coins",
+        "compositor_ssim_srgb": 0.9993
+      },
+      {
+        "image": "colorwheel",
+        "compositor_ssim_srgb": 0.9991
+      },
+      {
+        "image": "grass",
+        "compositor_ssim_srgb": 0.9998
+      },
+      {
+        "image": "gravel",
+        "compositor_ssim_srgb": 0.9998
+      },
+      {
+        "image": "hubble_deep_field",
+        "compositor_ssim_srgb": 0.999
+      },
+      {
+        "image": "immunohistochemistry",
+        "compositor_ssim_srgb": 0.9995
+      },
+      {
+        "image": "logo",
+        "compositor_ssim_srgb": 0.9993
+      },
+      {
+        "image": "moon",
+        "compositor_ssim_srgb": 0.9988
+      },
+      {
+        "image": "page",
+        "compositor_ssim_srgb": 0.9994
+      },
+      {
+        "image": "retina",
+        "compositor_ssim_srgb": 0.999
+      },
+      {
+        "image": "rocket",
+        "compositor_ssim_srgb": 0.9989
+      },
+      {
+        "image": "stereo_motorcycle",
+        "compositor_ssim_srgb": 0.9995
+      },
+      {
+        "image": "text",
+        "compositor_ssim_srgb": 0.9993
+      }
+    ]
+  }
 }
