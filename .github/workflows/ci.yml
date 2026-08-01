@@ -57,7 +57,7 @@ jobs:
         isort --check-only src/ tests/ tools/
 
     - name: Type check with mypy (ratcheted)
-      # Ratcheted rather than informational. 193 findings remain under
+      # Ratcheted rather than informational. 187 findings remain under
       # `strict = true` and clearing them needs case-by-case judgement, so a
       # hard gate at zero would fail every build and be ignored within a week.
       # A ratchet gates the direction instead: new type errors fail the build,
@@ -67,14 +67,15 @@ jobs:
       #   778  before the engine mixins declared a shared surface. 340 of those
       #        were one structural gap reported once per access site.
       #   462  after engine_state.py.
-      #   193  after parameterizing 308 bare `np.ndarray` annotations.
+      #   187  after parameterizing 308 bare `np.ndarray` annotations (CI count;
+      #        a local venv with extra stubs installed may differ).
       #
       # What is left is not mechanical: 51 arg-type, 35 no-untyped-call, 28
       # assignment, and a tail of operator/union-attr/no-any-return. Lower the
       # baseline whenever the run reports a smaller number.
       shell: bash
       env:
-        MYPY_BASELINE: "193"
+        MYPY_BASELINE: "187"
       run: |
         set -o pipefail
         output=$(mypy src/ 2>&1) || true
@@ -89,15 +90,14 @@ jobs:
           echo "::error::mypy findings rose from $MYPY_BASELINE to $count."
           exit 1
         fi
-        # The baseline is the macOS ARM64 count, which is the highest: MLX is
-        # only installed there, so its six untyped-import findings do not appear
-        # on Linux or Windows. Those platforms therefore report a lower number
-        # legitimately, and lowering the baseline to match one of them would
-        # break the reference platform. Only suggest lowering it where the
-        # count is authoritative.
-        if [ "$count" -lt "$MYPY_BASELINE" ] \
-           && [ "${{ runner.os }}" = "macOS" ] && [ "${{ runner.arch }}" = "ARM64" ]; then
-          echo "::notice::mypy findings fell to $count. Lower MYPY_BASELINE in ci.yml."
+        # The count is platform-dependent, so the baseline is the maximum across
+        # the matrix, not any one platform's number. Measured: macOS 185,
+        # ubuntu 187, windows 187. MLX installs only on Apple Silicon, and
+        # having it present *resolves* those imports, so macOS reports fewer
+        # findings than the platforms where `import mlx` is unresolvable.
+        # Lower the baseline only to a value every platform clears.
+        if [ "$count" -lt "$MYPY_BASELINE" ]; then
+          echo "::notice::mypy on ${{ runner.os }} fell to $count of $MYPY_BASELINE. Lower the baseline only to a value every platform clears."
         fi
 
     - name: Test with pytest
