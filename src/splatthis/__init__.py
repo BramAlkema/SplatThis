@@ -10,6 +10,7 @@ from .browser_export import generate_css_splat_html, generate_native_canvas_html
 from .config import ConversionRequest, ConverterConfig
 from .converter import PNG2SVGConverter
 from .domain import EvidenceLevel, SplatScene
+from .expectations import CompositorFidelity, compositor_fidelity
 from .pixel_runtime import (
     generate_parallax_pixel_runtime_html,
     generate_pixel_runtime_html,
@@ -28,6 +29,8 @@ __all__ = [
     "RawSplat",
     "SplatScene",
     "EvidenceLevel",
+    "CompositorFidelity",
+    "compositor_fidelity",
     "ConversionRequest",
     "ConverterConfig",
     "load_png",
