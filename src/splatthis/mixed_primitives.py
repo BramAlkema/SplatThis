@@ -14,6 +14,7 @@ from skimage import measure
 
 from .color import linear_to_srgb
 from .export_common import pptx_emu_scale, px_to_emu
+from .features import edge_tangent_angle
 from .template_assets import load_template, render_template
 
 
@@ -114,8 +115,12 @@ def propose_residual_edge_strokes(
         y, x = np.unravel_index(flat_index, suppressed.shape)
 
         # Image gradient points across an edge; the corrective stroke follows
-        # its tangent.
-        tangent = float(np.arctan2(grad_y[y, x], grad_x[y, x]) + np.pi / 2.0)
+        # its tangent. Routed through the shared helper rather than open-coded:
+        # a second copy of this convention is how the two implementations
+        # drifted apart historically.
+        tangent = edge_tangent_angle(
+            np.array([grad_x[y, x], grad_y[y, x]], dtype=np.float64)
+        )
         dx = half * float(np.cos(tangent))
         dy = half * float(np.sin(tangent))
         x1 = float(np.clip(float(x) - dx, 0.0, max(width_px - 1.0, 0.0)))
