@@ -176,6 +176,13 @@ def test_converter_writes_artifacts_and_is_seed_reproducible(tmp_path: Path):
         seed=7,
         device="cpu",
     )
+    # The host-memory safety valve halves the population when the machine is
+    # near exhaustion, so leaving it on makes this assertion depend on ambient
+    # RAM: the two runs below diverged locally at 86.6% used. Determinism under
+    # a fixed seed is exactly what is under test, so the valve is disabled here
+    # rather than the assertion weakened. Its own behaviour is covered by
+    # test_memory_guard_is_recorded_in_the_manifest.
+    converter.memory_guard_percent = None
 
     converter.convert(
         input_path=str(input_path),
@@ -205,3 +212,44 @@ def test_converter_writes_artifacts_and_is_seed_reproducible(tmp_path: Path):
     assert (artifacts1 / "init.raw.json").exists()
     assert (artifacts1 / "iter-1.raw.json").exists()
     assert (artifacts1 / "final.raw.json").exists()
+
+
+def test_memory_guard_is_recorded_in_the_manifest(tmp_path: Path):
+    """A population reduced for host-memory reasons must leave a trace.
+
+    The valve halves the splat count when the machine is near exhaustion. That
+    is a defensible trade against being OOM-killed, but a run whose output
+    silently depends on ambient RAM is indistinguishable from one that simply
+    converged smaller -- and a fixed seed stops explaining the result. The
+    manifest therefore records the decision whether or not it fired.
+    """
+    image = np.zeros((24, 24, 3), dtype=np.uint8)
+    image[:, :12, 0] = 255
+    input_path = tmp_path / "input.png"
+    Image.fromarray(image).save(input_path)
+
+    def _run(threshold, artifacts):
+        converter = PNG2SVGConverter(
+            max_splats=32, stages=[1], target_size=(24, 24), seed=7, device="cpu"
+        )
+        converter.memory_guard_percent = threshold
+        converter.convert(
+            input_path=str(input_path),
+            output_path=str(tmp_path / f"out{threshold}.svg"),
+            verbose=False,
+            seed=7,
+            artifacts_dir=str(artifacts),
+        )
+        manifest = json.loads((artifacts / "run_manifest.json").read_text())
+        return manifest["memory_guard"]
+
+    # Threshold 0 forces it; any real machine reports more than 0% used.
+    fired = _run(0.0, tmp_path / "a")
+    assert fired["triggered"] is True
+    assert fired["max_splats_after"] < fired["max_splats_before"]
+    assert fired["observed_percent"] > 0.0
+
+    # Disabled: no host reading is taken at all, so the run cannot depend on it.
+    off = _run(None, tmp_path / "b")
+    assert off["triggered"] is False
+    assert off["observed_percent"] is None

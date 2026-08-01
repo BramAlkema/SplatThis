@@ -6,6 +6,7 @@ import logging
 from typing import Any, Callable, Dict, Optional, Tuple
 
 import numpy as np
+import numpy.typing as npt
 
 from .quality import compute_quality_metrics
 
@@ -13,11 +14,11 @@ logger = logging.getLogger(__name__)
 
 
 def _evaluate_browser_export_quality(
-    target_linear_rgb: np.ndarray,
-    fallback_linear_rgb: Optional[np.ndarray] = None,
+    target_linear_rgb: npt.NDArray[Any],
+    fallback_linear_rgb: Optional[npt.NDArray[Any]] = None,
     *,
     artifact_name: str,
-    capture: Callable[[int, int], Tuple[np.ndarray, str]],
+    capture: Callable[[int, int], Tuple[npt.NDArray[Any], str]],
 ) -> Dict[str, Any]:
     """Grade a browser artifact while keeping proxy evidence diagnostic-only."""
 
@@ -59,9 +60,9 @@ def _evaluate_browser_export_quality(
 
 
 def evaluate_svg_export_quality(
-    target_linear_rgb: np.ndarray,
+    target_linear_rgb: npt.NDArray[Any],
     svg_path: str,
-    fallback_linear_rgb: Optional[np.ndarray] = None,
+    fallback_linear_rgb: Optional[npt.NDArray[Any]] = None,
 ) -> Dict[str, Any]:
     from .browser_capture import render_svg_in_browser_to_linear_rgb
 
@@ -76,9 +77,9 @@ def evaluate_svg_export_quality(
 
 
 def evaluate_css_export_quality(
-    target_linear_rgb: np.ndarray,
+    target_linear_rgb: npt.NDArray[Any],
     html_path: str,
-    fallback_linear_rgb: Optional[np.ndarray] = None,
+    fallback_linear_rgb: Optional[npt.NDArray[Any]] = None,
 ) -> Dict[str, Any]:
     from .browser_capture import render_css_html_in_browser_to_linear_rgb
 
@@ -93,9 +94,9 @@ def evaluate_css_export_quality(
 
 
 def evaluate_native_canvas_export_quality(
-    target_linear_rgb: np.ndarray,
+    target_linear_rgb: npt.NDArray[Any],
     html_path: str,
-    fallback_linear_rgb: Optional[np.ndarray] = None,
+    fallback_linear_rgb: Optional[npt.NDArray[Any]] = None,
 ) -> Dict[str, Any]:
     from .browser_capture import render_canvas_html_in_browser_to_linear_rgb
 
@@ -110,9 +111,9 @@ def evaluate_native_canvas_export_quality(
 
 
 def evaluate_pixel_runtime_export_quality(
-    target_linear_rgb: np.ndarray,
+    target_linear_rgb: npt.NDArray[Any],
     html_path: str,
-    fallback_linear_rgb: Optional[np.ndarray] = None,
+    fallback_linear_rgb: Optional[npt.NDArray[Any]] = None,
 ) -> Dict[str, Any]:
     from .browser_capture import render_pixel_runtime_html_in_browser_to_linear_rgb
 

@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Mapping
 
-import numpy as np
+import numpy.typing as npt
 
 from .artifact_evaluation import (
     evaluate_css_export_quality,
@@ -56,7 +56,7 @@ class ArtifactBackend(ABC):
         converter: "ConversionEngine",
         request: ConversionRequest,
         scene: SplatScene,
-        target_linear_rgb: np.ndarray,
+        target_linear_rgb: npt.NDArray[Any],
         artifacts_path: Path | None,
     ) -> ArtifactPayload:
         """Emit the primary target exactly once."""
@@ -79,8 +79,8 @@ class ArtifactBackend(ABC):
         *,
         converter: "ConversionEngine",
         request: ConversionRequest,
-        target_linear_rgb: np.ndarray,
-        fallback_linear_rgb: np.ndarray,
+        target_linear_rgb: npt.NDArray[Any],
+        fallback_linear_rgb: npt.NDArray[Any],
         proxy_quality: Mapping[str, Any],
     ) -> ArtifactEvaluation:
         quality = dict(proxy_quality)
@@ -104,8 +104,8 @@ class ArtifactBackend(ABC):
         evaluate: Any,
         success_kind: str,
         unavailable_kind: str,
-        target_linear_rgb: np.ndarray,
-        fallback_linear_rgb: np.ndarray,
+        target_linear_rgb: npt.NDArray[Any],
+        fallback_linear_rgb: npt.NDArray[Any],
     ) -> ArtifactEvaluation:
         quality = dict(proxy_quality)
         if request.output_path is not None:
@@ -159,7 +159,7 @@ class SvgArtifactBackend(ArtifactBackend):
         converter: "ConversionEngine",
         request: ConversionRequest,
         scene: SplatScene,
-        target_linear_rgb: np.ndarray,
+        target_linear_rgb: npt.NDArray[Any],
         artifacts_path: Path | None,
     ) -> ArtifactPayload:
         metadata: Dict[str, Any] = {}
@@ -229,8 +229,8 @@ class SvgArtifactBackend(ArtifactBackend):
         *,
         converter: "ConversionEngine",
         request: ConversionRequest,
-        target_linear_rgb: np.ndarray,
-        fallback_linear_rgb: np.ndarray,
+        target_linear_rgb: npt.NDArray[Any],
+        fallback_linear_rgb: npt.NDArray[Any],
         proxy_quality: Mapping[str, Any],
     ) -> ArtifactEvaluation:
         return self._browser_evaluation(
@@ -258,7 +258,7 @@ class DrawingMLArtifactBackend(ArtifactBackend):
         converter: "ConversionEngine",
         request: ConversionRequest,
         scene: SplatScene,
-        target_linear_rgb: np.ndarray,
+        target_linear_rgb: npt.NDArray[Any],
         artifacts_path: Path | None,
     ) -> ArtifactPayload:
         return ArtifactPayload(
@@ -304,8 +304,8 @@ class PptxArtifactBackend(DrawingMLArtifactBackend):
         *,
         converter: "ConversionEngine",
         request: ConversionRequest,
-        target_linear_rgb: np.ndarray,
-        fallback_linear_rgb: np.ndarray,
+        target_linear_rgb: npt.NDArray[Any],
+        fallback_linear_rgb: npt.NDArray[Any],
         proxy_quality: Mapping[str, Any],
     ) -> ArtifactEvaluation:
         return ArtifactEvaluation(
@@ -335,7 +335,7 @@ class CanvasArtifactBackend(ArtifactBackend):
         converter: "ConversionEngine",
         request: ConversionRequest,
         scene: SplatScene,
-        target_linear_rgb: np.ndarray,
+        target_linear_rgb: npt.NDArray[Any],
         artifacts_path: Path | None,
     ) -> ArtifactPayload:
         parallax_strength = float(
@@ -361,8 +361,8 @@ class CanvasArtifactBackend(ArtifactBackend):
         *,
         converter: "ConversionEngine",
         request: ConversionRequest,
-        target_linear_rgb: np.ndarray,
-        fallback_linear_rgb: np.ndarray,
+        target_linear_rgb: npt.NDArray[Any],
+        fallback_linear_rgb: npt.NDArray[Any],
         proxy_quality: Mapping[str, Any],
     ) -> ArtifactEvaluation:
         return self._browser_evaluation(
@@ -392,7 +392,7 @@ class CssArtifactBackend(ArtifactBackend):
         converter: "ConversionEngine",
         request: ConversionRequest,
         scene: SplatScene,
-        target_linear_rgb: np.ndarray,
+        target_linear_rgb: npt.NDArray[Any],
         artifacts_path: Path | None,
     ) -> ArtifactPayload:
         parallax_strength = float(
@@ -425,8 +425,8 @@ class CssArtifactBackend(ArtifactBackend):
         *,
         converter: "ConversionEngine",
         request: ConversionRequest,
-        target_linear_rgb: np.ndarray,
-        fallback_linear_rgb: np.ndarray,
+        target_linear_rgb: npt.NDArray[Any],
+        fallback_linear_rgb: npt.NDArray[Any],
         proxy_quality: Mapping[str, Any],
     ) -> ArtifactEvaluation:
         return self._browser_evaluation(
@@ -468,7 +468,7 @@ class PixelRuntimeArtifactBackend(ArtifactBackend):
         converter: "ConversionEngine",
         request: ConversionRequest,
         scene: SplatScene,
-        target_linear_rgb: np.ndarray,
+        target_linear_rgb: npt.NDArray[Any],
         artifacts_path: Path | None,
     ) -> ArtifactPayload:
         parallax_strength = self._parallax_strength(converter)
@@ -502,8 +502,8 @@ class PixelRuntimeArtifactBackend(ArtifactBackend):
         *,
         converter: "ConversionEngine",
         request: ConversionRequest,
-        target_linear_rgb: np.ndarray,
-        fallback_linear_rgb: np.ndarray,
+        target_linear_rgb: npt.NDArray[Any],
+        fallback_linear_rgb: npt.NDArray[Any],
         proxy_quality: Mapping[str, Any],
     ) -> ArtifactEvaluation:
         if self.requires_governing_render(converter):

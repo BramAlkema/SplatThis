@@ -8,9 +8,10 @@ opacity-order error) is Phase 3 of the ADR delivery plan.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Sequence, Tuple
+from typing import Any, Optional, Sequence, Tuple
 
 import numpy as np
+import numpy.typing as npt
 
 from .metrics import Roi, linear_rgb_to_oklab_np
 
@@ -25,7 +26,9 @@ def centered_crop(*, x: int, y: int, size: int, shape: Tuple[int, int]) -> Roi:
     return (y0, x0, y0 + size, x0 + size)
 
 
-def suppress_neighborhood(priority: np.ndarray, *, x: int, y: int, radius: int) -> None:
+def suppress_neighborhood(
+    priority: npt.NDArray[Any], *, x: int, y: int, radius: int
+) -> None:
     """Zero a square neighborhood in-place so ROIs spread out."""
     h, w = priority.shape
     y0, y1 = max(0, y - radius), min(h, y + radius + 1)
@@ -34,8 +37,8 @@ def suppress_neighborhood(priority: np.ndarray, *, x: int, y: int, radius: int) 
 
 
 def select_fixed_rois(
-    error_map: np.ndarray,
-    saliency: Optional[np.ndarray] = None,
+    error_map: npt.NDArray[Any],
+    saliency: Optional[npt.NDArray[Any]] = None,
     size: int = 64,
     count: int = 8,
 ) -> Tuple[Roi, ...]:
@@ -64,18 +67,20 @@ def select_fixed_rois(
 class ResidualAnalysis:
     """Shared analysis bundle handed to candidate operators."""
 
-    residual_oklab: np.ndarray  # [H, W, 3] signed OKLab residual (target - rendered)
-    residual_linear: np.ndarray  # [H, W, 3] signed linear-RGB residual
-    absolute_color_error: np.ndarray  # [H, W] OKLab distance
-    priority: np.ndarray  # [H, W] error x (1 + saliency)
+    residual_oklab: npt.NDArray[
+        Any
+    ]  # [H, W, 3] signed OKLab residual (target - rendered)
+    residual_linear: npt.NDArray[Any]  # [H, W, 3] signed linear-RGB residual
+    absolute_color_error: npt.NDArray[Any]  # [H, W] OKLab distance
+    priority: npt.NDArray[Any]  # [H, W] error x (1 + saliency)
     fixed_rois: Tuple[Roi, ...]
 
 
 def analyze_residual(
-    target_linear_rgb: np.ndarray,
-    rendered_linear_rgb: np.ndarray,
+    target_linear_rgb: npt.NDArray[Any],
+    rendered_linear_rgb: npt.NDArray[Any],
     *,
-    saliency: Optional[np.ndarray] = None,
+    saliency: Optional[npt.NDArray[Any]] = None,
     fixed_rois: Optional[Sequence[Roi]] = None,
     roi_size: int = 64,
     roi_count: int = 8,

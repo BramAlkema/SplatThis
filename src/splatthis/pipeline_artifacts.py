@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
-import numpy as np
+import numpy.typing as npt
 import torch
 
 from .artifact_backends import ArtifactBackend
@@ -34,7 +34,7 @@ class EvaluationBundle:
     export_quality: Dict[str, Any]
     artifact_evaluation: ArtifactEvaluation
     acceptance: Dict[str, Any]
-    preview_linear: np.ndarray
+    preview_linear: npt.NDArray[Any]
 
 
 def _emit_and_write(

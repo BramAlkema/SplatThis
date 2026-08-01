@@ -9,6 +9,7 @@ from types import MappingProxyType
 from typing import Any, Mapping, Optional, Sequence
 
 import numpy as np
+import numpy.typing as npt
 
 from .splat import GaussianSplat
 
@@ -29,7 +30,7 @@ class SplatScene:
     width: int
     height: int
     splats: Sequence[GaussianSplat]
-    background_linear_rgb: np.ndarray
+    background_linear_rgb: npt.NDArray[Any]
     compositing_space: str = "linear"
 
     def __post_init__(self) -> None:

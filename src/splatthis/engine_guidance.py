@@ -6,6 +6,7 @@ import hashlib
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import numpy.typing as npt
 import torch
 from PIL import Image
 
@@ -18,7 +19,7 @@ from .splat import GaussianSplat
 class ConversionGuidanceMixin(ConversionEngineState):
     """Builds spatial priorities and low-level coverage diagnostics."""
 
-    def _normalize_map(self, values: np.ndarray) -> np.ndarray:
+    def _normalize_map(self, values: npt.NDArray[Any]) -> npt.NDArray[Any]:
         """Normalize array to [0, 1]."""
         min_v = float(np.min(values))
         max_v = float(np.max(values))
@@ -28,10 +29,10 @@ class ConversionGuidanceMixin(ConversionEngineState):
 
     def _normalize_percentile_map(
         self,
-        values: np.ndarray,
+        values: npt.NDArray[Any],
         lower: float = 1.0,
         upper: float = 99.0,
-    ) -> np.ndarray:
+    ) -> npt.NDArray[Any]:
         """Normalize to [0, 1] after clipping extreme percentiles."""
         arr = np.asarray(values, dtype=np.float32)
         lo = float(np.percentile(arr, np.clip(lower, 0.0, 100.0)))
@@ -40,7 +41,7 @@ class ConversionGuidanceMixin(ConversionEngineState):
             return np.zeros_like(arr, dtype=np.float32)
         return np.clip((arr - lo) / (hi - lo), 0.0, 1.0).astype(np.float32)
 
-    def _estimate_background_color(self, image: np.ndarray) -> np.ndarray:
+    def _estimate_background_color(self, image: npt.NDArray[Any]) -> npt.NDArray[Any]:
         """
         Estimate a stable background color from border pixels in linear RGB.
 
@@ -84,7 +85,9 @@ class ConversionGuidanceMixin(ConversionEngineState):
             return np.zeros(3, dtype=np.float32)
         return np.clip(background, 0.0, 1.0)
 
-    def _estimate_border_median_color(self, image: np.ndarray) -> np.ndarray:
+    def _estimate_border_median_color(
+        self, image: npt.NDArray[Any]
+    ) -> npt.NDArray[Any]:
         """Estimate border median without rejecting non-uniform photo borders."""
         if image.ndim != 3 or image.shape[2] < 3:
             return np.zeros(3, dtype=np.float32)
@@ -123,11 +126,11 @@ class ConversionGuidanceMixin(ConversionEngineState):
 
     def _compute_background_suppressed_priority(
         self,
-        lightness: np.ndarray,
-        saliency: np.ndarray,
-        foreground: np.ndarray,
-        edge_strength: np.ndarray,
-    ) -> Dict[str, np.ndarray]:
+        lightness: npt.NDArray[Any],
+        saliency: npt.NDArray[Any],
+        foreground: npt.NDArray[Any],
+        edge_strength: npt.NDArray[Any],
+    ) -> Dict[str, npt.NDArray[Any]]:
         """Build a pure image-statistics detail prior that discounts border background texture."""
         from scipy import ndimage as ndi
         from skimage.filters import gaussian, sobel
@@ -343,7 +346,7 @@ class ConversionGuidanceMixin(ConversionEngineState):
             "detail_priority_map": detail_priority.astype(np.float32),
         }
 
-    def _compute_region_guidance(self, image: np.ndarray) -> Dict[str, Any]:
+    def _compute_region_guidance(self, image: npt.NDArray[Any]) -> Dict[str, Any]:
         """
         Build foreground/background/edge masks plus a spatial loss weight map.
 
@@ -572,11 +575,11 @@ class ConversionGuidanceMixin(ConversionEngineState):
 
     def _sample_candidate_positions(
         self,
-        score_map: np.ndarray,
+        score_map: npt.NDArray[Any],
         percentile: float,
         max_samples: int,
         rng: np.random.Generator,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> Tuple[npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any]]:
         """Sample top-scoring coordinates with probability proportional to score."""
         if max_samples <= 0:
             return (
@@ -634,7 +637,7 @@ class ConversionGuidanceMixin(ConversionEngineState):
 
     def _build_alpha_coverage_map(
         self, splats: List[GaussianSplat], width: int, height: int
-    ) -> np.ndarray:
+    ) -> npt.NDArray[Any]:
         """Build alpha coverage map where 1 means fully covered by accumulated opacity."""
         transmittance = np.ones((height, width), dtype=np.float32)
         self._apply_splats_to_transmittance(
@@ -648,7 +651,7 @@ class ConversionGuidanceMixin(ConversionEngineState):
 
     def _apply_splats_to_transmittance(
         self,
-        transmittance: np.ndarray,
+        transmittance: npt.NDArray[Any],
         splats: List[GaussianSplat],
         width: int,
         height: int,
@@ -670,7 +673,7 @@ class ConversionGuidanceMixin(ConversionEngineState):
                 1.0 - layer_alpha.astype(np.float32), 0.0, 1.0
             )
 
-    def _compute_coverage_ratio(self, coverage_map: np.ndarray) -> float:
+    def _compute_coverage_ratio(self, coverage_map: npt.NDArray[Any]) -> float:
         """Compute covered-pixel ratio under configured alpha threshold."""
         threshold = float(
             np.clip(self.refinement_config.get("coverage_threshold", 0.03), 0.0, 1.0)

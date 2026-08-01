@@ -1,5 +1,10 @@
 # SplatThis
 
+[![CI](https://github.com/BramAlkema/SplatThis/actions/workflows/ci.yml/badge.svg)](https://github.com/BramAlkema/SplatThis/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/splatthis)](https://pypi.org/project/splatthis/)
+[![Python](https://img.shields.io/pypi/pyversions/splatthis)](https://pypi.org/project/splatthis/)
+[![License](https://img.shields.io/pypi/l/splatthis)](https://github.com/BramAlkema/SplatThis/blob/main/LICENSE)
+
 Convert a bitmap into Gaussian splats and deploy them as browser-rendered SVG,
 scriptless CSS, browser-native Canvas primitives, an accelerated pixel runtime
 with exact CPU fallbacks, or native editable PowerPoint shapes.

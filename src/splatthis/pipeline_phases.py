@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import numpy as np
+import numpy.typing as npt
 
 from .artifact_backends import ArtifactBackend
 from .domain import SplatScene
@@ -25,11 +26,11 @@ logger = logging.getLogger(__name__)
 class PreparedInput:
     """Image analysis consumed by initialization and densification."""
 
-    image: np.ndarray
+    image: npt.NDArray[Any]
     width: int
     height: int
-    structure_primary: Optional[np.ndarray]
-    structure_anisotropy: Optional[np.ndarray]
+    structure_primary: Optional[npt.NDArray[Any]]
+    structure_anisotropy: Optional[npt.NDArray[Any]]
 
 
 def _install_guidance(
@@ -251,8 +252,8 @@ def prepare_input(
             1.0,
         )
     )
-    structure_primary: Optional[np.ndarray] = None
-    structure_anisotropy: Optional[np.ndarray] = None
+    structure_primary: Optional[npt.NDArray[Any]] = None
+    structure_anisotropy: Optional[npt.NDArray[Any]] = None
     if structure_enabled:
         phase_started = time.perf_counter()
         structure_primary, structure_anisotropy = compute_structure_field(
@@ -332,6 +333,13 @@ def fit_scene(
     )
     timings["optimize_splats"] = float(time.perf_counter() - phase_started)
     manifest["stages"].extend(stage_metrics)
+
+    # Recorded whether or not it fired. A run whose population was halved for
+    # host-memory reasons is otherwise indistinguishable from one that simply
+    # converged smaller, and a fixed seed no longer explains the output.
+    guard = getattr(converter, "_memory_guard", None)
+    if guard is not None:
+        manifest["memory_guard"] = dict(guard)
 
     phase_started = time.perf_counter()
     optimized_splats = list(splats)

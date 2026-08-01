@@ -8,9 +8,10 @@ import math
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import numpy.typing as npt
 from PIL import Image
 
 from .color import linear_to_srgb
@@ -52,7 +53,7 @@ def save_drawingml(
     k_sigma: float = 2.5,
     sort_by_area: bool = False,
     sort_mode: str = DEFAULT_EXPORT_ORDER,
-    background_linear_rgb: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
     painter_order: str = PPTX_PAINTER_ORDER_LEGACY,
 ) -> None:
@@ -92,7 +93,7 @@ def generate_drawingml_slide_content(
     width: int,
     height: int,
     k_sigma: float = 2.5,
-    background_linear_rgb: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
     painter_order: str = PPTX_PAINTER_ORDER_LEGACY,
 ) -> str:
@@ -223,7 +224,7 @@ def _background_to_drawingml_shape_lines(
     width_emu: int,
     height_emu: int,
     shape_id: int,
-    background_linear_rgb: np.ndarray,
+    background_linear_rgb: npt.NDArray[Any],
 ) -> List[str]:
     """Create a native DrawingML rectangle for the estimated canvas background."""
     bg = np.asarray(background_linear_rgb, dtype=np.float32).reshape(-1)
@@ -569,7 +570,7 @@ def save_pptx_with_splat_png(
     sort_mode: str = DEFAULT_EXPORT_ORDER,
     sort_by_area: bool = False,
     render_scale: float = 1.0,
-    background_linear_rgb: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     compositing_space: str = "linear",
 ) -> None:
     """
@@ -656,7 +657,7 @@ def save_pptx_with_splats(
     k_sigma: float = 2.5,
     sort_mode: str = DEFAULT_EXPORT_ORDER,
     sort_by_area: bool = False,
-    background_linear_rgb: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
     painter_order: str = PPTX_PAINTER_ORDER_LEGACY,
 ) -> None:

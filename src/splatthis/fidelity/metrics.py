@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Optional, Sequence, Tuple, Union
 
 import numpy as np
+import numpy.typing as npt
 
 from ..color import linear_to_srgb_float32 as _np_linear_to_srgb
 
@@ -18,7 +19,7 @@ _LPIPS_NET = None
 _LPIPS_FAILED = False
 
 
-def linear_rgb_to_oklab_np(rgb: np.ndarray) -> np.ndarray:
+def linear_rgb_to_oklab_np(rgb: npt.NDArray[Any]) -> npt.NDArray[Any]:
     """Numpy port of the torch/MLX linear-RGB -> OKLab transform."""
     rgb = np.clip(rgb, 0.0, 1.0)
     r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
@@ -34,13 +35,13 @@ def linear_rgb_to_oklab_np(rgb: np.ndarray) -> np.ndarray:
     return np.stack([lab_l, lab_a, lab_b], axis=-1).astype(np.float32)
 
 
-def _luma(srgb: np.ndarray) -> np.ndarray:
+def _luma(srgb: npt.NDArray[Any]) -> npt.NDArray[Any]:
     return (
         0.2126 * srgb[..., 0] + 0.7152 * srgb[..., 1] + 0.0722 * srgb[..., 2]
     ).astype(np.float32)
 
 
-def _lpips_score(a_srgb: np.ndarray, b_srgb: np.ndarray) -> float:
+def _lpips_score(a_srgb: npt.NDArray[Any], b_srgb: npt.NDArray[Any]) -> float:
     """LPIPS (AlexNet) or NaN when the optional dependency is unavailable.
 
     NaN degrades gracefully in the acceptance gate: NaN comparisons are
@@ -74,7 +75,7 @@ def _lpips_score(a_srgb: np.ndarray, b_srgb: np.ndarray) -> float:
         a_srgb = resize(a_srgb, shape, anti_aliasing=False, preserve_range=True)
         b_srgb = resize(b_srgb, shape, anti_aliasing=False, preserve_range=True)
 
-    def prep(x: np.ndarray):
+    def prep(x: npt.NDArray[Any]):
         t = torch.from_numpy(np.ascontiguousarray(x)).permute(2, 0, 1)[None]
         return t.float() * 2.0 - 1.0
 
@@ -82,7 +83,7 @@ def _lpips_score(a_srgb: np.ndarray, b_srgb: np.ndarray) -> float:
         return float(_LPIPS_NET(prep(a_srgb), prep(b_srgb)).item())
 
 
-def _windowed_ssim(x: np.ndarray, y: np.ndarray) -> float:
+def _windowed_ssim(x: npt.NDArray[Any], y: npt.NDArray[Any]) -> float:
     from skimage.metrics import structural_similarity
 
     side = min(x.shape[0], x.shape[1])
@@ -92,7 +93,9 @@ def _windowed_ssim(x: np.ndarray, y: np.ndarray) -> float:
     return float(structural_similarity(x, y, data_range=1.0, win_size=win))
 
 
-def _ms_ssim_luma(target_srgb: np.ndarray, rendered_srgb: np.ndarray) -> float:
+def _ms_ssim_luma(
+    target_srgb: npt.NDArray[Any], rendered_srgb: npt.NDArray[Any]
+) -> float:
     """Windowed SSIM on display luma averaged over scales 1/2/4.
 
     A cheap local structural term: windowed (not global) so local blur and
@@ -114,7 +117,7 @@ def _ms_ssim_luma(target_srgb: np.ndarray, rendered_srgb: np.ndarray) -> float:
     return float(np.mean(scores))
 
 
-def _edge_maps(target_srgb: np.ndarray, rendered_srgb: np.ndarray):
+def _edge_maps(target_srgb: npt.NDArray[Any], rendered_srgb: npt.NDArray[Any]):
     from skimage.feature import canny
 
     t_edges = canny(_luma(target_srgb), sigma=1.5)
@@ -122,7 +125,7 @@ def _edge_maps(target_srgb: np.ndarray, rendered_srgb: np.ndarray):
     return t_edges, r_edges
 
 
-def _edge_chamfer(t_edges: np.ndarray, r_edges: np.ndarray) -> float:
+def _edge_chamfer(t_edges: npt.NDArray[Any], r_edges: npt.NDArray[Any]) -> float:
     """Symmetric mean chamfer distance between edge sets, in pixels."""
     from scipy import ndimage
 
@@ -136,7 +139,9 @@ def _edge_chamfer(t_edges: np.ndarray, r_edges: np.ndarray) -> float:
     return float(0.5 * (dist_to_t[r_edges].mean() + dist_to_r[t_edges].mean()))
 
 
-def _edge_gradient_l1(target_srgb: np.ndarray, rendered_srgb: np.ndarray) -> float:
+def _edge_gradient_l1(
+    target_srgb: npt.NDArray[Any], rendered_srgb: npt.NDArray[Any]
+) -> float:
     t, r = _luma(target_srgb), _luma(rendered_srgb)
     gt_y, gt_x = np.gradient(t)
     gr_y, gr_x = np.gradient(r)
@@ -144,7 +149,7 @@ def _edge_gradient_l1(target_srgb: np.ndarray, rendered_srgb: np.ndarray) -> flo
 
 
 def _salient_crop(
-    mask: Optional[np.ndarray], shape: Tuple[int, int], min_size: int = 64
+    mask: Optional[npt.NDArray[Any]], shape: Tuple[int, int], min_size: int = 64
 ) -> Optional[Roi]:
     """Bounding box of the saliency mask, padded to a workable minimum size."""
     if mask is None or not mask.any():
@@ -185,11 +190,11 @@ class FidelityMetrics:
 
 
 def compute_fidelity_metrics(
-    target_linear_rgb: np.ndarray,
-    rendered_linear_rgb: np.ndarray,
+    target_linear_rgb: npt.NDArray[Any],
+    rendered_linear_rgb: npt.NDArray[Any],
     *,
     fixed_rois: Sequence[Roi] = (),
-    saliency_mask: Optional[np.ndarray] = None,
+    saliency_mask: Optional[npt.NDArray[Any]] = None,
     splat_count: int = 0,
     file_size_bytes: int = 0,
     render_method: str = "unknown",

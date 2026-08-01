@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import numpy.typing as npt
 import torch
 
 if TYPE_CHECKING:
@@ -37,6 +38,8 @@ class ConversionEngineState:
 
     # -- Population and geometry budgets -----------------------------------
     max_splats: int
+    memory_guard_percent: Optional[float]
+    _memory_guard: Dict[str, Any]
     k_sigma: float
     stages: List[int]
     target_size: Optional[Tuple[int, int]]
@@ -83,11 +86,11 @@ class ConversionEngineState:
     # -- Region guidance ---------------------------------------------------
     # Installed by pipeline_phases._install_guidance, not by the constructor.
     region_weighting_enabled: bool
-    _region_weight_map: Optional[np.ndarray]
-    _region_foreground_mask: Optional[np.ndarray]
-    _region_background_safe_mask: Optional[np.ndarray]
-    _region_edge_band_mask: Optional[np.ndarray]
-    _background_linear_rgb: np.ndarray
+    _region_weight_map: Optional[npt.NDArray[Any]]
+    _region_foreground_mask: Optional[npt.NDArray[Any]]
+    _region_background_safe_mask: Optional[npt.NDArray[Any]]
+    _region_edge_band_mask: Optional[npt.NDArray[Any]]
+    _background_linear_rgb: npt.NDArray[Any]
 
     if TYPE_CHECKING:
         # Cross-mixin calls. Declared for the type checker only; the owning
@@ -98,33 +101,33 @@ class ConversionEngineState:
         def _add_error_driven_splats(
             self,
             splats: List[GaussianSplat],
-            image: np.ndarray,
+            image: npt.NDArray[Any],
             target: torch.Tensor,
             renderer: torch.nn.Module,
             rng: np.random.Generator,
-            edge_map: Optional[np.ndarray] = None,
+            edge_map: Optional[npt.NDArray[Any]] = None,
             stage_idx: int = 0,
             precomputed_rendered: Optional[torch.Tensor] = None,
-            precomputed_coverage_map: Optional[np.ndarray] = None,
-            structure_primary: Optional[np.ndarray] = None,
-            structure_anisotropy: Optional[np.ndarray] = None,
+            precomputed_coverage_map: Optional[npt.NDArray[Any]] = None,
+            structure_primary: Optional[npt.NDArray[Any]] = None,
+            structure_anisotropy: Optional[npt.NDArray[Any]] = None,
             max_splats_cap: Optional[int] = None,
-        ) -> Tuple[List[GaussianSplat], Optional[np.ndarray]]: ...
+        ) -> Tuple[List[GaussianSplat], Optional[npt.NDArray[Any]]]: ...
 
         # engine_initialization.py
         def _analyze_local_structure(
-            self, image: np.ndarray, x: int, y: int
-        ) -> Tuple[np.ndarray, float]: ...
+            self, image: npt.NDArray[Any], x: int, y: int
+        ) -> Tuple[npt.NDArray[Any], float]: ...
 
         # engine_configuration.py
         def _apply_saliency_sampling_bias(
-            self, score_map: np.ndarray, strength: float
-        ) -> np.ndarray: ...
+            self, score_map: npt.NDArray[Any], strength: float
+        ) -> npt.NDArray[Any]: ...
 
         # engine_guidance.py
         def _apply_splats_to_transmittance(
             self,
-            transmittance: np.ndarray,
+            transmittance: npt.NDArray[Any],
             splats: List[GaussianSplat],
             width: int,
             height: int,
@@ -138,16 +141,16 @@ class ConversionEngineState:
         # engine_guidance.py
         def _build_alpha_coverage_map(
             self, splats: List[GaussianSplat], width: int, height: int
-        ) -> np.ndarray: ...
+        ) -> npt.NDArray[Any]: ...
 
         # engine_initialization.py
-        def _build_edge_map(self, image: np.ndarray) -> np.ndarray: ...
+        def _build_edge_map(self, image: npt.NDArray[Any]) -> npt.NDArray[Any]: ...
 
         # engine_configuration.py
         def _clear_renderer_cache(self, renderer: torch.nn.Module) -> None: ...
 
         # engine_guidance.py
-        def _compute_coverage_ratio(self, coverage_map: np.ndarray) -> float: ...
+        def _compute_coverage_ratio(self, coverage_map: npt.NDArray[Any]) -> float: ...
 
         # engine_optimization.py
         def _compute_quality_metrics_cached(
@@ -157,8 +160,8 @@ class ConversionEngineState:
             renderer: torch.nn.Module,
             loss_fn: torch.nn.Module,
             precomputed_rendered: Optional[torch.Tensor] = None,
-            precomputed_coverage_map: Optional[np.ndarray] = None,
-        ) -> Tuple[Dict[str, float], torch.Tensor, np.ndarray]: ...
+            precomputed_coverage_map: Optional[npt.NDArray[Any]] = None,
+        ) -> Tuple[Dict[str, float], torch.Tensor, npt.NDArray[Any]]: ...
 
         # engine_configuration.py
         def _copy_splat_layers(
@@ -190,7 +193,7 @@ class ConversionEngineState:
         ) -> Optional[torch.Tensor]: ...
 
         # engine_guidance.py
-        def _normalize_map(self, values: np.ndarray) -> np.ndarray: ...
+        def _normalize_map(self, values: npt.NDArray[Any]) -> npt.NDArray[Any]: ...
 
         # engine_optimization.py
         def _optimize_stage(
@@ -220,7 +223,7 @@ class ConversionEngineState:
             max_count: int,
             target: Optional[torch.Tensor] = None,
             renderer: Optional[torch.nn.Module] = None,
-            precomputed_coverage_map: Optional[np.ndarray] = None,
+            precomputed_coverage_map: Optional[npt.NDArray[Any]] = None,
         ) -> List[GaussianSplat]: ...
 
         # engine_configuration.py
@@ -232,12 +235,12 @@ class ConversionEngineState:
         def _run_residual_detail_passes(
             self,
             splats: List[GaussianSplat],
-            image: np.ndarray,
+            image: npt.NDArray[Any],
             target: torch.Tensor,
             renderer: torch.nn.Module,
             loss_fn: torch.nn.Module,
             rng: np.random.Generator,
-            edge_map: np.ndarray,
+            edge_map: npt.NDArray[Any],
             verbose: bool,
         ) -> Tuple[List[GaussianSplat], List[Dict[str, Any]]]: ...
 
@@ -249,18 +252,18 @@ class ConversionEngineState:
         # engine_guidance.py
         def _sample_candidate_positions(
             self,
-            score_map: np.ndarray,
+            score_map: npt.NDArray[Any],
             percentile: float,
             max_samples: int,
             rng: np.random.Generator,
-        ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]: ...
+        ) -> Tuple[npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any]]: ...
 
         # engine_configuration.py
-        def _sampling_prior_map(self) -> Optional[np.ndarray]: ...
+        def _sampling_prior_map(self) -> Optional[npt.NDArray[Any]]: ...
 
         # engine_postfit.py
         def _score_canvas_runtime_model(
-            self, splats: List[GaussianSplat], image: np.ndarray
+            self, splats: List[GaussianSplat], image: npt.NDArray[Any]
         ) -> Dict[str, float]: ...
 
         # engine_configuration.py

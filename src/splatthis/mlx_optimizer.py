@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import numpy as np
+import numpy.typing as npt
 
 from .mlx_runtime import is_mlx_available, require_mlx
 from .splat import GaussianSplat, RawSplat
@@ -131,7 +132,9 @@ def clone_tree(tree: Mapping[str, Any]) -> Dict[str, Any]:
     return {key: mlx.stop_gradient(value) for key, value in tree.items()}
 
 
-def tree_to_numpy_table(params: MlxSplatParams, tree: Mapping[str, Any]) -> np.ndarray:
+def tree_to_numpy_table(
+    params: MlxSplatParams, tree: Mapping[str, Any]
+) -> npt.NDArray[Any]:
     mlx = _require_mlx()
     table = params.as_table(tree)
     mlx.eval(table)
@@ -139,7 +142,7 @@ def tree_to_numpy_table(params: MlxSplatParams, tree: Mapping[str, Any]) -> np.n
 
 
 def table_to_splats(
-    table: np.ndarray, templates: Optional[Sequence[GaussianSplat]] = None
+    table: npt.NDArray[Any], templates: Optional[Sequence[GaussianSplat]] = None
 ) -> List[GaussianSplat]:
     """Convert a canonical table back to splats, preserving template layers when present."""
 

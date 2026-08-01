@@ -1,9 +1,10 @@
 """Differentiable Torch renderers and the exact pixel-runtime model."""
 
 import math
-from typing import List, Literal, Optional, Tuple, Union
+from typing import Any, List, Literal, Optional, Tuple, Union
 
 import numpy as np
+import numpy.typing as npt
 import torch
 import torch.nn as nn
 
@@ -12,7 +13,7 @@ from .color import srgb_to_linear_float32 as _np_srgb_to_linear
 from .splat import GaussianSplat, render_importance_for_raw, render_order_key
 
 
-def _splats_to_numpy_table(splats: List[GaussianSplat]) -> np.ndarray:
+def _splats_to_numpy_table(splats: List[GaussianSplat]) -> npt.NDArray[Any]:
     """Convert splats to a compact float32 table [N, 11]."""
     if not splats:
         return np.zeros((0, 11), dtype=np.float32)
@@ -70,7 +71,7 @@ def create_renderer(
     tile_size: int = 16,
     blend_mode: str = "weighted",
     background_color: Optional[
-        Union[torch.Tensor, np.ndarray, List[float], Tuple[float, float, float]]
+        Union[torch.Tensor, npt.NDArray[Any], List[float], Tuple[float, float, float]]
     ] = None,
     compositing_space: str = "linear",
     tile_bin_rebuild_interval: int = 1,
@@ -163,7 +164,9 @@ class GaussianRenderer(nn.Module):
         tile_size: int = 16,
         blend_mode: str = "weighted",
         background_color: Optional[
-            Union[torch.Tensor, np.ndarray, List[float], Tuple[float, float, float]]
+            Union[
+                torch.Tensor, npt.NDArray[Any], List[float], Tuple[float, float, float]
+            ]
         ] = None,
         enable_tile_culling: bool = True,
         culling_sigma: float = 3.0,
@@ -596,7 +599,9 @@ class TorchBatchedGaussianRenderer(GaussianRenderer):
         tile_size: int = 32,
         blend_mode: str = "weighted",
         background_color: Optional[
-            Union[torch.Tensor, np.ndarray, List[float], Tuple[float, float, float]]
+            Union[
+                torch.Tensor, npt.NDArray[Any], List[float], Tuple[float, float, float]
+            ]
         ] = None,
         enable_tile_culling: bool = True,
         culling_sigma: float = 3.0,
@@ -1228,10 +1233,10 @@ def render_splats_numpy(
     splats: List[GaussianSplat],
     width: int,
     height: int,
-    background_linear_rgb: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     footprint_sigma: float = 3.0,
     compositing_space: str = "linear",
-) -> np.ndarray:
+) -> npt.NDArray[Any]:
     """
     Simple NumPy renderer for validation and debugging.
 
@@ -1296,9 +1301,9 @@ def render_splats_numpy(
 
 def prepare_pixel_runtime_data(
     splats: List[GaussianSplat],
-    background_linear_rgb: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     compositing_space: str = "linear",
-) -> Tuple[List[List[float]], np.ndarray, bool]:
+) -> Tuple[List[List[float]], npt.NDArray[Any], bool]:
     """Prepare exact ordered values for the ImageData pixel runtime."""
 
     normalized_space = str(compositing_space).strip().lower()
@@ -1351,9 +1356,9 @@ def render_pixel_runtime_numpy(
     splats: List[GaussianSplat],
     width: int,
     height: int,
-    background_linear_rgb: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     compositing_space: str = "linear",
-) -> np.ndarray:
+) -> npt.NDArray[Any]:
     """Render the exact 8-bit framebuffer emitted by the Canvas JavaScript.
 
     JavaScript evaluates geometry and exponentials as doubles, while the

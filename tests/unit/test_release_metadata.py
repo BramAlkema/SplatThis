@@ -14,6 +14,18 @@ def test_package_version_matches_pyproject() -> None:
     assert metadata["project"]["version"] == __version__
 
 
+def test_citation_version_matches_package() -> None:
+    """CITATION.cff carries a version, so it drifts silently on every release.
+
+    Parsed with a regex rather than a YAML dependency: the file is a fixed,
+    hand-maintained shape and the point is only to catch a stale version.
+    """
+    citation = (REPO / "CITATION.cff").read_text(encoding="utf-8")
+    match = re.search(r"^version:\s*(\S+)\s*$", citation, re.M)
+    assert match is not None, "CITATION.cff must declare a version"
+    assert match.group(1).strip("\"'") == __version__
+
+
 def test_capture_extra_owns_the_playwright_dependency() -> None:
     metadata = tomllib.loads((REPO / "pyproject.toml").read_text())
     assert any(

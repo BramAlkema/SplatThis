@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict
+from typing import Any, Dict
 
 import numpy as np
+import numpy.typing as npt
 
 from .color import linear_to_srgb
 
 logger = logging.getLogger(__name__)
 
 
-def _image_ssim(x: np.ndarray, y: np.ndarray) -> float:
+def _image_ssim(x: npt.NDArray[Any], y: npt.NDArray[Any]) -> float:
     """Compute standard windowed SSIM, with a documented legacy fallback."""
 
     x = np.clip(np.asarray(x, dtype=np.float64), 0.0, 1.0)
@@ -29,7 +30,7 @@ def _image_ssim(x: np.ndarray, y: np.ndarray) -> float:
         return _global_ssim_np(x, y)
 
 
-def _global_ssim_np(x: np.ndarray, y: np.ndarray) -> float:
+def _global_ssim_np(x: npt.NDArray[Any], y: npt.NDArray[Any]) -> float:
     """Global single-window SSIM retained only as a compatibility fallback."""
 
     x = np.asarray(x, dtype=np.float64)
@@ -49,8 +50,8 @@ def _global_ssim_np(x: np.ndarray, y: np.ndarray) -> float:
 
 
 def compute_quality_metrics(
-    target_linear_rgb: np.ndarray,
-    candidate_linear_rgb: np.ndarray,
+    target_linear_rgb: npt.NDArray[Any],
+    candidate_linear_rgb: npt.NDArray[Any],
 ) -> Dict[str, float]:
     """Compute linear and display-sRGB L1, MSE, PSNR, and SSIM metrics."""
 

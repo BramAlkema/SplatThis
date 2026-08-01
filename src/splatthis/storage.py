@@ -9,9 +9,10 @@ import stat
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
+import numpy.typing as npt
 from PIL import Image
 
 from .color import linear_to_srgb, srgb_to_linear
@@ -61,7 +62,7 @@ def load_png(
     path: str,
     target_size: Optional[Tuple[int, int]] = None,
     linearize_srgb: bool = True,
-) -> np.ndarray:
+) -> npt.NDArray[Any]:
     """Load a PNG as normalized float32 RGB(A), optionally in linear RGB."""
 
     try:
@@ -156,7 +157,7 @@ def load_splats_json(input_path: str) -> List[GaussianSplat]:
 
 
 def save_linear_rgb_png(
-    rendered_linear_rgb: np.ndarray,
+    rendered_linear_rgb: npt.NDArray[Any],
     output_path: str,
     scale: float = 1.0,
 ) -> str:
@@ -185,7 +186,7 @@ def render_splats_preview_png(
     height: int,
     output_path: str,
     scale: float = 1.0,
-    background_linear_rgb: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     compositing_space: str = "linear",
 ) -> str:
     """Render in-memory splats to a diagnostic proxy PNG."""

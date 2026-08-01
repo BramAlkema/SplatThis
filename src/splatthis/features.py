@@ -5,9 +5,10 @@ Implements gradient-based analysis and spatial organization for Gaussian placeme
 """
 
 import logging
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
+import numpy.typing as npt
 from scipy import ndimage
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ def _resolve_rng(rng: Optional[np.random.Generator] = None) -> np.random.Generat
     return rng if rng is not None else np.random.default_rng()
 
 
-def _to_grayscale(image: np.ndarray) -> np.ndarray:
+def _to_grayscale(image: npt.NDArray[Any]) -> npt.NDArray[Any]:
     """Convert image to float32 grayscale."""
     if image.ndim == 3:
         return (
@@ -28,8 +29,8 @@ def _to_grayscale(image: np.ndarray) -> np.ndarray:
 
 
 def _compute_gradients(
-    gray: np.ndarray, method: str = "sobel"
-) -> Tuple[np.ndarray, np.ndarray]:
+    gray: npt.NDArray[Any], method: str = "sobel"
+) -> Tuple[npt.NDArray[Any], npt.NDArray[Any]]:
     """Compute image gradients for a grayscale image."""
     if method == "sobel":
         grad_x = ndimage.sobel(gray, axis=1)
@@ -51,7 +52,9 @@ def _compute_gradients(
     return grad_x.astype(np.float32), grad_y.astype(np.float32)
 
 
-def compute_gradient_magnitude(image: np.ndarray, method: str = "sobel") -> np.ndarray:
+def compute_gradient_magnitude(
+    image: npt.NDArray[Any], method: str = "sobel"
+) -> npt.NDArray[Any]:
     """
     Compute gradient magnitude for content-adaptive seeding.
 
@@ -71,12 +74,12 @@ def compute_gradient_magnitude(image: np.ndarray, method: str = "sobel") -> np.n
 
 
 def compute_structure_field(
-    image: np.ndarray,
+    image: npt.NDArray[Any],
     method: str = "sobel",
     smoothing_sigma: float = 1.0,
     anisotropy_clip: float = 10.0,
     min_coherence: float = 0.12,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Tuple[npt.NDArray[Any], npt.NDArray[Any]]:
     """
     Compute full-image principal direction and anisotropy maps.
 
@@ -120,7 +123,9 @@ def compute_structure_field(
     return primary_dirs, anisotropy
 
 
-def compute_laplacian_of_gaussian(image: np.ndarray, sigma: float = 1.0) -> np.ndarray:
+def compute_laplacian_of_gaussian(
+    image: npt.NDArray[Any], sigma: float = 1.0
+) -> npt.NDArray[Any]:
     """
     Compute Laplacian of Gaussian for blob detection.
 
@@ -145,7 +150,7 @@ def compute_laplacian_of_gaussian(image: np.ndarray, sigma: float = 1.0) -> np.n
 
 
 def init_seeds_content_adaptive(
-    image: np.ndarray,
+    image: npt.NDArray[Any],
     target_count: int,
     gradient_weight: float = 0.7,
     method: str = "sobel",
@@ -186,7 +191,9 @@ def init_seeds_content_adaptive(
 
 
 def sample_from_probability_map(
-    prob_map: np.ndarray, num_samples: int, rng: Optional[np.random.Generator] = None
+    prob_map: npt.NDArray[Any],
+    num_samples: int,
+    rng: Optional[np.random.Generator] = None,
 ) -> List[Tuple[float, float]]:
     """
     Sample positions from probability map.
@@ -314,7 +321,7 @@ def _is_valid_poisson_point(
     x: float,
     y: float,
     points: List[Tuple[float, float]],
-    grid: np.ndarray,
+    grid: npt.NDArray[Any],
     grid_x: int,
     grid_y: int,
     grid_width: int,
@@ -369,14 +376,14 @@ def create_spatial_grid(
 
 
 def analyze_local_structure(
-    image: np.ndarray,
+    image: npt.NDArray[Any],
     x: int,
     y: int,
     window_size: int = 7,
     anisotropy_clip: float = 4.0,
     min_coherence: float = 0.12,
     min_energy: float = 1e-4,
-) -> Tuple[np.ndarray, float]:
+) -> Tuple[npt.NDArray[Any], float]:
     """
     Analyze local structure tensor for orientation estimation.
 
@@ -441,7 +448,7 @@ def analyze_local_structure(
     return primary_direction, anisotropy
 
 
-def edge_tangent_angle(primary_direction: np.ndarray) -> float:
+def edge_tangent_angle(primary_direction: npt.NDArray[Any]) -> float:
     """Rotation angle that aligns a splat's major axis with the local edge.
 
     ``primary_direction`` is the structure tensor's dominant eigenvector — the
@@ -457,8 +464,8 @@ def edge_tangent_angle(primary_direction: np.ndarray) -> float:
 
 
 def estimate_local_color(
-    image: np.ndarray, x: int, y: int, window_size: int = 5
-) -> np.ndarray:
+    image: npt.NDArray[Any], x: int, y: int, window_size: int = 5
+) -> npt.NDArray[Any]:
     """
     Estimate local color by averaging neighborhood.
 

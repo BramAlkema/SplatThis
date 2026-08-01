@@ -7,6 +7,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import numpy.typing as npt
 import torch
 
 from .engine_state import ConversionEngineState
@@ -29,18 +30,18 @@ class ConversionDensificationMixin(ConversionEngineState):
     def _add_error_driven_splats(  # noqa: C901
         self,
         splats: List[GaussianSplat],
-        image: np.ndarray,
+        image: npt.NDArray[Any],
         target: torch.Tensor,
         renderer: torch.nn.Module,
         rng: np.random.Generator,
-        edge_map: Optional[np.ndarray] = None,
+        edge_map: Optional[npt.NDArray[Any]] = None,
         stage_idx: int = 0,
         precomputed_rendered: Optional[torch.Tensor] = None,
-        precomputed_coverage_map: Optional[np.ndarray] = None,
-        structure_primary: Optional[np.ndarray] = None,
-        structure_anisotropy: Optional[np.ndarray] = None,
+        precomputed_coverage_map: Optional[npt.NDArray[Any]] = None,
+        structure_primary: Optional[npt.NDArray[Any]] = None,
+        structure_anisotropy: Optional[npt.NDArray[Any]] = None,
         max_splats_cap: Optional[int] = None,
-    ) -> Tuple[List[GaussianSplat], Optional[np.ndarray]]:
+    ) -> Tuple[List[GaussianSplat], Optional[npt.NDArray[Any]]]:
         """Add new splats using residual, uncovered-opacity, and edge cues."""
         cap = int(
             self.max_splats
@@ -324,12 +325,12 @@ class ConversionDensificationMixin(ConversionEngineState):
     def _run_residual_detail_passes(  # noqa: C901
         self,
         splats: List[GaussianSplat],
-        image: np.ndarray,
+        image: npt.NDArray[Any],
         target: torch.Tensor,
         renderer: torch.nn.Module,
         loss_fn: torch.nn.Module,
         rng: np.random.Generator,
-        edge_map: np.ndarray,
+        edge_map: npt.NDArray[Any],
         verbose: bool,
     ) -> Tuple[List[GaussianSplat], List[Dict[str, Any]]]:
         """Run late residual-focused densification with small isotropic splats."""
@@ -449,9 +450,9 @@ class ConversionDensificationMixin(ConversionEngineState):
             seen: set[Tuple[int, int]] = set()
 
             def add_candidates(
-                x_values: np.ndarray,
-                y_values: np.ndarray,
-                weights: np.ndarray,
+                x_values: npt.NDArray[Any],
+                y_values: npt.NDArray[Any],
+                weights: npt.NDArray[Any],
                 *,
                 is_edge: bool,
             ) -> None:

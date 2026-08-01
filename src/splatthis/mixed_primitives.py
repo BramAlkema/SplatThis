@@ -6,9 +6,10 @@ import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 import numpy as np
+import numpy.typing as npt
 from scipy import ndimage
 from skimage import measure
 
@@ -44,9 +45,9 @@ class EdgePath:
 
 
 def _display_maps(
-    target_linear_rgb: np.ndarray,
-    rendered_linear_rgb: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    target_linear_rgb: npt.NDArray[Any],
+    rendered_linear_rgb: npt.NDArray[Any],
+) -> tuple[npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any]]:
     target = np.clip(np.asarray(target_linear_rgb, dtype=np.float32)[..., :3], 0, 1)
     rendered = np.clip(np.asarray(rendered_linear_rgb, dtype=np.float32)[..., :3], 0, 1)
     if target.shape != rendered.shape:
@@ -72,8 +73,8 @@ def _display_maps(
 
 
 def propose_residual_edge_strokes(
-    target_linear_rgb: np.ndarray,
-    rendered_linear_rgb: np.ndarray,
+    target_linear_rgb: npt.NDArray[Any],
+    rendered_linear_rgb: npt.NDArray[Any],
     *,
     max_strokes: int = 32,
     length: float = 5.0,
@@ -154,8 +155,8 @@ def propose_residual_edge_strokes(
 
 
 def propose_residual_edge_paths(
-    target_linear_rgb: np.ndarray,
-    rendered_linear_rgb: np.ndarray,
+    target_linear_rgb: npt.NDArray[Any],
+    rendered_linear_rgb: npt.NDArray[Any],
     *,
     max_paths: int = 8,
     path_length: float = 12.0,
