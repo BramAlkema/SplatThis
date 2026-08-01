@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from png2svg_gs.svg_recipe_gate import (
+from splatthis.svg_recipe_gate import (
     SvgRecipeGatePolicy,
     evaluate_recipe_candidate,
     select_recipe_candidate,

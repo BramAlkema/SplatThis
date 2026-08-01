@@ -533,9 +533,9 @@ def _artifact_metrics(
     *,
     shape_count: int,
 ) -> dict[str, Any]:
-    from png2svg_gs.browser_capture import render_svg_in_browser_to_linear_rgb
-    from png2svg_gs.fidelity.metrics import compute_fidelity_metrics
-    from png2svg_gs.io import load_png
+    from splatthis.browser_capture import render_svg_in_browser_to_linear_rgb
+    from splatthis.fidelity.metrics import compute_fidelity_metrics
+    from splatthis.io import load_png
 
     target = load_png(str(source), target_size=(width, height))[..., :3]
     rendered, renderer = render_svg_in_browser_to_linear_rgb(
@@ -565,8 +565,8 @@ def _raster_metrics(
     artifact_size_bytes: int,
     render_method: str,
 ) -> dict[str, Any]:
-    from png2svg_gs.fidelity.metrics import compute_fidelity_metrics
-    from png2svg_gs.io import load_png
+    from splatthis.fidelity.metrics import compute_fidelity_metrics
+    from splatthis.io import load_png
 
     target = load_png(str(source), target_size=(width, height))[..., :3]
     rendered = load_png(str(raster), target_size=(width, height))[..., :3]

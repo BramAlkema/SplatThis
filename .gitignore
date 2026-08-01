@@ -87,6 +87,12 @@ examples/output/
 !docs/examples/*.svg
 !docs/demo/*.svg
 !docs/journey/svg/*.svg
+# Packaged SVG templates are source, not experiment output. The blanket rule
+# above silently swallowed all 19 of them when vector markup moved out of
+# Python and into templates: `git add` obeys .gitignore without complaining,
+# so they were only ever present in working trees. Every fresh checkout —
+# including any CI-built wheel — shipped without them.
+!src/splatthis/templates/svg/*.svg
 
 # Local Claude Code settings
 .claude/
@@ -101,8 +107,8 @@ examples/output/
 /tmp_profile*
 
 # Root-level scratch policy: experiment outputs and one-off scripts at the
-# repo root are never tracked. The canonical CLI lives in src/png2svg_gs/cli.py
-# (and the `png2svg` launcher, whitelisted below); durable scripts belong in
+# repo root are never tracked. The canonical CLI lives in src/splatthis/cli.py
+# and is installed as the `splatthis` entry point; durable scripts belong in
 # scripts/ or tools/, durable outputs in docs/.
 /*.py
 /*.html
@@ -111,7 +117,6 @@ examples/output/
 /*.js
 
 # Whitelisted root files
-!/png2svg
 !/pyproject.toml
 
 # Note: /*.svg is already covered by the global *.svg rule above.

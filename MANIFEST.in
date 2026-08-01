@@ -1,2 +1,4 @@
 include CHANGELOG.md
 include CONTRIBUTING.md
+include src/splatthis/py.typed
+recursive-include src/splatthis/templates *.html *.js *.svg *.xml

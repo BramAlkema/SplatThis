@@ -21,7 +21,7 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from png2svg_gs.adaptive_compute import (
+from splatthis.adaptive_compute import (
     CANVAS_RUNTIME_SCORER,
     AdaptiveComputePolicy,
     CanvasBudgetPoint,
@@ -30,9 +30,9 @@ from png2svg_gs.adaptive_compute import (
     retrospective_scale_decision,
     simulate_adaptive_checkpoints,
 )
-from png2svg_gs.artifact_gates import ArtifactGateCalibration
-from png2svg_gs.io import compute_quality_metrics, load_png, load_splats_json
-from png2svg_gs.renderer import render_canvas_runtime_numpy
+from splatthis.artifact_gates import ArtifactGateCalibration
+from splatthis.io import compute_quality_metrics, load_png, load_splats_json
+from splatthis.renderer import render_pixel_runtime_numpy
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_CORPUS = REPO / "result" / "corpus"
@@ -175,7 +175,7 @@ def _load_deployed_checkpoints(
         if not raw_path.exists():
             continue
         splats = load_splats_json(str(raw_path))
-        rendered = render_canvas_runtime_numpy(
+        rendered = render_pixel_runtime_numpy(
             splats,
             width=width,
             height=height,

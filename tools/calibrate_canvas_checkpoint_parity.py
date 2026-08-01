@@ -24,19 +24,19 @@ import numpy as np
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from png2svg_gs.canvas_parity import (  # noqa: E402
+from splatthis.canvas_parity import (  # noqa: E402
     CanvasParityObservation,
     summarize_canvas_parity,
 )
-from png2svg_gs.io import (  # noqa: E402
+from splatthis.io import (  # noqa: E402
     atomic_write_text,
     compute_quality_metrics,
-    generate_canvas_html,
     load_png,
     load_splats_json,
 )
-from png2svg_gs.renderer import (  # noqa: E402
-    render_canvas_runtime_numpy,
+from splatthis.pixel_runtime import generate_pixel_runtime_html  # noqa: E402
+from splatthis.renderer import (  # noqa: E402
+    render_pixel_runtime_numpy,
     render_splats_numpy,
 )
 
@@ -345,7 +345,7 @@ def main() -> int:  # noqa: C901 - orchestration is intentionally linear
             metadata_path = checkpoint_dir / f"{checkpoint.label}.capture.json"
             try:
                 splats = load_splats_json(str(checkpoint.raw_path))
-                html = generate_canvas_html(
+                html = generate_pixel_runtime_html(
                     splats,
                     int(width),
                     int(height),
@@ -383,7 +383,7 @@ def main() -> int:  # noqa: C901 - orchestration is intentionally linear
                     background_linear_rgb=background,
                     compositing_space=compositing_space,
                 )
-                model = render_canvas_runtime_numpy(
+                model = render_pixel_runtime_numpy(
                     splats,
                     width=int(width),
                     height=int(height),

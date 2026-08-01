@@ -88,8 +88,8 @@ below. Everything else here is tracked.
 ## Regenerating
 
 ```bash
-splatlify docs/demo/source.png -o out.svg  --seed 42                  # ~82 s
-splatlify docs/demo/source.png -o out.pptx --seed 42 --format pptx    # ~192 s
+splatthis docs/demo/source.png -o out.svg  --seed 42                  # ~82 s
+splatthis docs/demo/source.png -o out.pptx --seed 42 --format pptx    # ~192 s
 ```
 
 Score the SVG with `rsvg-convert`/cairosvg. The PPTX capture uses the

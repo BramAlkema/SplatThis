@@ -1,0 +1,14 @@
+      <p:grpSp>
+        <p:nvGrpSpPr>
+          <p:cNvPr id="@@SHAPE_ID@@" name="@@NAME@@"/>
+          <p:cNvGrpSpPr/>
+          <p:nvPr/>
+        </p:nvGrpSpPr>
+        <p:grpSpPr>
+          <a:xfrm>
+            <a:off x="0" y="0"/>
+            <a:ext cx="@@WIDTH_EMU@@" cy="@@HEIGHT_EMU@@"/>
+            <a:chOff x="0" y="0"/>
+            <a:chExt cx="@@WIDTH_EMU@@" cy="@@HEIGHT_EMU@@"/>
+          </a:xfrm>
+        </p:grpSpPr>

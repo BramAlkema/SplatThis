@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 from PIL import Image
 
-from png2svg_gs.converter import PNG2SVGConverter
+from splatthis.converter import PNG2SVGConverter
 
 
 def _parse_stages(value: str) -> List[int]:

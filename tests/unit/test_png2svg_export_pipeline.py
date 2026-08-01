@@ -9,17 +9,17 @@ import numpy as np
 import pytest
 from PIL import Image
 
-import png2svg_gs.browser_capture as browser_capture
-from png2svg_gs.converter import PNG2SVGConverter
-from png2svg_gs.io import (
+import splatthis.browser_capture as browser_capture
+from splatthis.converter import PNG2SVGConverter
+from splatthis.io import (
     PPTX_GRADIENT_ALPHA_SCALE,
     atomic_output_path,
     generate_svg_content,
     save_pptx_with_splat_png,
     save_pptx_with_splats,
 )
-from png2svg_gs.renderer import render_splats_numpy
-from png2svg_gs.splat import create_isotropic_splat
+from splatthis.renderer import render_splats_numpy
+from splatthis.splat import create_isotropic_splat
 
 
 def test_generate_svg_content_emits_per_splat_gradients():
@@ -634,7 +634,7 @@ def test_oklab_transform_reference_values():
     """torch_linear_rgb_to_oklab matches Ottosson reference points."""
     import torch
 
-    from png2svg_gs.renderer import torch_linear_rgb_to_oklab
+    from splatthis.renderer import torch_linear_rgb_to_oklab
 
     rgb = torch.tensor([[1.0, 1.0, 1.0], [0.0, 0.0, 0.0]])  # linear white, black
     lab = torch_linear_rgb_to_oklab(rgb)
@@ -648,7 +648,7 @@ def test_oklab_loss_runs_and_is_differentiable():
     """L1SSIMLoss in oklab space produces a finite, backprop-able scalar."""
     import torch
 
-    from png2svg_gs.renderer import L1SSIMLoss
+    from splatthis.renderer import L1SSIMLoss
 
     rendered = torch.rand(16, 16, 3, requires_grad=True)
     target = torch.rand(16, 16, 3)
@@ -662,7 +662,7 @@ def test_spatial_weighted_l1_prioritizes_weighted_pixels():
     """Spatial weights should affect the L1 term while leaving the API differentiable."""
     import torch
 
-    from png2svg_gs.renderer import L1SSIMLoss
+    from splatthis.renderer import L1SSIMLoss
 
     target = torch.zeros(2, 2, 3)
     rendered = torch.zeros(2, 2, 3, requires_grad=True)
@@ -687,7 +687,7 @@ def test_luminance_gradient_loss_penalizes_soft_edges():
     """The optional gradient term should push local edge sharpness."""
     import torch
 
-    from png2svg_gs.renderer import L1SSIMLoss
+    from splatthis.renderer import L1SSIMLoss
 
     target = torch.zeros(8, 8, 3)
     target[:, 4:, :] = 1.0
@@ -707,7 +707,7 @@ def test_luminance_gradient_loss_penalizes_soft_edges():
 
 def _demo_splats(n=6):
     rng = np.random.default_rng(3)
-    from png2svg_gs.splat import create_anisotropic_splat
+    from splatthis.splat import create_anisotropic_splat
 
     splats = []
     for i in range(n):
@@ -743,7 +743,7 @@ def _demo_splats(n=6):
 
 def test_palette_quantized_recipe_shares_gradients_and_scales_opacity():
     """Palette recipe: <= palette_size shared gradients, exact element opacity."""
-    from png2svg_gs.io import generate_palette_quantized_svg_content
+    from splatthis.io import generate_palette_quantized_svg_content
 
     splats = _demo_splats(8)
     svg = generate_palette_quantized_svg_content(
@@ -770,7 +770,7 @@ def test_blur_recipe_filter_region_and_peak_opacity_target():
     """Blur recipe: widened filter region + (1-exp(-a))/mass_fraction opacity."""
     import re
 
-    from png2svg_gs.io import SVG_BLUR_CORE_K_SIGMA, generate_blur_svg_content
+    from splatthis.io import SVG_BLUR_CORE_K_SIGMA, generate_blur_svg_content
 
     splats = _demo_splats(5)
     svg = generate_blur_svg_content(splats, width=32, height=32)
@@ -788,10 +788,10 @@ def test_blur_recipe_filter_region_and_peak_opacity_target():
 
 
 def test_parallax_canvas_html_embeds_strength_and_canvas():
-    from png2svg_gs.io import generate_parallax_canvas_html
+    from splatthis.io import generate_parallax_pixel_runtime_html
 
     splats = _demo_splats(4)
-    html = generate_parallax_canvas_html(
+    html = generate_parallax_pixel_runtime_html(
         splats, width=32, height=32, parallax_strength=7.5
     )
     # Layer canvases are created by the JS runtime, not as static tags.
@@ -802,7 +802,7 @@ def test_parallax_canvas_html_embeds_strength_and_canvas():
 
 
 def test_css_compositor_is_scriptless_and_uses_dom_gradient_splats():
-    from png2svg_gs.io import generate_css_splat_html
+    from splatthis.io import generate_css_splat_html
 
     splats = _demo_splats(4)
     html = generate_css_splat_html(
@@ -825,7 +825,7 @@ def test_css_compositor_is_scriptless_and_uses_dom_gradient_splats():
 
 
 def test_css_compositor_parallax_uses_10x10_hover_grid_without_script():
-    from png2svg_gs.io import generate_css_splat_html
+    from splatthis.io import generate_css_splat_html
 
     splats = _demo_splats(4)
     for splat, layer in zip(splats, (0, 1, 2, 3)):
@@ -847,7 +847,7 @@ def test_css_compositor_parallax_uses_10x10_hover_grid_without_script():
 
 
 def test_native_canvas_compositor_submits_gradient_splats_not_imagedata():
-    from png2svg_gs.io import generate_native_canvas_html
+    from splatthis.io import generate_native_canvas_html
 
     splats = _demo_splats(4)
     html = generate_native_canvas_html(splats, width=32, height=24)
@@ -862,7 +862,7 @@ def test_native_canvas_compositor_submits_gradient_splats_not_imagedata():
 
 
 def test_native_canvas_parallax_uses_three_browser_drawn_planes():
-    from png2svg_gs.io import generate_native_canvas_html
+    from splatthis.io import generate_native_canvas_html
 
     splats = _demo_splats(4)
     for splat, layer in zip(splats, (0, 1, 2, 3)):
@@ -880,7 +880,7 @@ def test_native_canvas_parallax_uses_three_browser_drawn_planes():
 
 
 def test_pixel_runtime_has_accelerated_and_exact_fallback_chain():
-    from png2svg_gs.io import generate_webgl_pixel_runtime_html
+    from splatthis.io import generate_webgl_pixel_runtime_html
 
     html = generate_webgl_pixel_runtime_html(_demo_splats(4), width=32, height=24)
 
@@ -904,7 +904,7 @@ def test_pixel_runtime_has_accelerated_and_exact_fallback_chain():
 
 
 def test_pixel_runtime_rejects_unknown_backend():
-    from png2svg_gs.io import generate_webgl_pixel_runtime_html
+    from splatthis.io import generate_webgl_pixel_runtime_html
 
     with pytest.raises(ValueError, match="Unsupported pixel runtime backend"):
         generate_webgl_pixel_runtime_html(
@@ -914,16 +914,16 @@ def test_pixel_runtime_rejects_unknown_backend():
 
 @pytest.mark.parametrize("width,height", [(0, 32), (32, 0), (-1, 32)])
 def test_canvas_html_rejects_non_positive_dimensions(width, height):
-    from png2svg_gs.io import (
-        generate_canvas_html,
+    from splatthis.io import (
         generate_css_splat_html,
         generate_native_canvas_html,
-        generate_parallax_canvas_html,
+        generate_parallax_pixel_runtime_html,
+        generate_pixel_runtime_html,
     )
 
     for generator in (
-        generate_canvas_html,
-        generate_parallax_canvas_html,
+        generate_pixel_runtime_html,
+        generate_parallax_pixel_runtime_html,
         generate_css_splat_html,
         generate_native_canvas_html,
     ):
@@ -932,10 +932,10 @@ def test_canvas_html_rejects_non_positive_dimensions(width, height):
 
 
 def test_canvas_html_escapes_title_and_embeds_presorted_splats():
-    from png2svg_gs.io import generate_canvas_html
+    from splatthis.io import generate_pixel_runtime_html
 
     splats = _demo_splats(4)
-    html = generate_canvas_html(
+    html = generate_pixel_runtime_html(
         list(reversed(splats)),
         width=32,
         height=32,
@@ -961,7 +961,7 @@ def test_atomic_output_keeps_existing_destination_on_failure(tmp_path):
 
 
 def test_canvas_html_compositing_space_flag_and_color_encoding():
-    from png2svg_gs.io import generate_canvas_html, linear_to_srgb
+    from splatthis.io import generate_pixel_runtime_html, linear_to_srgb
 
     splat = create_isotropic_splat(
         center=np.array([16.0, 16.0]),
@@ -969,8 +969,8 @@ def test_canvas_html_compositing_space_flag_and_color_encoding():
         color=np.array([0.2, 0.2, 0.2]),
         alpha=0.9,
     )
-    html_lin = generate_canvas_html([splat], width=32, height=32)
-    html_srgb = generate_canvas_html(
+    html_lin = generate_pixel_runtime_html([splat], width=32, height=32)
+    html_srgb = generate_pixel_runtime_html(
         [splat], width=32, height=32, compositing_space="srgb"
     )
     assert "const SRGB_IN = false;" in html_lin
@@ -1129,7 +1129,7 @@ def test_adaptive_compute_rejects_non_pixel_runtime_output(tmp_path):
 def test_drawingml_blur_style_alpha_uses_peak_opacity_target():
     import re
 
-    from png2svg_gs.io import PPTX_BLUR_CORE_K_SIGMA, generate_drawingml_slide_content
+    from splatthis.io import PPTX_BLUR_CORE_K_SIGMA, generate_drawingml_slide_content
 
     splat = create_isotropic_splat(
         center=np.array([16.0, 16.0]),
@@ -1152,7 +1152,7 @@ def test_drawingml_blur_style_alpha_uses_peak_opacity_target():
 
 
 def test_preview_png_srgb_mode_differs_from_linear(tmp_path):
-    from png2svg_gs.io import render_splats_preview_png
+    from splatthis.io import render_splats_preview_png
 
     splat = create_isotropic_splat(
         center=np.array([16.0, 16.0]),
@@ -1180,6 +1180,35 @@ def test_preview_png_srgb_mode_differs_from_linear(tmp_path):
     lin_img = np.asarray(Image.open(lin_path), dtype=np.int16)
     srgb_img = np.asarray(Image.open(srgb_path), dtype=np.int16)
     assert np.abs(lin_img - srgb_img).max() > 1
+
+
+def test_cached_linear_framebuffer_writer_matches_preview_renderer(tmp_path):
+    from splatthis.io import render_splats_preview_png, save_linear_rgb_png
+    from splatthis.renderer import render_splats_numpy
+
+    splats = _demo_splats(4)
+    background = np.array([0.2, 0.3, 0.4], dtype=np.float32)
+    rendered = render_splats_numpy(
+        splats,
+        width=32,
+        height=24,
+        background_linear_rgb=background,
+        compositing_space="srgb",
+    )
+    cached_path = tmp_path / "cached.png"
+    direct_path = tmp_path / "direct.png"
+
+    save_linear_rgb_png(rendered, str(cached_path))
+    render_splats_preview_png(
+        splats,
+        width=32,
+        height=24,
+        output_path=str(direct_path),
+        background_linear_rgb=background,
+        compositing_space="srgb",
+    )
+
+    assert cached_path.read_bytes() == direct_path.read_bytes()
 
 
 def test_convert_restores_run_mutated_config(tmp_path):

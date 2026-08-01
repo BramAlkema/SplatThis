@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="@@WIDTH@@" height="@@HEIGHT@@" viewBox="0 0 @@WIDTH@@ @@HEIGHT@@" xmlns="http://www.w3.org/2000/svg">
+  <desc>Palette-quantized Gaussian splat SVG (@@PALETTE_SIZE@@ palette colors).</desc>
+  <defs>
+@@GRADIENTS@@  </defs>
+
+@@BACKGROUND@@@@ELLIPSES@@
+
+</svg>

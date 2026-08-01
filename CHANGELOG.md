@@ -67,8 +67,107 @@ All notable changes to SplatThis are documented here.
   manifest provenance, and a resumable external real-PowerPoint selector that
   atomically materializes the accepted native deck as `selected.pptx`.
 
+### Added
+
+- A PEP 561 `py.typed` marker, declared in both `package-data` and
+  `MANIFEST.in`. The package exports 26 names as a library API and is annotated
+  throughout, but without the marker every consumer type-checking against the
+  installed distribution saw `Any`. Verified by installing the built wheel into
+  a clean environment and resolving `save_svg` and `GaussianSplat` to their real
+  signatures.
+
 ### Changed
 
+- Reworked the release workflow onto PyPI Trusted Publishing, matching the
+  sibling `openxml-audit` repository, which has shipped five releases through
+  the same shape. No API token is stored in the repository: PyPI mints a
+  short-lived credential per workflow run via OIDC. The trigger also moves from
+  `release: published` to `push: tags: v*` — the old trigger required a GitHub
+  Release to exist before the workflow would run, so pushing a tag alone did
+  nothing; the workflow now creates the release itself. Build, PyPI publish, and
+  GitHub release are separate jobs sharing one built artifact, and the wheel
+  smoke test runs in a throwaway venv so it cannot be satisfied by build
+  dependencies present in the job environment.
+- Declared the conversion engine's shared mixin surface in `engine_state.py`:
+  35 state attributes and 32 cross-mixin method signatures, inherited by all
+  seven mixins. Only 4 of those attributes previously carried any annotation.
+  The declaration is inert — no runtime members, last in the MRO — so state
+  ownership and method implementations are unchanged, and a seeded Torch
+  conversion emits a byte-identical SVG before and after. Corrected the
+  dependency inversion where artifact backends and pipeline phases annotated
+  the public `PNG2SVGConverter` facade rather than the `ConversionEngine` base
+  they actually receive. Together: mypy 778 → 462 errors, `attr-defined`
+  340 → 1.
+- Documented what a fixed `--seed` actually guarantees per optimizer backend.
+  Torch reproduces the emitted artifact byte for byte; MLX does not. Metal
+  orders float32 reductions nondeterministically, so repeated single-process
+  seeded MLX runs differ by roughly one float32 ULP (~3e-8) in splat
+  parameters, which is enough to tip a rounded SVG attribute across a
+  formatting boundary. Reported metrics still agree to nine significant
+  figures, so the quoted four-decimal corpus medians are unaffected. The
+  previous note attributed MLX nondeterminism solely to concurrent processes
+  sharing one Metal device; it also occurs in a single process. "Reproducible
+  manifests" in the project status is now "provenance-complete manifests".
+- Corrected package metadata that would have been immutable after the first
+  release: the author contact was a placeholder for a nonexistent domain, and
+  the summary and keywords claimed SVG-only conversion.
+- Collapsed four project names onto one. The distribution is now `splatthis`
+  (was `splat-this`), the import path is `splatthis` (was `png2svg_gs`), and the
+  console entry point is `splatthis` (was `splatlify`). The repository, the
+  GitHub Pages site, and the project name in prose are unchanged. `png2svg_gs`
+  had also become inaccurate: the package emits SVG, PPTX, native Canvas, CSS,
+  and pixel-runtime artifacts, not only SVG. No compatibility shim or alias
+  entry point is provided — the package has never been published to PyPI, so
+  there is no installed base to migrate.
+- Removed the unreferenced root-level `png2svg` launcher. It exposed an older,
+  divergent flag surface (`--max-splats`, `--output-format {svg,drawingml,pptx}`,
+  `--backend {auto,torch,gsplat}`) that no longer matched the packaged CLI, and
+  its `gsplat` backend has been retired and is now explicitly rejected. The
+  packaged `splatthis` entry point is the only supported command-line surface.
+- Replaced the state-restoring monolithic conversion run with an immutable
+  `ConverterConfig`, per-call `ConversionRequest`/`RunContext`, and explicit
+  prepare, fit, and deployment phases. The public converter no longer mutates
+  and restores its own budget state, and its coordinator is now a thin facade.
+- Reduced `converter.py` to a stable public facade and `conversion_engine.py`
+  to a 123-line composition root. Configuration, initialization, optimization,
+  densification, post-fit, artifact strategy, and regional guidance now have
+  separate internal modules; constructor branches are isolated behind focused
+  setup helpers.
+- Added one artifact-backend registry for SVG, DrawingML, PPTX, native Canvas,
+  CSS, and pixel-runtime emission, persistence, governing evaluation, and
+  evidence provenance. PPTX persistence reuses its already-emitted DrawingML
+  payload instead of generating the full shape tree twice.
+- Split atomic storage, pure quality metrics, browser artifact evaluation,
+  reporting, and round-trip validation into one-way dependency layers.
+  `artifact_io` is now also a compatibility facade, and the side-by-side HTML
+  document moved to a packaged template.
+- Replaced the 3,541-line I/O monolith with focused artifact-I/O, shared export,
+  browser, SVG, PPTX, pixel-runtime, and color modules. `splatthis.io` remains
+  a 132-line compatibility facade, while production code imports the focused
+  implementations directly. SVG, DrawingML, and PPTX package markup now lives
+  in packaged templates rather than Python source; representative emitted
+  artifacts remain byte-identical. NumPy color transforms now have one shared
+  implementation.
+- Torch/CPU corpus runs accept opt-in `--jobs N` subprocess parallelism while
+  keeping JSONL writes and artifact scoring coordinated in one thread. Parallel
+  MLX runs are rejected because shared-Metal processes caused seeded parameter
+  drift. Resumability now reuses only successful records whose primary artifact
+  still matches its recorded size and SHA-256, so failed, corrupted, and
+  partially deleted runs are retried instead of becoming false cache hits.
+- The explicit `fast` MLX profile now renders 32 tiles per batch. A 21-image,
+  full-frame 512-splat sweep reduced median optimizer time by 42% and median
+  wall time by 23%; balanced and max-fidelity retain the conservative 8-tile
+  behavior because low-budget per-image fidelity moved in both directions.
+- Conversion reuses its already-computed linear proxy framebuffer when writing
+  the optional proxy PNG, eliminating a second full CPU splat render. Internal
+  Python pixel-runtime helpers now use explicit names; the ambiguous historical
+  `generate_canvas_html` aliases were removed.
+- Internal `*_splat_proxy.png` files are now emitted only when explicitly
+  requested or required by a side-by-side report, instead of appearing beside
+  every normal conversion and being mistaken for the deployed artifact.
+- Removed the unshipped gsplat adapter, which depended on private legacy 2D
+  APIs and was neither packaged nor used by release benchmarks. Renderer
+  `auto` now resolves deterministically to the Torch reference backend.
 - The former `canvas` output is now named `pixel-runtime`, because it
   software-rasterizes the splat equations into an `ImageData` framebuffer.
   `canvas` now means the genuine Canvas 2D primitive compositor. Historical

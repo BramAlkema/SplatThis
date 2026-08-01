@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-from png2svg_gs.browser_capture import (
+from splatthis.browser_capture import (
     PlaywrightSvgRenderer,
     read_svg_pixel_size,
     resolve_browser_executable,

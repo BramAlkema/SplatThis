@@ -1,0 +1,29 @@
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="@@SHAPE_ID@@" name="Splat @@SHAPE_ID@@"/>
+          <p:cNvSpPr>
+            <a:spLocks noGrp="1"/>
+          </p:cNvSpPr>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm@@ROT_ATTR@@>
+            <a:off x="@@X_EMU@@" y="@@Y_EMU@@"/>
+            <a:ext cx="@@W_EMU@@" cy="@@H_EMU@@"/>
+          </a:xfrm>
+          <a:prstGeom prst="ellipse">
+            <a:avLst/>
+          </a:prstGeom>
+@@FILL_LINES@@
+          <a:ln>
+            <a:noFill/>
+          </a:ln>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p>
+            <a:endParaRPr/>
+          </a:p>
+        </p:txBody>
+      </p:sp>

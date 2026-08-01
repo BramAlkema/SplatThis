@@ -17,8 +17,8 @@ from typing import List, Set
 import numpy as np
 import pytest
 
-from png2svg_gs.io import px_to_emu, save_pptx_with_splat_png, save_pptx_with_splats
-from png2svg_gs.splat import GaussianSplat, create_isotropic_splat
+from splatthis.io import px_to_emu, save_pptx_with_splat_png, save_pptx_with_splats
+from splatthis.splat import GaussianSplat, create_isotropic_splat
 
 REL_NS = "{http://schemas.openxmlformats.org/package/2006/relationships}Relationship"
 CT_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
@@ -256,7 +256,7 @@ def test_slide_size_always_meets_ooxml_minimum(width, height, expect_scaled):
     reject"). Normal-size images must be left at scale 1.0 exactly, so this
     guard cannot silently resize ordinary output.
     """
-    from png2svg_gs.io import MIN_SLIDE_EMU, pptx_emu_scale
+    from splatthis.io import MIN_SLIDE_EMU, pptx_emu_scale
 
     scale = pptx_emu_scale(width, height)
     assert (scale > 1.0) is expect_scaled
@@ -276,7 +276,7 @@ def test_small_canvas_scaling_is_uniform():
     """
     import re
 
-    from png2svg_gs.io import generate_drawingml_slide_content, pptx_emu_scale
+    from splatthis.io import generate_drawingml_slide_content, pptx_emu_scale
 
     def offsets(xml):
         return [

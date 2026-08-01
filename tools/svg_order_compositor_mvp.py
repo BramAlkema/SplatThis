@@ -13,9 +13,9 @@ from typing import Sequence
 
 import numpy as np
 
-from png2svg_gs.browser_capture import PlaywrightSvgRenderer, resolve_browser_executable
-from png2svg_gs.fidelity.metrics import compute_fidelity_metrics
-from png2svg_gs.io import (
+from splatthis.browser_capture import PlaywrightSvgRenderer, resolve_browser_executable
+from splatthis.fidelity.metrics import compute_fidelity_metrics
+from splatthis.io import (
     _sort_splats_for_export,
     atomic_write_text,
     generate_svg_content,

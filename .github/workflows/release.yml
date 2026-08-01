@@ -1,11 +1,21 @@
 name: Release
 
+# Fires on the tag itself, and creates the GitHub Release as part of the run.
+# The previous trigger was `release: published`, which required hand-creating a
+# release before the workflow would do anything -- pushing a tag alone was a
+# no-op. Same shape as the sibling openxml-audit repo, which has shipped five
+# releases through it.
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
 
 jobs:
-  pypi-publish:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -14,6 +24,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v7
       with:
+        # Must satisfy requires-python (>=3.13) or the wheel-install smoke fails.
         python-version: "3.13"
 
     - name: Install build dependencies
@@ -27,12 +38,77 @@ jobs:
         python -m twine check dist/*
 
     - name: Smoke-test the built wheel
+      # Install into a throwaway venv rather than the job environment, so the
+      # test proves the wheel is self-sufficient and is not satisfied by build
+      # dependencies that happen to be lying around.
       run: |
-        pip install dist/*.whl
-        splatlify --version
-        splatlify --help
+        python -m venv .release-venv
+        .release-venv/bin/pip install dist/*.whl
+        .release-venv/bin/splatthis --version
+        .release-venv/bin/splatthis --help
+        .release-venv/bin/python -c "import splatthis; print(splatthis.__version__)"
+
+    - name: Upload dist artifacts
+      uses: actions/upload-artifact@v6
+      with:
+        name: dist
+        path: dist/
+
+  publish-pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    # Trusted Publishing (OIDC): PyPI mints a short-lived token for this
+    # workflow run. There is deliberately no API token stored in the repo --
+    # `gh secret list` should stay empty. Registered on PyPI as a publisher for
+    # BramAlkema/SplatThis -> release.yml.
+    permissions:
+      id-token: write
+
+    steps:
+    - name: Download dist artifacts
+      uses: actions/download-artifact@v7
+      with:
+        name: dist
+        path: dist/
 
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v7
       with:
-        password: ${{ secrets.PYPI_API_TOKEN }}
+        fetch-depth: 0
+
+    - name: Download dist artifacts
+      uses: actions/download-artifact@v7
+      with:
+        name: dist
+        path: dist/
+
+    - name: Generate changelog
+      id: changelog
+      run: |
+        prev_tag=$(git tag --sort=-v:refname | head -2 | tail -1)
+        if [ -z "$prev_tag" ] || [ "$prev_tag" = "${GITHUB_REF_NAME}" ]; then
+          echo "body=Initial release" >> "$GITHUB_OUTPUT"
+        else
+          changelog=$(git log --pretty=format:"- %s" "$prev_tag"..HEAD -- src/ tests/ docs/ | head -50)
+          {
+            echo "body<<EOF"
+            echo "$changelog"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v3
+      with:
+        body: ${{ steps.changelog.outputs.body }}
+        files: dist/*
+        generate_release_notes: true

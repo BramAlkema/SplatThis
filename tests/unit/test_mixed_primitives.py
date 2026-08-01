@@ -3,8 +3,8 @@ import zipfile
 import numpy as np
 import pytest
 
-from png2svg_gs.io import save_pptx_with_splats
-from png2svg_gs.mixed_primitives import (
+from splatthis.io import save_pptx_with_splats
+from splatthis.mixed_primitives import (
     edge_paths_to_svg_group,
     edge_strokes_to_svg_group,
     inject_edge_paths_into_pptx,
@@ -12,7 +12,7 @@ from png2svg_gs.mixed_primitives import (
     propose_residual_edge_paths,
     propose_residual_edge_strokes,
 )
-from png2svg_gs.splat import create_isotropic_splat
+from splatthis.splat import create_isotropic_splat
 
 
 def test_residual_edge_strokes_are_bounded_deterministic_and_native_svg() -> None:

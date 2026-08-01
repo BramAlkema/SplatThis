@@ -1,4 +1,4 @@
-"""In-process smoke tests for the splatlify CLI (png2svg_gs.cli.main)."""
+"""In-process smoke tests for the splatthis CLI (splatthis.cli.main)."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from png2svg_gs import __version__
-from png2svg_gs.cli import main
-from png2svg_gs.mlx_stage import is_mlx_available
+from splatthis import __version__
+from splatthis.cli import main
+from splatthis.mlx_stage import is_mlx_available
 
 
 def _write_fixture_image(tmp_path):
@@ -59,7 +59,7 @@ def test_cli_smoke_torch_svg(tmp_path):
 
 def test_cli_version(capsys):
     assert _run_cli(["--version"]) == 0
-    assert capsys.readouterr().out.strip() == f"splatlify {__version__}"
+    assert capsys.readouterr().out.strip() == f"splatthis {__version__}"
 
 
 def test_cli_rejects_invalid_resource_limit():

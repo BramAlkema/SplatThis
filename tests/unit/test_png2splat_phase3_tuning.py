@@ -6,10 +6,10 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from png2svg_gs.cli import DEFAULT_APPLE_SILICON_SPLAT_CAP, _resolve_cli_resource_limits
-from png2svg_gs.converter import PNG2SVGConverter
-from png2svg_gs.io import validate_export_roundtrip
-from png2svg_gs.splat import LAYER_DETAIL, LAYER_EDGE, create_isotropic_splat
+from splatthis.cli import DEFAULT_APPLE_SILICON_SPLAT_CAP, _resolve_cli_resource_limits
+from splatthis.converter import PNG2SVGConverter
+from splatthis.io import validate_export_roundtrip
+from splatthis.splat import LAYER_DETAIL, LAYER_EDGE, create_isotropic_splat
 
 
 def test_quality_profiles_provide_distinct_tuning_defaults():
@@ -53,6 +53,7 @@ def test_quality_profiles_provide_distinct_tuning_defaults():
     assert balanced.svg_compositor_gate is False
     assert max_fid.stages == [1000, 500, 250]
     assert fast.mlx_tile_plan == "static"
+    assert fast.refinement_config["renderer_batch_tile_count"] == 32
     assert fast.mlx_trainable_groups == ("color", "alpha")
     assert balanced.mlx_tile_plan == "periodic"
     assert balanced.mlx_trainable_groups == (
@@ -136,7 +137,8 @@ def test_converter_manifest_includes_roundtrip_validation_when_enabled(tmp_path:
         "high",
     }
     assert manifest["svg_compositor_gate"]["enabled"] is True
-    assert (tmp_path / "output_splat_proxy.png").exists()
+    assert not (tmp_path / "output_splat_proxy.png").exists()
+    assert manifest["artifacts"]["splat_proxy"]["path"] is None
     assert manifest["artifacts"]["splat_proxy"]["render_kind"] == (
         "internal-splat-proxy"
     )

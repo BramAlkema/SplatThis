@@ -75,9 +75,9 @@ Ordinary conversion now exposes both native DrawingML stacks without launching
 desktop software:
 
 ```bash
-splatlify input.png --format pptx -o legacy.pptx \
+splatthis input.png --format pptx -o legacy.pptx \
   --pptx-painter-order legacy
-splatlify input.png --format pptx -o corrected.pptx \
+splatthis input.png --format pptx -o corrected.pptx \
   --pptx-painter-order back-to-front
 ```
 
@@ -90,7 +90,7 @@ The external real-PowerPoint runner emits both candidates, captures and grades
 them, then atomically copies the accepted native deck to `selected.pptx`. A
 resumed corpus run reuses completed metric reports and rematerializes a missing
 or stale selected deck. This keeps GUI automation out of ordinary headless
-`splatlify` while making the evidence-backed winner directly consumable.
+`splatthis` while making the evidence-backed winner directly consumable.
 
 ## Reproduce
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from png2svg_gs.artifact_gates import (
+from splatthis.artifact_gates import (
     ArtifactGateCalibration,
     calibrate_artifact_observations,
     metric_gain,

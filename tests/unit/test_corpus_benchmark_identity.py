@@ -2,14 +2,18 @@
 
 import importlib.util
 import json
+import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image
 
-from png2svg_gs.io import save_splats_json
-from png2svg_gs.splat import create_isotropic_splat
+from splatthis.io import save_splats_json
+from splatthis.splat import create_isotropic_splat
 
 REPO = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
@@ -98,6 +102,84 @@ def test_run_identity_changes_with_source_and_optimizer_config(tmp_path: Path) -
 def test_run_key_uses_config_hash_not_human_label() -> None:
     key = corpus_benchmark.run_key("rocket", "pptx", 0, "abc123")
     assert key == "rocket|pptx|seed0|cfg-abc123"
+
+
+def test_done_cache_requires_success_and_existing_artifact(tmp_path: Path) -> None:
+    existing = tmp_path / "runs" / "existing.svg"
+    existing.parent.mkdir()
+    existing.write_text("<svg/>")
+    valid_sha = corpus_benchmark.hashlib.sha256(existing.read_bytes()).hexdigest()
+    records = [
+        {
+            "key": "valid",
+            "returncode": 0,
+            "output_path": "runs/existing.svg",
+            "artifact_bytes": existing.stat().st_size,
+            "artifact_sha256": valid_sha,
+        },
+        {"key": "failed", "returncode": 1, "output_path": "runs/existing.svg"},
+        {
+            "key": "scoring-failed",
+            "returncode": 0,
+            "error": "scoring-failed",
+            "output_path": "runs/existing.svg",
+        },
+        {"key": "missing", "returncode": 0, "output_path": "runs/missing.svg"},
+    ]
+    results = tmp_path / "results.jsonl"
+    results.write_text("\n".join(json.dumps(record) for record in records) + "\n")
+
+    assert corpus_benchmark.load_done(results) == {"valid"}
+
+    existing.write_text("<bad/>")
+    assert corpus_benchmark.load_done(results) == set()
+
+
+def test_parallel_job_scheduler_keeps_execution_isolated(monkeypatch) -> None:
+    active = 0
+    max_active = 0
+    lock = threading.Lock()
+
+    def fake_execute(job):
+        nonlocal active, max_active
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        time.sleep(0.03)
+        with lock:
+            active -= 1
+        process = subprocess.CompletedProcess(job.command, 0, "", "")
+        return job, process, 0.03
+
+    monkeypatch.setattr(corpus_benchmark, "_execute_corpus_job", fake_execute)
+    jobs = [
+        corpus_benchmark.CorpusRunJob(
+            index=index,
+            total=4,
+            key=f"job-{index}",
+            name=f"image-{index}",
+            fmt="svg",
+            seed=0,
+            config={},
+            config_hash=f"hash-{index}",
+            source=Path(f"source-{index}.png"),
+            output=Path(f"output-{index}.svg"),
+            artifacts=Path(f"artifacts-{index}"),
+            command=("fake", str(index)),
+        )
+        for index in range(4)
+    ]
+
+    completed = list(corpus_benchmark._execute_corpus_jobs(jobs, max_workers=2))
+
+    assert max_active == 2
+    assert {job.key for job, _, _ in completed} == {f"job-{i}" for i in range(4)}
+
+
+def test_parallel_mlx_jobs_are_rejected_for_seeded_reproducibility() -> None:
+    assert corpus_benchmark._resolve_corpus_worker_count(2, "torch") == 2
+    with pytest.raises(ValueError, match="parameter drift"):
+        corpus_benchmark._resolve_corpus_worker_count(2, "mlx")
 
 
 def test_overview_scopes_runtime_to_canvas_and_compares_artifacts(

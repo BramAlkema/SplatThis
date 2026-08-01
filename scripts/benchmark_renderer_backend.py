@@ -20,13 +20,13 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from png2svg_gs.io import load_splats_json  # noqa: E402
-from png2svg_gs.mlx_renderer import (  # noqa: E402
+from splatthis.io import load_splats_json  # noqa: E402
+from splatthis.mlx_renderer import (  # noqa: E402
     MlxBatchedGaussianRenderer,
     is_mlx_available,
     splats_to_numpy_table,
 )
-from png2svg_gs.renderer import create_renderer, splats_to_tensor  # noqa: E402
+from splatthis.renderer import create_renderer, splats_to_tensor  # noqa: E402
 
 
 def _parse_csv(text: str) -> List[str]:

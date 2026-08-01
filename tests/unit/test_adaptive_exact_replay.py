@@ -10,9 +10,9 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from png2svg_gs.adaptive_compute import AdaptiveComputePolicy, CanvasCheckpoint
-from png2svg_gs.io import save_splats_json
-from png2svg_gs.splat import create_isotropic_splat
+from splatthis.adaptive_compute import AdaptiveComputePolicy, CanvasCheckpoint
+from splatthis.io import save_splats_json
+from splatthis.splat import create_isotropic_splat
 
 REPO = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(

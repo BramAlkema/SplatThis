@@ -57,7 +57,7 @@ pip install -e ".[capture,mlx]"
 On CPU or CUDA machines, select Torch explicitly:
 
 ```bash
-splatlify input.png --optimizer-backend torch
+splatthis input.png --optimizer-backend torch
 ```
 
 If Chrome is unavailable, pixel-runtime, native Canvas, SVG, and CSS exports
@@ -70,25 +70,25 @@ Create each supported output from the same image:
 
 ```bash
 # Highest-fidelity runtime; accelerated splat equations with exact CPU fallbacks.
-splatlify input.png --format pixel-runtime -o output-pixels.html
+splatthis input.png --format pixel-runtime -o output-pixels.html
 
 # Browser-native Canvas 2D gradient splats.
-splatlify input.png --format canvas -o output-canvas.html
+splatthis input.png --format canvas -o output-canvas.html
 
 # Scriptless DOM/CSS splats; no canvas, SVG, JavaScript, or embedded bitmap.
-splatlify input.png --format css -o output-css.html
+splatthis input.png --format css -o output-css.html
 
 # Static, editable SVG evaluated in Chromium.
-splatlify input.png --format svg -o output.svg
+splatthis input.png --format svg -o output.svg
 
 # Native DrawingML splats; gradient is the conservative default.
-splatlify input.png --format pptx -o output.pptx
+splatthis input.png --format pptx -o output.pptx
 ```
 
 Keep a complete audit trail with `--artifacts-dir`:
 
 ```bash
-splatlify input.png --format svg -o output.svg \
+splatthis input.png --format svg -o output.svg \
   --artifacts-dir ./tmp/input-svg-run
 ```
 
@@ -102,11 +102,11 @@ and training are allowed to use them.
 
 ```bash
 # Practical larger pixel-runtime run.
-splatlify input.png --format pixel-runtime -o output-4k.html \
+splatthis input.png --format pixel-runtime -o output-4k.html \
   --splats 4000 --initial-splat-cap 4000
 
 # Bound resolution and let a preset choose the schedule and detail budget.
-splatlify input.png --format pixel-runtime -o output.html \
+splatthis input.png --format pixel-runtime -o output.html \
   --max-edge 384 --time-budget 10m
 ```
 
@@ -115,7 +115,7 @@ stop before later stages once an observed checkpoint reaches the desired exact
 CPU-boundary score; the selected final browser backend is graded separately:
 
 ```bash
-splatlify input.png --format pixel-runtime -o output.html \
+splatthis input.png --format pixel-runtime -o output.html \
   --splats 4000 --initial-splat-cap 4000 \
   --adaptive-compute --adaptive-target-ssim-srgb 0.98
 ```
@@ -147,14 +147,14 @@ The standard recipe is the safe static default. Other recipes are explicit:
 | `browser-compatible` | Conservative browser-gradient encoding |
 
 ```bash
-splatlify input.png --format svg -o compact.svg \
+splatthis input.png --format svg -o compact.svg \
   --svg-recipe palette-quantized
 
-splatlify input.png --format svg -o polished.svg \
+splatthis input.png --format svg -o polished.svg \
   --fidelity-stage max --artifacts-dir ./tmp/polished-svg-run
 
 # Force the stricter adaptive stop policy without artifact search.
-splatlify input.png --format svg -o high.svg \
+splatthis input.png --format svg -o high.svg \
   --svg-gradient-quality high --no-svg-compositor-gate
 ```
 
@@ -184,10 +184,10 @@ composition; SplatThis does not pre-render a pixel buffer.
 
 ```bash
 # Static CSS splats.
-splatlify input.png --format css -o splats.html
+splatthis input.png --format css -o splats.html
 
 # Scriptless 10x10 hover-grid parallax from saliency depth layers.
-splatlify input.png --format css -o parallax-css.html \
+splatthis input.png --format css -o parallax-css.html \
   --layered-saliency --css-parallax-strength 28
 ```
 
@@ -205,15 +205,15 @@ a slide:
 
 ```bash
 # Recommended general-purpose PowerPoint output.
-splatlify input.png --format pptx -o output.pptx \
+splatthis input.png --format pptx -o output.pptx \
   --pptx-splat-style gradient
 
 # Explicit corrected painter-order candidate; legacy remains the default.
-splatlify input.png --format pptx -o output-corrected.pptx \
+splatthis input.png --format pptx -o output-corrected.pptx \
   --pptx-painter-order back-to-front
 
 # Deliberately target real PowerPoint's soft-edge compositor.
-splatlify input.png --format pptx -o output-softedge.pptx \
+splatthis input.png --format pptx -o output-softedge.pptx \
   --pptx-splat-style soft-edge \
   --training-export-target pptx-softedge
 ```
@@ -237,7 +237,7 @@ ordinary headless conversion never launches PowerPoint. See the
 Splat layers can be displaced by mouse position to suggest depth:
 
 ```bash
-splatlify input.png --format canvas -o parallax.html \
+splatthis input.png --format canvas -o parallax.html \
   --layered-saliency --canvas-parallax-strength 28
 ```
 
@@ -306,6 +306,13 @@ format-specific analysis.
 5. Monotonic gates keep only measured improvements.
 6. The final SVG, CSS/Canvas/pixel-runtime HTML, or DrawingML package is written atomically.
 
+The public `converter.py` module is a small compatibility facade over the
+internal numerical engine and isolated prepare, fit, and deployment phases.
+Each run starts from an immutable configuration snapshot, produces one
+`SplatScene`, and delegates emission plus governing evaluation to a registered
+artifact backend. See [Architecture](docs/ARCHITECTURE.md) for the module
+boundaries and extension rules.
+
 Pixel-runtime and SVG repeat-render noise is currently zero in the calibrated
 corpus captures. Native Canvas and CSS still need their own full-corpus noise
 calibration. The versioned target floors and PowerPoint capture provenance live
@@ -334,14 +341,16 @@ in [`data/artifact-gates.json`](data/artifact-gates.json).
 | `--css-parallax-strength PX` | Enable scriptless CSS hover parallax |
 | `--artifacts-dir DIR` | Retain the manifest and intermediate checkpoints |
 
-Run `splatlify --help` for the full research and backend surface.
+Run `splatthis --help` for the full research and backend surface.
 
 ## Project status
 
 The supported path includes target-aware training, native Canvas/CSS/SVG,
 explicit pixel-runtime and PPTX export, browser pixel-runtime/Canvas/SVG/CSS
 grading, native
-PowerPoint generation, reproducible manifests, and full-corpus reporting.
+PowerPoint generation, provenance-complete manifests, and full-corpus
+reporting. See [Reproducibility](#reproducibility) for what a fixed seed does
+and does not guarantee per backend.
 
 Top-K teacher/student distillation, mixed native primitives, automatic SVG
 recipe selection, adaptive compute, and PowerPoint hover parallax remain
@@ -361,6 +370,35 @@ pytest -q
 python -m build
 python -m twine check dist/*
 ```
+
+### Reproducibility
+
+A fixed `--seed` reproduces the reported metrics on both backends, but only
+Torch reproduces the emitted artifact byte for byte.
+
+| `--optimizer-backend` | Reported metrics | Emitted artifact |
+|---|---|---|
+| `torch` | identical | byte-identical |
+| `mlx` (default) | identical to nine significant figures | not byte-identical |
+
+MLX orders float32 reductions on the Metal device nondeterministically, so
+repeated single-process seeded runs differ by roughly one float32 ULP (~3e-8)
+in splat parameters. That is far below any quality threshold — two seeded runs
+of the same image agreed on SSIM to nine significant figures — but it is
+enough to tip a rounded SVG attribute across a formatting boundary, so
+artifact hashes are not stable under MLX. The differences observed so far have
+been geometrically inert, such as the `rotate()` angle of an isotropic splat,
+where rotation is a no-op. Select `--optimizer-backend torch` when you need
+bit-identical output or a stable artifact hash.
+
+The corpus medians quoted above are unaffected: they are reported to four
+decimal places, five orders of magnitude above this noise.
+
+Corpus runs are content-addressed and resumable. Independent conversions can
+run concurrently with `python tools/corpus_benchmark.py --run --jobs 2 ...`.
+This is restricted to Torch/CPU runs: concurrent seeded MLX processes share one
+Metal device and compound the nondeterminism described above. MLX therefore
+requires `--jobs 1`; result-file writes remain serialized for every backend.
 
 CI launches the installed Chrome before running the suite. See
 [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).

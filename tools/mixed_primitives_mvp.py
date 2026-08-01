@@ -8,9 +8,9 @@ import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from png2svg_gs.browser_capture import render_svg_in_browser_to_linear_rgb
-from png2svg_gs.io import compute_quality_metrics, load_png
-from png2svg_gs.mixed_primitives import (
+from splatthis.browser_capture import render_svg_in_browser_to_linear_rgb
+from splatthis.io import compute_quality_metrics, load_png
+from splatthis.mixed_primitives import (
     edge_paths_to_svg_group,
     edge_strokes_to_svg_group,
     inject_edge_paths_into_pptx,

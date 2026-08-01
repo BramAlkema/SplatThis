@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from png2svg_gs.converter import PNG2SVGConverter
-from png2svg_gs.fidelity import (
+from splatthis.converter import PNG2SVGConverter
+from splatthis.fidelity import (
     FidelityCandidate,
     FidelityConfig,
     FidelityStage,
@@ -18,8 +18,8 @@ from png2svg_gs.fidelity import (
     resolve_fidelity_config,
     select_fixed_rois,
 )
-from png2svg_gs.fidelity.stage import accept_candidate
-from png2svg_gs.splat import create_isotropic_splat
+from splatthis.fidelity.stage import accept_candidate
+from splatthis.splat import create_isotropic_splat
 
 
 def _metrics(**overrides):
@@ -39,7 +39,7 @@ def _metrics(**overrides):
         render_method="playwright-chromium/test",
     )
     base.update(overrides)
-    from png2svg_gs.fidelity.metrics import FidelityMetrics
+    from splatthis.fidelity.metrics import FidelityMetrics
 
     return FidelityMetrics(**base)
 
@@ -254,7 +254,7 @@ def test_resolve_fidelity_config_validates_mode():
 
 
 def _browser_renderer_available() -> bool:
-    from png2svg_gs.browser_capture import browser_capture_configured
+    from splatthis.browser_capture import browser_capture_configured
 
     return browser_capture_configured()
 

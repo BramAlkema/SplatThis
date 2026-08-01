@@ -15,6 +15,7 @@ Usage
 -----
     python tools/corpus_benchmark.py --materialize          # write corpus/
     python tools/corpus_benchmark.py --run --formats svg    # score SVG
+    python tools/corpus_benchmark.py --run --formats svg --optimizer-backend torch --jobs 2
     python tools/corpus_benchmark.py --run --formats svg,pptx --seeds 0,1,2
     python tools/corpus_benchmark.py --summarize            # tables
     python tools/corpus_benchmark.py --html                 # standalone gallery
@@ -32,16 +33,17 @@ import statistics
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 import numpy as np
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "src"))
 
-from png2svg_gs.adaptive_compute import (  # noqa: E402
+from splatthis.adaptive_compute import (  # noqa: E402
     DEFAULT_CHROME_PSNR_SAFETY_MARGIN,
     DEFAULT_CHROME_SSIM_SAFETY_MARGIN,
 )
@@ -201,8 +203,8 @@ def _lpips_score(a_srgb: np.ndarray, b_srgb: np.ndarray) -> float:
 
 def score_svg(source_png: Path, svg_path: Path) -> Optional[dict]:
     """Metrics on the emitted SVG captured in governing Chromium."""
-    from png2svg_gs.browser_capture import render_svg_in_browser_to_linear_rgb
-    from png2svg_gs.io import compute_quality_metrics, linear_to_srgb, load_png
+    from splatthis.browser_capture import render_svg_in_browser_to_linear_rgb
+    from splatthis.io import compute_quality_metrics, linear_to_srgb, load_png
 
     target_lin = load_png(str(source_png))[..., :3]
     h, w = target_lin.shape[:2]
@@ -224,13 +226,13 @@ def score_svg(source_png: Path, svg_path: Path) -> Optional[dict]:
 
 def score_pptx_proxy(source_png: Path, splats_json: Path) -> Optional[dict]:
     """Score an internal splat proxy; never label it as a PPTX render."""
-    from png2svg_gs.io import (
+    from splatthis.io import (
         compute_quality_metrics,
         linear_to_srgb,
         load_png,
         load_splats_json,
     )
-    from png2svg_gs.renderer import render_splats_numpy
+    from splatthis.renderer import render_splats_numpy
 
     if not splats_json.exists():
         return None
@@ -254,13 +256,13 @@ def score_canvas(
     source_png: Path, splats_json: Path, manifest_path: Path
 ) -> Optional[dict]:
     """Score the byte-exact ImageData pixel-runtime model."""
-    from png2svg_gs.io import (
+    from splatthis.io import (
         compute_quality_metrics,
         linear_to_srgb,
         load_png,
         load_splats_json,
     )
-    from png2svg_gs.renderer import render_canvas_runtime_numpy
+    from splatthis.renderer import render_pixel_runtime_numpy
 
     if not splats_json.exists() or not manifest_path.exists():
         return None
@@ -274,7 +276,7 @@ def score_canvas(
     compositing_space = str(config.get("compositing_space", "linear"))
     if training_target in {"svg", "pptx-softedge"}:
         compositing_space = "srgb"
-    rendered = render_canvas_runtime_numpy(
+    rendered = render_pixel_runtime_numpy(
         splats,
         width=w,
         height=h,
@@ -313,8 +315,8 @@ def score_canvas_capture(
 ) -> Optional[dict]:
     """Score the browser's exact canvas pixel buffer, not a Python proxy."""
 
-    from png2svg_gs.fidelity.metrics import compute_fidelity_metrics
-    from png2svg_gs.io import load_png
+    from splatthis.fidelity.metrics import compute_fidelity_metrics
+    from splatthis.io import load_png
 
     if not capture_png.exists():
         return None
@@ -387,7 +389,7 @@ def capture_canvas_artifact(
 
 def score_powerpoint_captures(root: Path) -> None:
     """Score slide crops captured from real Microsoft PowerPoint."""
-    from png2svg_gs.io import compute_quality_metrics, linear_to_srgb, load_png
+    from splatthis.io import compute_quality_metrics, linear_to_srgb, load_png
 
     meta = json.loads((root / "corpus.json").read_text())["images"]
     selected_runs = _latest_seed_zero_runs(root)
@@ -746,12 +748,9 @@ def _generate_legacy_proxy_html(root: Path, output: Path) -> None:
 
 def generate_canvas_corpus_html(root: Path, output: Path) -> None:
     """Build one HTML containing a live canvas-splat render for every image."""
-    from png2svg_gs.io import (
-        atomic_write_text,
-        linear_to_srgb,
-        load_splats_json,
-        render_importance_for_raw,
-    )
+    from splatthis.color import linear_to_srgb
+    from splatthis.io import atomic_write_text, load_splats_json
+    from splatthis.splat import render_importance_for_raw
 
     corpus_path = root / "corpus.json"
     if not corpus_path.exists():
@@ -1433,7 +1432,7 @@ def jpeg_at_matched_bytes(source_png: Path, target_bytes: int) -> Optional[dict]
 
     from PIL import Image
 
-    from png2svg_gs.io import (
+    from splatthis.io import (
         compute_quality_metrics,
         linear_to_srgb,
         load_png,
@@ -1510,7 +1509,7 @@ def run_baselines(root: Path) -> None:
 def _code_fingerprint() -> str:
     """Fingerprint executable benchmark/converter code, including dirty edits."""
     digest = hashlib.sha256()
-    paths = sorted((REPO / "src" / "png2svg_gs").glob("*.py"))
+    paths = sorted((REPO / "src" / "splatthis").glob("*.py"))
     paths.append(Path(__file__))
     for path in paths:
         digest.update(str(path.relative_to(REPO)).encode("utf-8"))
@@ -1580,16 +1579,275 @@ def run_key(image: str, fmt: str, seed: int, config_hash: str) -> str:
 
 
 def load_done(results_path: Path) -> set:
+    """Return successful content-addressed runs whose primary artifact exists."""
+
     if not results_path.exists():
         return set()
     done = set()
     for line in results_path.read_text().splitlines():
         if line.strip():
             try:
-                done.add(json.loads(line)["key"])
+                record = json.loads(line)
             except Exception:
-                pass
+                continue
+            if int(record.get("returncode", 0)) != 0 or record.get("error"):
+                continue
+            output_path = record.get("output_path")
+            if output_path:
+                artifact = results_path.parent / output_path
+                if not artifact.is_file():
+                    continue
+                expected_size = record.get("artifact_bytes")
+                if expected_size is not None and artifact.stat().st_size != int(
+                    expected_size
+                ):
+                    continue
+                expected_sha = record.get("artifact_sha256")
+                if expected_sha and hashlib.sha256(
+                    artifact.read_bytes()
+                ).hexdigest() != str(expected_sha):
+                    continue
+            done.add(record["key"])
     return done
+
+
+@dataclass(frozen=True)
+class CorpusRunJob:
+    """One isolated converter subprocess and its content-addressed outputs."""
+
+    index: int
+    total: int
+    key: str
+    name: str
+    fmt: str
+    seed: int
+    config: dict
+    config_hash: str
+    source: Path
+    output: Path
+    artifacts: Path
+    command: tuple[str, ...]
+
+
+def _execute_corpus_job(
+    job: CorpusRunJob,
+) -> tuple[CorpusRunJob, subprocess.CompletedProcess[str], float]:
+    """Run one converter in an isolated process; safe for a thread scheduler."""
+
+    started = time.perf_counter()
+    process = subprocess.run(job.command, capture_output=True, text=True)
+    return job, process, time.perf_counter() - started
+
+
+def _execute_corpus_jobs(
+    jobs: List[CorpusRunJob], max_workers: int
+) -> Iterator[tuple[CorpusRunJob, subprocess.CompletedProcess[str], float]]:
+    """Yield completed runs serially or concurrently without concurrent writes."""
+
+    if max_workers <= 1:
+        for job in jobs:
+            yield _execute_corpus_job(job)
+        return
+    with ThreadPoolExecutor(
+        max_workers=max_workers, thread_name_prefix="splatthis-corpus"
+    ) as executor:
+        futures = [executor.submit(_execute_corpus_job, job) for job in jobs]
+        for future in as_completed(futures):
+            yield future.result()
+
+
+def _resolve_corpus_worker_count(requested: int, optimizer_backend: str) -> int:
+    """Protect seeded MLX runs from shared-Metal cross-process drift."""
+
+    workers = int(requested)
+    if workers < 1:
+        raise ValueError("corpus jobs must be positive")
+    if workers > 1 and str(optimizer_backend).strip().lower() == "mlx":
+        raise ValueError(
+            "parallel MLX corpus jobs are disabled: concurrent processes share "
+            "one Metal device and produced seed-identical parameter drift; use "
+            "--jobs 1 for MLX or select the Torch backend"
+        )
+    return workers
+
+
+def _build_corpus_job(
+    *,
+    index: int,
+    total: int,
+    runs_dir: Path,
+    source: Path,
+    name: str,
+    fmt: str,
+    seed: int,
+    config: dict,
+    config_hash: str,
+) -> CorpusRunJob:
+    """Materialize the command and unique output paths for one run."""
+
+    stem = runs_dir / f"{name}_{fmt}_s{seed}_{config_hash}"
+    suffix = {
+        "svg": ".svg",
+        "pptx": ".pptx",
+        "canvas": ".html",
+        "pixel-runtime": ".html",
+    }.get(fmt)
+    if suffix is None:
+        raise ValueError(f"unsupported corpus format: {fmt}")
+    output = stem.with_suffix(suffix)
+    artifacts = Path(str(stem) + "_art")
+    command = [
+        sys.executable,
+        "-m",
+        "splatthis.cli",
+        str(source),
+        "-o",
+        str(output),
+        "--seed",
+        str(seed),
+        "--splats",
+        str(config["splats"]),
+        "--format",
+        fmt,
+        "--profile",
+        str(config["profile"]),
+        "--optimizer-backend",
+        str(config["optimizer_backend"]),
+        "--artifacts-dir",
+        str(artifacts),
+    ]
+    if config["stages"] != "cli-default":
+        command += ["--stages", str(config["stages"])]
+    if config["initial_splat_cap"] != "profile-default":
+        command += ["--initial-splat-cap", str(config["initial_splat_cap"])]
+    if config["initial_splat_fraction"] != "profile-default":
+        command += [
+            "--initial-splat-fraction",
+            str(config["initial_splat_fraction"]),
+        ]
+    if config["mlx_tile_plan_rebuild_interval"] != "profile-default":
+        command += [
+            "--mlx-tile-plan",
+            str(config["mlx_tile_plan"]),
+            "--mlx-tile-plan-rebuild-interval",
+            str(config["mlx_tile_plan_rebuild_interval"]),
+            "--mlx-trainable-groups",
+            str(config["mlx_trainable_groups"]),
+        ]
+    if config["adaptive_compute"]:
+        command += [
+            "--adaptive-compute",
+            "--adaptive-target-ssim-srgb",
+            str(config["adaptive_target_ssim_srgb"]),
+            "--adaptive-min-checkpoints",
+            str(config["adaptive_min_checkpoints"]),
+            "--adaptive-chrome-ssim-margin",
+            str(config["adaptive_chrome_ssim_margin"]),
+            "--adaptive-chrome-psnr-margin",
+            str(config["adaptive_chrome_psnr_margin"]),
+        ]
+    return CorpusRunJob(
+        index=index,
+        total=total,
+        key=run_key(name, fmt, seed, config_hash),
+        name=name,
+        fmt=fmt,
+        seed=seed,
+        config=config,
+        config_hash=config_hash,
+        source=source,
+        output=output,
+        artifacts=artifacts,
+        command=tuple(command),
+    )
+
+
+def _finalize_corpus_job(
+    job: CorpusRunJob,
+    process: subprocess.CompletedProcess[str],
+    elapsed: float,
+    *,
+    root: Path,
+    image_meta: dict,
+    run_tag: Optional[str],
+    canvas_capture_python: Optional[Path],
+    browser_executable: Path,
+) -> tuple[dict, str]:
+    """Score a completed job and build its single-writer JSONL record."""
+
+    record = {
+        "key": job.key,
+        "image": job.name,
+        "format": job.fmt,
+        "seed": job.seed,
+        "splats_requested": job.config["splats"],
+        "content_class": image_meta["content_class"],
+        "source_size": image_meta["size"],
+        "runtime_sec": round(elapsed, 1),
+        "returncode": process.returncode,
+        "config_hash": job.config_hash,
+        "run_config": job.config,
+        "output_path": str(job.output.relative_to(root)),
+        "artifacts_path": str(job.artifacts.relative_to(root)),
+    }
+    if run_tag:
+        record["run_tag"] = run_tag
+    if process.returncode != 0:
+        record["error"] = (process.stderr or "")[-400:]
+        return record, f"FAILED ({elapsed:.0f}s)"
+
+    record["artifact_bytes"] = (
+        job.output.stat().st_size if job.output.exists() else None
+    )
+    if job.output.is_file():
+        record["artifact_sha256"] = hashlib.sha256(job.output.read_bytes()).hexdigest()
+    final = job.artifacts / "final.raw.json"
+    if final.exists():
+        record["splats_final"] = len(json.loads(final.read_text()).get("splats", []))
+    if job.fmt == "svg":
+        scored = score_svg(job.source, job.output)
+    elif job.fmt in {"canvas", "pixel-runtime"}:
+        scored = None
+        if canvas_capture_python is not None:
+            capture_path = job.output.with_name(f"{job.output.stem}_chrome_canvas.png")
+            capture_metadata, capture_log = capture_canvas_artifact(
+                job.output,
+                capture_path,
+                capture_python=canvas_capture_python,
+                browser_executable=browser_executable,
+            )
+            if capture_metadata is not None:
+                record["canvas_capture_path"] = str(capture_path.relative_to(root))
+                record["canvas_capture_bytes"] = capture_path.stat().st_size
+                record["browser_render_ms"] = capture_metadata["render_ms"]
+                record["browser_render_ms_samples"] = capture_metadata.get(
+                    "render_ms_samples", [capture_metadata["render_ms"]]
+                )
+                record["browser_version"] = capture_metadata["browser"]
+                scored = score_canvas_capture(
+                    job.source,
+                    capture_path,
+                    splat_count=int(record.get("splats_final") or 0),
+                    artifact_bytes=int(record.get("artifact_bytes") or 0),
+                    compositor=str(capture_metadata.get("compositor") or job.fmt),
+                )
+            else:
+                record["canvas_capture_error"] = capture_log[-1000:]
+        if scored is None:
+            scored = score_canvas(
+                job.source, final, job.artifacts / "run_manifest.json"
+            )
+    else:
+        scored = score_pptx_proxy(job.source, final)
+    if not scored:
+        record["error"] = "scoring-failed"
+        return record, f"unscored ({elapsed:.0f}s)"
+    record.update(scored)
+    return (
+        record,
+        f"LPIPS {scored['lpips']:.4f}  SSIM {scored['ssim_srgb']:.4f}  "
+        f"({elapsed:.0f}s)",
+    )
 
 
 def run(
@@ -1612,7 +1870,10 @@ def run(
     adaptive_min_checkpoints: int,
     adaptive_chrome_ssim_margin: float,
     adaptive_chrome_psnr_margin: float,
+    jobs: int = 1,
 ) -> None:
+    """Run content-addressed corpus jobs with single-writer result handling."""
+
     meta = json.loads((root / "corpus.json").read_text())["images"]
     results_path = root / "results.jsonl"
     done = load_done(results_path)
@@ -1645,148 +1906,52 @@ def run(
                 )
                 config_hash = _config_hash(config)
                 if run_key(name, fmt, seed, config_hash) not in done:
-                    todo.append((name, fmt, seed, config, config_hash))
-    print(f"{len(todo)} runs to do ({len(done)} already recorded)\n")
+                    todo.append((name, fmt, seed, source, config, config_hash))
 
-    for idx, (name, fmt, seed, config, config_hash) in enumerate(todo, 1):
-        key = run_key(name, fmt, seed, config_hash)
-        src = root / meta[name]["path"]
-        stem = runs_dir / f"{name}_{fmt}_s{seed}_{config_hash}"
-        suffix = {
-            "svg": ".svg",
-            "pptx": ".pptx",
-            "canvas": ".html",
-            "pixel-runtime": ".html",
-        }.get(fmt)
-        if suffix is None:
-            raise ValueError(f"unsupported corpus format: {fmt}")
-        out = stem.with_suffix(suffix)
-        artifacts = Path(str(stem) + "_art")
+    worker_count = _resolve_corpus_worker_count(jobs, optimizer_backend)
+    print(
+        f"{len(todo)} runs to do ({len(done)} valid cached; " f"jobs={worker_count})\n"
+    )
+    prepared = [
+        _build_corpus_job(
+            index=index,
+            total=len(todo),
+            runs_dir=runs_dir,
+            source=source,
+            name=name,
+            fmt=fmt,
+            seed=seed,
+            config=config,
+            config_hash=config_hash,
+        )
+        for index, (name, fmt, seed, source, config, config_hash) in enumerate(todo, 1)
+    ]
+    for job in prepared:
+        print(
+            f"[queue {job.index}/{job.total}] {job.name} {job.fmt} " f"seed={job.seed}"
+        )
 
-        cmd = [
-            sys.executable,
-            "-m",
-            "png2svg_gs.cli",
-            str(src),
-            "-o",
-            str(out),
-            "--seed",
-            str(seed),
-            "--splats",
-            str(splats),
-            "--format",
-            fmt,
-            "--profile",
-            profile,
-            "--optimizer-backend",
-            optimizer_backend,
-            "--artifacts-dir",
-            str(artifacts),
-        ]
-        if stages:
-            cmd += ["--stages", stages]
-        if initial_splat_cap is not None:
-            cmd += ["--initial-splat-cap", str(initial_splat_cap)]
-        if initial_splat_fraction is not None:
-            cmd += ["--initial-splat-fraction", str(initial_splat_fraction)]
-        if full_geometry:
-            cmd += [
-                "--mlx-tile-plan",
-                "periodic",
-                "--mlx-tile-plan-rebuild-interval",
-                "10",
-                "--mlx-trainable-groups",
-                "position,scale,theta,color,alpha",
-            ]
-        if adaptive_compute:
-            cmd += [
-                "--adaptive-compute",
-                "--adaptive-target-ssim-srgb",
-                str(adaptive_target_ssim_srgb),
-                "--adaptive-min-checkpoints",
-                str(adaptive_min_checkpoints),
-                "--adaptive-chrome-ssim-margin",
-                str(adaptive_chrome_ssim_margin),
-                "--adaptive-chrome-psnr-margin",
-                str(adaptive_chrome_psnr_margin),
-            ]
-
-        print(f"[{idx}/{len(todo)}] {name} {fmt} seed={seed} ... ", end="", flush=True)
-        t0 = time.perf_counter()
-        proc = subprocess.run(cmd, capture_output=True, text=True)
-        elapsed = time.perf_counter() - t0
-
-        rec = {
-            "key": key,
-            "image": name,
-            "format": fmt,
-            "seed": seed,
-            "splats_requested": splats,
-            "content_class": meta[name]["content_class"],
-            "source_size": meta[name]["size"],
-            "runtime_sec": round(elapsed, 1),
-            "returncode": proc.returncode,
-            "config_hash": config_hash,
-            "run_config": config,
-            "output_path": str(out.relative_to(root)),
-            "artifacts_path": str(artifacts.relative_to(root)),
-        }
-        if run_tag:
-            rec["run_tag"] = run_tag
-        if proc.returncode != 0:
-            rec["error"] = (proc.stderr or "")[-400:]
-            print(f"FAILED ({elapsed:.0f}s)")
-        else:
-            rec["artifact_bytes"] = out.stat().st_size if out.exists() else None
-            final = artifacts / "final.raw.json"
-            if final.exists():
-                rec["splats_final"] = len(
-                    json.loads(final.read_text()).get("splats", [])
-                )
-            if fmt == "svg":
-                scored = score_svg(src, out)
-            elif fmt in {"canvas", "pixel-runtime"}:
-                scored = None
-                if canvas_capture_python is not None:
-                    capture_path = out.with_name(f"{out.stem}_chrome_canvas.png")
-                    capture_metadata, capture_log = capture_canvas_artifact(
-                        out,
-                        capture_path,
-                        capture_python=canvas_capture_python,
-                        browser_executable=browser_executable,
-                    )
-                    if capture_metadata is not None:
-                        rec["canvas_capture_path"] = str(capture_path.relative_to(root))
-                        rec["canvas_capture_bytes"] = capture_path.stat().st_size
-                        rec["browser_render_ms"] = capture_metadata["render_ms"]
-                        rec["browser_render_ms_samples"] = capture_metadata.get(
-                            "render_ms_samples", [capture_metadata["render_ms"]]
-                        )
-                        rec["browser_version"] = capture_metadata["browser"]
-                        scored = score_canvas_capture(
-                            src,
-                            capture_path,
-                            splat_count=int(rec.get("splats_final") or 0),
-                            artifact_bytes=int(rec.get("artifact_bytes") or 0),
-                            compositor=str(capture_metadata.get("compositor") or fmt),
-                        )
-                    else:
-                        rec["canvas_capture_error"] = capture_log[-1000:]
-                if scored is None:
-                    scored = score_canvas(src, final, artifacts / "run_manifest.json")
-            else:
-                scored = score_pptx_proxy(src, final)
-            if scored:
-                rec.update(scored)
-                print(
-                    f"LPIPS {scored['lpips']:.4f}  SSIM {scored['ssim_srgb']:.4f}  ({elapsed:.0f}s)"
-                )
-            else:
-                rec["error"] = "scoring-failed"
-                print(f"unscored ({elapsed:.0f}s)")
-
-        with results_path.open("a") as f:
-            f.write(json.dumps(rec) + "\n")
+    for completed, (job, process, elapsed) in enumerate(
+        _execute_corpus_jobs(prepared, worker_count), 1
+    ):
+        record, status = _finalize_corpus_job(
+            job,
+            process,
+            elapsed,
+            root=root,
+            image_meta=meta[job.name],
+            run_tag=run_tag,
+            canvas_capture_python=canvas_capture_python,
+            browser_executable=browser_executable,
+        )
+        # Only the coordinator writes JSONL, so records cannot interleave even
+        # when converter subprocesses complete simultaneously.
+        with results_path.open("a") as handle:
+            handle.write(json.dumps(record) + "\n")
+        print(
+            f"[done {completed}/{len(prepared)}; job {job.index}] "
+            f"{job.name} {job.fmt}: {status}"
+        )
 
 
 def capture_existing_canvas_runs(
@@ -1842,11 +2007,8 @@ def capture_existing_canvas_runs(
             )
             continue
         if refresh_html:
-            from png2svg_gs.io import (
-                generate_native_canvas_html,
-                generate_pixel_runtime_html,
-                load_splats_json,
-            )
+            from splatthis.io import generate_native_canvas_html, load_splats_json
+            from splatthis.pixel_runtime import generate_pixel_runtime_html
 
             recorded_artifacts = record.get("artifacts_path")
             artifact_dir = (
@@ -2127,6 +2289,13 @@ def main() -> int:
     ap.add_argument("--formats", default="svg")
     ap.add_argument("--seeds", default="0")
     ap.add_argument("--splats", type=int, default=2000)
+    ap.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="Torch/CPU converter subprocesses to run concurrently (default: 1; "
+        "MLX requires 1 for seeded reproducibility)",
+    )
     ap.add_argument("--stages", default=None, help="e.g. 60,40,25 to shorten runs")
     ap.add_argument("--only", default=None, help="comma-separated image names")
     ap.add_argument(
@@ -2208,6 +2377,10 @@ def main() -> int:
         help="browser executable used for canvas artifact capture",
     )
     args = ap.parse_args()
+    if args.jobs < 1:
+        ap.error("--jobs must be positive")
+    if args.run and args.optimizer_backend == "mlx" and args.jobs > 1:
+        ap.error("--jobs greater than 1 is unsafe with MLX; use Torch or --jobs 1")
     if not 0.0 <= args.adaptive_target_ssim_srgb <= 1.0:
         ap.error("--adaptive-target-ssim-srgb must be between 0 and 1")
     if args.adaptive_min_checkpoints < 1:
@@ -2258,6 +2431,7 @@ def main() -> int:
             adaptive_min_checkpoints=args.adaptive_min_checkpoints,
             adaptive_chrome_ssim_margin=args.adaptive_chrome_ssim_margin,
             adaptive_chrome_psnr_margin=args.adaptive_chrome_psnr_margin,
+            jobs=args.jobs,
         )
     if args.capture_canvas_runs:
         if args.canvas_capture_python is None:

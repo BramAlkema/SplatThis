@@ -3,16 +3,16 @@ requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "splat-this"
+name = "splatthis"
 version = "0.2.0"
-description = "Convert images to SVG using 2D Gaussian splatting"
+description = "Fit 2D Gaussian splats to an image and deploy them as SVG, CSS, Canvas, a pixel runtime, or editable PowerPoint shapes"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
-    {name = "SplatThis Team", email = "team@splat-this.dev"}
+    {name = "Bram Alkema"}
 ]
-keywords = ["svg", "animation", "parallax", "image", "splat", "gaussian"]
+keywords = ["svg", "pptx", "canvas", "css", "parallax", "image", "splat", "gaussian"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -30,7 +30,7 @@ dependencies = [
     "Pillow>=9.0.0",
     "numpy>=1.21.0",
     "scikit-image>=0.19.0",
-    # Direct imports in png2svg_gs (io.py, features.py, converter.py); do not
+    # Direct imports in splatthis (features.py and mixed_primitives.py); do not
     # rely on it arriving transitively via scikit-image.
     "scipy>=1.10",
     "psutil>=5.9.0",
@@ -69,7 +69,7 @@ mlx = [
 ]
 
 [project.scripts]
-splatlify = "png2svg_gs.cli:main"
+splatthis = "splatthis.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/BramAlkema/SplatThis"
@@ -81,6 +81,17 @@ where = ["src"]
 
 [tool.setuptools.package-dir]
 "" = "src"
+
+[tool.setuptools.package-data]
+splatthis = [
+    # PEP 561 marker: without it, type checkers ignore this package's
+    # annotations entirely and every consumer sees Any.
+    "py.typed",
+    "templates/**/*.html",
+    "templates/**/*.js",
+    "templates/**/*.svg",
+    "templates/**/*.xml",
+]
 
 [tool.black]
 line-length = 88

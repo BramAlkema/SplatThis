@@ -1,0 +1,1 @@
+    <line id="edge-stroke-@@INDEX@@" x1="@@X1@@" y1="@@Y1@@" x2="@@X2@@" y2="@@Y2@@" stroke="@@STROKE@@" stroke-opacity="@@OPACITY@@" stroke-width="@@WIDTH@@" stroke-linecap="round"/>

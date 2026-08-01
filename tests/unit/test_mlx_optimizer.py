@@ -1,12 +1,12 @@
 import numpy as np
 import pytest
 
-from png2svg_gs import mlx_runtime
-from png2svg_gs.cli import build_parser
-from png2svg_gs.converter import PNG2SVGConverter
-from png2svg_gs.mlx_optimizer import MlxSplatParams, table_to_splats
-from png2svg_gs.mlx_stage import MlxStageConfig, is_mlx_available, optimize_stage_mlx
-from png2svg_gs.splat import GaussianSplat, RawSplat
+from splatthis import mlx_runtime
+from splatthis.cli import build_parser
+from splatthis.converter import PNG2SVGConverter
+from splatthis.mlx_optimizer import MlxSplatParams, table_to_splats
+from splatthis.mlx_stage import MlxStageConfig, is_mlx_available, optimize_stage_mlx
+from splatthis.splat import GaussianSplat, RawSplat
 
 
 class _UnavailableMetal:
@@ -168,7 +168,7 @@ def test_converter_enables_spatial_weights_for_weighted_mlx_loss() -> None:
 
 @pytest.mark.skipif(not is_mlx_available(), reason="MLX is not installed")
 def test_mlx_color_alpha_stage_decreases_loss() -> None:
-    from png2svg_gs.mlx_stage import MlxRendererConfig
+    from splatthis.mlx_stage import MlxRendererConfig
 
     target = np.zeros((16, 16, 3), dtype=np.float32)
     target[:, :, 0] = 0.8
@@ -205,7 +205,7 @@ def test_mlx_color_alpha_stage_decreases_loss() -> None:
 
 @pytest.mark.skipif(not is_mlx_available(), reason="MLX is not installed")
 def test_mlx_periodic_stage_allows_geometry_groups() -> None:
-    from png2svg_gs.mlx_stage import MlxRendererConfig
+    from splatthis.mlx_stage import MlxRendererConfig
 
     target = np.zeros((16, 16, 3), dtype=np.float32)
     target[:, :, 0] = 0.8

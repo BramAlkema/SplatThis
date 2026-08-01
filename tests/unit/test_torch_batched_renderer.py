@@ -1,6 +1,7 @@
+import pytest
 import torch
 
-from png2svg_gs.renderer import create_renderer, resolve_renderer_backend
+from splatthis.renderer import create_renderer, resolve_renderer_backend
 
 
 def _sample_splats() -> torch.Tensor:
@@ -25,6 +26,11 @@ def test_resolve_torch_batched_backend_on_cpu() -> None:
         resolve_renderer_backend("torch_batched", torch.device("cpu"))
         == "torch-batched"
     )
+
+
+def test_retired_gsplat_backend_is_rejected() -> None:
+    with pytest.raises(ValueError, match="Unsupported renderer backend"):
+        resolve_renderer_backend("gsplat", torch.device("cpu"))
 
 
 def test_torch_batched_renderer_matches_reference_alpha_over() -> None:

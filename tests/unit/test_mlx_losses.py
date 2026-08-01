@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 import torch
 
-from png2svg_gs.mlx_losses import MlxLossConfig, is_mlx_available, make_loss_fn
-from png2svg_gs.renderer import L1SSIMLoss
+from splatthis.mlx_losses import MlxLossConfig, is_mlx_available, make_loss_fn
+from splatthis.renderer import L1SSIMLoss
 
 pytestmark = pytest.mark.skipif(not is_mlx_available(), reason="MLX is not installed")
 
