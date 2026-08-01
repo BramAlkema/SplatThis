@@ -7,6 +7,14 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
+# `np.where` evaluates both branches, so the power term sees every input --
+# including the negatives the linear branch exists to handle. Raising a
+# negative base to a fractional exponent yields NaN and a RuntimeWarning, which
+# `where` then discards. The result is correct but the warning is real, and it
+# fires during ordinary compositing wherever a linear value dips below zero.
+# The float32 variants below already clamped for this reason; these did not.
+_POWER_FLOOR = 1e-12
+
 
 def srgb_to_linear(srgb: npt.NDArray[Any]) -> npt.NDArray[Any]:
     """Convert normalized sRGB values to linear RGB."""
@@ -15,7 +23,7 @@ def srgb_to_linear(srgb: npt.NDArray[Any]) -> npt.NDArray[Any]:
     return np.where(
         values <= 0.04045,
         values / 12.92,
-        np.power((values + 0.055) / 1.055, 2.4),
+        np.power(np.maximum((values + 0.055) / 1.055, _POWER_FLOOR), 2.4),
     )
 
 
@@ -26,7 +34,7 @@ def linear_to_srgb(linear: npt.NDArray[Any]) -> npt.NDArray[Any]:
     srgb = np.where(
         values <= 0.0031308,
         12.92 * values,
-        1.055 * np.power(values, 1.0 / 2.4) - 0.055,
+        1.055 * np.power(np.maximum(values, _POWER_FLOOR), 1.0 / 2.4) - 0.055,
     )
     return np.clip(srgb, 0.0, 1.0)
 

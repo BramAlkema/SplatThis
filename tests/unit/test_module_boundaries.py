@@ -240,3 +240,53 @@ def test_engine_state_declares_only() -> None:
 
     # Last in the MRO, so every real implementation resolves first.
     assert ConversionEngine.__mro__[-2] is ConversionEngineState
+
+
+def test_color_transforms_are_warning_free_on_out_of_range_input() -> None:
+    """Linear RGB legitimately goes negative during compositing.
+
+    ``np.where`` evaluates both branches, so the power term sees the negatives
+    that the linear branch exists to handle. The result is discarded and stays
+    correct, but the NaN and its RuntimeWarning are real.
+    """
+    import warnings
+
+    from splatthis.color import linear_to_srgb, srgb_to_linear
+
+    values = np.array([-0.25, -0.001, 0.0, 0.5, 1.0, 1.5], dtype=np.float64)
+    for transform in (linear_to_srgb, srgb_to_linear):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = transform(values)
+        assert not np.isnan(result).any(), transform.__name__
+        assert caught == [], f"{transform.__name__}: {[str(w.message) for w in caught]}"
+
+
+def test_ssim_falls_back_only_when_skimage_is_absent() -> None:
+    """A failing metric must raise, not silently switch to an inflated one.
+
+    The fallback reads about 0.10 higher than the windowed metric on real
+    artifacts, which is far above the 0.50 acceptance floor. Catching every
+    exception meant a transient skimage failure could promote a bad run to a
+    passing one and record the inflated number as though it were real.
+    """
+    import builtins
+
+    from splatthis import quality
+
+    real_import = builtins.__import__
+
+    def explode(name, *args, **kwargs):
+        if name == "skimage.metrics":
+            raise ValueError("simulated failure inside skimage, not an ImportError")
+        return real_import(name, *args, **kwargs)
+
+    image = np.zeros((16, 16, 3), dtype=np.float64)
+    other = np.ones((16, 16, 3), dtype=np.float64)
+
+    builtins.__import__ = explode
+    try:
+        with pytest.raises(ValueError, match="simulated failure"):
+            quality._image_ssim(image, other)
+    finally:
+        builtins.__import__ = real_import
