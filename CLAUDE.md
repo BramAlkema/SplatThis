@@ -26,7 +26,7 @@ retired). CLI entry point: `splatthis` (= `splatthis.cli:main`).
 Splats flow between stages as `List[GaussianSplat]` ⇄ `[N, 11]` tensors
 (x, y, sx, sy, theta, reserved, r, g, b, alpha, importance).
 
-- `tests/unit/` — the test suite (`tests/integration` is orphaned)
+- `tests/unit/` — the test suite
 - `tools/fidelity_lab.py`, `scripts/benchmark_*.py` — experiment harnesses
 - `docs/` — GitHub Pages landing + research notes (`SVG_PPTX_GAUSSIAN_TRICKS.md`)
 - `external/`, `ml-sharp/` — local clones of reference projects, not committed

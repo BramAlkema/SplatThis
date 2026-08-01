@@ -109,6 +109,11 @@ def test_done_cache_requires_success_and_existing_artifact(tmp_path: Path) -> No
     existing.parent.mkdir()
     existing.write_text("<svg/>")
     valid_sha = corpus_benchmark.hashlib.sha256(existing.read_bytes()).hexdigest()
+    # This test covers the success/artifact-existence rules, so every fixture
+    # declares the current schema. Rows written under an older schema are
+    # rejected separately and deliberately -- see
+    # test_corpus_result_schema.test_stale_schema_rows_are_not_treated_as_done.
+    version = corpus_benchmark.RESULT_SCHEMA_VERSION
     records = [
         {
             "key": "valid",
@@ -116,15 +121,27 @@ def test_done_cache_requires_success_and_existing_artifact(tmp_path: Path) -> No
             "output_path": "runs/existing.svg",
             "artifact_bytes": existing.stat().st_size,
             "artifact_sha256": valid_sha,
+            "schema_version": version,
         },
-        {"key": "failed", "returncode": 1, "output_path": "runs/existing.svg"},
+        {
+            "key": "failed",
+            "returncode": 1,
+            "output_path": "runs/existing.svg",
+            "schema_version": version,
+        },
         {
             "key": "scoring-failed",
             "returncode": 0,
             "error": "scoring-failed",
             "output_path": "runs/existing.svg",
+            "schema_version": version,
         },
-        {"key": "missing", "returncode": 0, "output_path": "runs/missing.svg"},
+        {
+            "key": "missing",
+            "returncode": 0,
+            "output_path": "runs/missing.svg",
+            "schema_version": version,
+        },
     ]
     results = tmp_path / "results.jsonl"
     results.write_text("\n".join(json.dumps(record) for record in records) + "\n")

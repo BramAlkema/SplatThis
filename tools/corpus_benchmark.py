@@ -201,6 +201,21 @@ def _lpips_score(a_srgb: np.ndarray, b_srgb: np.ndarray) -> float:
         return float(_LPIPS(prep(a_srgb), prep(b_srgb)).item())
 
 
+# Bumped whenever a scorer starts emitting a field that downstream analysis
+# relies on. The runner is content-addressed and resumable, so without this a
+# row scored under an older schema is never re-scored and silently persists
+# beside newer ones.
+#
+# Version 2 is the first to guarantee `render_kind` and `is_deployed_artifact`
+# on every row. Before it, `results.jsonl` mixed four renderers -- rsvg-convert,
+# proxy-srgb, canvas-linear and Chrome -- with a free-text `renderer` string as
+# the only discriminator, so an aggregate over rows silently mixed deployed
+# evidence with proxies. That is not academic: a content-vs-fidelity
+# correlation computed across those rows came out at r=+0.456, against +0.863
+# on governing Chromium data alone.
+RESULT_SCHEMA_VERSION = 2
+
+
 def score_svg(source_png: Path, svg_path: Path) -> Optional[dict]:
     """Metrics on the emitted SVG captured in governing Chromium."""
     from splatthis.browser_capture import render_svg_in_browser_to_linear_rgb
@@ -1607,6 +1622,12 @@ def load_done(results_path: Path) -> set:
                     artifact.read_bytes()
                 ).hexdigest() != str(expected_sha):
                     continue
+            # A row written under an older schema is missing fields that later
+            # analysis depends on, so it must not count as done. Re-scoring it
+            # is cheap relative to trusting it: the alternative is an aggregate
+            # that silently mixes deployed evidence with proxies.
+            if int(record.get("schema_version", 1)) < RESULT_SCHEMA_VERSION:
+                continue
             done.add(record["key"])
     return done
 
@@ -1776,6 +1797,7 @@ def _finalize_corpus_job(
     """Score a completed job and build its single-writer JSONL record."""
 
     record = {
+        "schema_version": RESULT_SCHEMA_VERSION,
         "key": job.key,
         "image": job.name,
         "format": job.fmt,

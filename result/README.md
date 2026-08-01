@@ -1,5 +1,18 @@
 # Deployed-artifact fidelity by export format
 
+> **`corpus/results.jsonl` mixes schema versions — do not aggregate it whole.**
+> Of its 229 rows, only the 107 scored by Chrome carry `render_kind` and
+> `is_deployed_artifact`; the 54 `rsvg-convert`, 42 `proxy-srgb` and 26
+> `canvas-linear` rows predate those fields and were never re-scored, because
+> the runner is content-addressed and resumable. A statistic computed across
+> all rows therefore blends governing evidence with proxies while looking
+> uniform: a content-versus-fidelity correlation came out at r=+0.456 that way,
+> against +0.863 on governing Chromium rows alone.
+>
+> Rows written from now on carry `schema_version`, and resume re-scores
+> anything older. Until this file is regenerated, filter on
+> `is_deployed_artifact is True` before drawing any conclusion from it.
+
 > **Historical snapshot.** The 2026-07-31 governing-browser pass supersedes
 > this document's earlier claim that librsvg is a safe stand-in for Chrome.
 > On the later Chameleon portfolio winner, librsvg reported 0.7618 SSIM while

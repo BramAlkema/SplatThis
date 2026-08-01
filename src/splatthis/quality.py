@@ -18,16 +18,38 @@ def _image_ssim(x: npt.NDArray[Any], y: npt.NDArray[Any]) -> float:
 
     x = np.clip(np.asarray(x, dtype=np.float64), 0.0, 1.0)
     y = np.clip(np.asarray(y, dtype=np.float64), 0.0, 1.0)
+    # Two named reasons may fall back, and nothing else. The fallback is a
+    # single-window global SSIM that reads about 0.10 higher than the windowed
+    # metric on real artifacts -- 0.9776 against 0.8797 on the shipped demo
+    # pair -- which is far above the 0.50 acceptance floor. Catching every
+    # exception here meant any transient failure inside skimage silently
+    # promoted a failing run to a passing one and recorded the inflated number
+    # as though it were real. A computation that fails must raise.
     try:
         from skimage.metrics import structural_similarity
-
-        channel_axis = 2 if (x.ndim == 3 and x.shape[2] > 1) else None
-        return float(
-            structural_similarity(x, y, channel_axis=channel_axis, data_range=1.0)
-        )
-    except Exception:
-        logger.warning("skimage unavailable; falling back to inflated global SSIM")
+    except ImportError:
+        logger.warning("skimage unavailable; falling back to global SSIM")
         return _global_ssim_np(x, y)
+
+    # Windowed SSIM needs an odd window no larger than the shorter side. Tiny
+    # inputs (test fixtures, degenerate crops) cannot carry one, and that is a
+    # property of the input rather than a failure, so they fall back too.
+    shortest_side = min(x.shape[0], x.shape[1])
+    window = min(7, shortest_side if shortest_side % 2 else shortest_side - 1)
+    if window < 3:
+        logger.warning(
+            "image too small for windowed SSIM (%dx%d); using global SSIM",
+            x.shape[0],
+            x.shape[1],
+        )
+        return _global_ssim_np(x, y)
+
+    channel_axis = 2 if (x.ndim == 3 and x.shape[2] > 1) else None
+    return float(
+        structural_similarity(
+            x, y, channel_axis=channel_axis, data_range=1.0, win_size=window
+        )
+    )
 
 
 def _global_ssim_np(x: npt.NDArray[Any], y: npt.NDArray[Any]) -> float:
