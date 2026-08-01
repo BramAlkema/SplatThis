@@ -1,6 +1,7 @@
 # Deploying 2D Gaussian Splats to Vector Document Formats
 
-*Draft — numbers marked `[PENDING]` are still being measured.*
+*Draft. The seed noise floor (§5.2) is measured; the corpus-wide PPTX
+comparison (§5.3) is not, and says so in place.*
 
 ## Abstract
 
@@ -153,13 +154,39 @@ defeats them is texture whose entropy exceeds the splat count.
 
 ### 5.2 Seed noise floor
 
-[PENDING — 6 images × 3 seeds]
+Measured on six corpus images spanning the content-gradient range, three seeds
+each, at 600 splats / 256 px on the Torch backend (the MLX backend is not
+byte-reproducible and is excluded deliberately):
+
+| image | seed 0 | seed 1 | seed 2 | spread |
+|---|---:|---:|---:|---:|
+| moon | 0.8089 | 0.8075 | 0.8085 | 0.0014 |
+| cell | 0.8274 | 0.8291 | 0.8253 | 0.0039 |
+| chameleon | 0.6358 | 0.6494 | 0.6207 | **0.0287** |
+| astronaut | 0.3098 | 0.3214 | 0.3113 | 0.0116 |
+| gravel | 0.1206 | 0.1184 | 0.1102 | 0.0105 |
+| grass | 0.1186 | 0.1174 | 0.1188 | 0.0014 |
+
+Worst-case spread is **0.029 SSIM_sRGB**; the median is 0.007 and the mean
+per-image standard deviation is 0.005. The floor is therefore taken as
+**0.029**, the worst case rather than the median, because a claim must survive
+the least favourable image rather than the typical one.
+
+Note that the floor is not uniform across content: `chameleon` is twenty times
+noisier across seeds than `moon` or `grass`. Seeding is content-adaptive, so
+images with many near-equal candidate placements admit more variation than
+either very smooth or very uniformly textured ones.
 
 No difference smaller than this floor is claimed anywhere in this report.
 
 ### 5.3 SVG versus OOXML
 
-[PENDING — PPTX across the corpus]
+*Still to be measured.* A corpus-wide SVG-versus-OOXML comparison requires a
+real-PowerPoint slideshow capture of all 21 decks. LibreOffice is not an
+acceptable substitute — it renders DrawingML incorrectly for these shapes — and
+the capture drives a live PowerPoint window, so the pass is attended rather than
+batchable. The single-image result below stands until it is done, and is
+labelled as such rather than generalized.
 
 On the standing test image alone, PPTX scored better than SVG (LPIPS 0.406
 vs 0.415, SSIM 0.734 vs 0.701) at one sixth the file size, rendered by real

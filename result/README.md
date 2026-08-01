@@ -9,9 +9,18 @@
 > uniform: a content-versus-fidelity correlation came out at r=+0.456 that way,
 > against +0.863 on governing Chromium rows alone.
 >
-> Rows written from now on carry `schema_version`, and resume re-scores
-> anything older. Until this file is regenerated, filter on
-> `is_deployed_artifact is True` before drawing any conclusion from it.
+> Every existing row is now explicitly labelled `schema_version: 1`, so the
+> mixed state is visible in the data rather than inferable from which keys
+> happen to be absent. Rows written from now on carry version 2, and resume
+> re-scores anything older.
+>
+> **Regenerating it needs an attended session, not just compute.** Only 29 of
+> the 229 rows still have their artifact on disk — the SVG and PPTX outputs
+> were never committed, being roughly a megabyte each — so re-scoring in place
+> is impossible and the runs must be redone. That is about 21 images × 3
+> formats × seeds of training, plus a real-PowerPoint capture pass that takes
+> over the machine for each deck. Until then, filter on
+> `is_deployed_artifact is True` before drawing any conclusion from this file.
 
 > **Historical snapshot.** The 2026-07-31 governing-browser pass supersedes
 > this document's earlier claim that librsvg is a safe stand-in for Chrome.
