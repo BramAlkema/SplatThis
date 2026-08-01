@@ -87,6 +87,12 @@ examples/output/
 !docs/examples/*.svg
 !docs/demo/*.svg
 !docs/journey/svg/*.svg
+# Packaged SVG templates are source, not experiment output. The blanket rule
+# above silently swallowed all 19 of them when vector markup moved out of
+# Python and into templates: `git add` obeys .gitignore without complaining,
+# so they were only ever present in working trees. Every fresh checkout —
+# including any CI-built wheel — shipped without them.
+!src/splatthis/templates/svg/*.svg
 
 # Local Claude Code settings
 .claude/

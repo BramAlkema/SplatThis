@@ -1,0 +1,3 @@
+    <radialGradient id="@@GRADIENT_ID@@" cx="50%" cy="50%" r="50%" gradientUnits="objectBoundingBox">
+@@STOPS@@
+    </radialGradient>
