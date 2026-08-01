@@ -2,10 +2,51 @@
 
 All notable changes to SplatThis are documented here.
 
-## Unreleased
+## 0.2.1 - 2026-08-01
+
+### Fixed
+
+- Absolute URLs throughout the README. It doubles as the PyPI project
+  description, and PyPI does not rewrite relative links the way GitHub does, so
+  all 18 of them resolved against `pypi.org/project/splatthis/` and every image
+  and document reference on the published 0.2.0 page pointed at nothing. A
+  release description is immutable, which is why this needs a version of its
+  own. Guarded by a test rejecting relative links, since the defect is
+  invisible until after publishing.
 
 ### Added
 
+- An end-to-end regression test that converts the tracked demo image and
+  asserts a quality floor, because 88% line coverage did not notice that the
+  packaged SVG templates were missing from every fresh checkout. The existing
+  smoke test does run a conversion but only asserts the output parses, so it
+  cannot see valid-but-wrong output: reverting the splat-orientation convention
+  leaves it green while the new floor fails at SSIM_sRGB 0.460974 against
+  0.510. Marked PROXY evidence — it detects that the pipeline moved and may
+  never approve a browser artifact.
+
+### Changed
+
+- A platform-aware coverage floor in CI. MLX installs only on Apple Silicon, so
+  roughly 705 statements across the five `mlx_*` modules are unreachable on
+  Linux and Windows; measured 87.44% macOS against 79.64% ubuntu and 79.66%
+  windows. One global floor would be vacuous on macOS or unmeetable elsewhere.
+- The mypy exemption comment now describes the real 462 findings and the
+  condition for lifting it, rather than a stale "~300".
+
+## 0.2.0 - 2026-08-01
+
+First publication to PyPI: `pip install splatthis`. Continues the 0.2.0
+development recorded under the 2026-07-30 entry below.
+
+### Added
+
+- A PEP 561 `py.typed` marker, declared in both `package-data` and
+  `MANIFEST.in`. The package exports 26 names as a library API and is annotated
+  throughout, but without the marker every consumer type-checking against the
+  installed distribution saw `Any`. Verified by installing the built wheel into
+  a clean environment and resolving `save_svg` and `GaussianSplat` to their real
+  signatures.
 - A static pixel-runtime selection chain: RGBA32F WebGL2, quality-gated
   RGBA16F WebGL2, exact Worker/OffscreenCanvas CPU, then exact main-thread CPU.
   It records the selected backend plus compute/end-to-end timing, and supports
@@ -66,15 +107,6 @@ All notable changes to SplatThis are documented here.
 - Explicit `--pptx-painter-order legacy|back-to-front` production emission,
   manifest provenance, and a resumable external real-PowerPoint selector that
   atomically materializes the accepted native deck as `selected.pptx`.
-
-### Added
-
-- A PEP 561 `py.typed` marker, declared in both `package-data` and
-  `MANIFEST.in`. The package exports 26 names as a library API and is annotated
-  throughout, but without the marker every consumer type-checking against the
-  installed distribution saw `Any`. Verified by installing the built wheel into
-  a clean environment and resolving `save_svg` and `GaussianSplat` to their real
-  signatures.
 
 ### Changed
 
@@ -222,7 +254,7 @@ All notable changes to SplatThis are documented here.
   blur SVG splats in back-to-front painter order while leaving the exact
   front-to-back pixel runtime unchanged.
 
-## 0.2.0 - 2026-07-30
+## 0.2.0 (earlier development) - 2026-07-30
 
 ### Added
 
