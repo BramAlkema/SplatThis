@@ -341,6 +341,21 @@ def fit_scene(
     if guard is not None:
         manifest["memory_guard"] = dict(guard)
 
+    # Whether this run's own bytes are reproducible, travelling with the run
+    # rather than living in the README. MLX orders float32 reductions on the
+    # Metal device nondeterministically, so a repeated seeded run differs by
+    # about one ULP in splat parameters -- far below any quality threshold, but
+    # enough to move a rounded attribute and change the artifact hash. Anyone
+    # diffing artifacts or comparing `artifact_sha256` across runs needs to know
+    # that from the manifest, not from prose they may never have read.
+    manifest["artifact_hash_stable"] = converter.optimizer_backend != "mlx"
+    if not manifest["artifact_hash_stable"]:
+        manifest["artifact_hash_stable_note"] = (
+            "MLX orders float32 reductions nondeterministically; repeated seeded "
+            "runs agree on metrics to ~9 significant figures but are not "
+            "byte-identical. Use --optimizer-backend torch for stable hashes."
+        )
+
     phase_started = time.perf_counter()
     optimized_splats = list(splats)
     postprocessed = converter._postprocess_splats(

@@ -119,12 +119,22 @@ class ConversionConfigurationMixin(ConversionEngineState):
         self.schedule_config = profile_defaults["schedule"].copy()
         if schedule_config:
             self.schedule_config.update(schedule_config)
+        # Acceptance is a *quality* gate. Wall-clock deliberately is not part of
+        # it by default: the shipped presets train for minutes (the SVG corpus
+        # median at 2k splats is 4.2), so a 60-second ceiling failed correct,
+        # in-spec runs -- 8 of 70 stored manifests failed on runtime alone,
+        # including full-quality runs reaching SSIM 0.91. A gate that is false
+        # for good work teaches everyone to ignore `acceptance.pass`.
+        #
+        # Runtime is still measured and recorded under `acceptance.measured`,
+        # and `max_runtime_sec` remains honoured when a caller passes it
+        # explicitly or when --time-budget sets one. It simply no longer decides
+        # whether a conversion was acceptable.
         self.acceptance_criteria = acceptance_criteria or {
             "min_psnr": 15.0,
             "min_ssim": 0.50,
             "min_psnr_srgb": 12.0,
             "min_ssim_srgb": 0.50,
-            "max_runtime_sec": 60.0,
             "max_splats": float(self.max_splats),
         }
 

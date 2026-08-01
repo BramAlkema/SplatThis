@@ -551,6 +551,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional directory for run manifest + iteration dumps",
     )
+    parser.add_argument(
+        "--save-json",
+        action="store_true",
+        help=(
+            "Also write the splat population as canonical raw JSON beside the "
+            "output, for re-scoring or re-emitting without retraining"
+        ),
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
     return parser
 
@@ -696,6 +704,7 @@ def _run_conversion(args: argparse.Namespace) -> int:
         output_format=args.fmt,
         seed=args.seed,
         artifacts_dir=args.artifacts_dir,
+        save_json=args.save_json,
         verbose=args.verbose,
     )
     print(f"Wrote {output}")
