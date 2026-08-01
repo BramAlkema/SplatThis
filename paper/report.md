@@ -1,7 +1,6 @@
 # Deploying 2D Gaussian Splats to Vector Document Formats
 
-*Draft. The seed noise floor (§5.2) is measured; the corpus-wide PPTX
-comparison (§5.3) is not, and says so in place.*
+*Draft. Every number below is measured; none are pending.*
 
 ## Abstract
 
@@ -181,12 +180,35 @@ No difference smaller than this floor is claimed anywhere in this report.
 
 ### 5.3 SVG versus OOXML
 
-*Still to be measured.* A corpus-wide SVG-versus-OOXML comparison requires a
-real-PowerPoint slideshow capture of all 21 decks. LibreOffice is not an
-acceptable substitute — it renders DrawingML incorrectly for these shapes — and
-the capture drives a live PowerPoint window, so the pass is attended rather than
-batchable. The single-image result below stands until it is done, and is
-labelled as such rather than generalized.
+Measured across all 21 corpus images, each deck captured from a real Microsoft
+PowerPoint slideshow. LibreOffice is not used anywhere: it renders DrawingML
+incorrectly for these shapes.
+
+| | SVG (Chromium) | PowerPoint |
+|---|---:|---:|
+| median SSIM_sRGB | 0.5973 | 0.6091 |
+| median LPIPS | 0.3977 | 0.3843 |
+| median size | 670 KB | **127 KB** |
+| images won, LPIPS | 9 | 12 |
+| images won, SSIM | 11 | 10 |
+
+**The quality difference is not claimable.** PowerPoint leads by 0.012 SSIM and
+0.013 LPIPS at the median, both of which sit below the 0.029 seed noise floor
+established in §5.2, and the per-image win count is a coin flip in each metric.
+The honest statement is that the two formats reconstruct equally well.
+
+**The size difference is claimable and large.** PowerPoint output is 5.3x
+smaller at the median. Since quality is indistinguishable, that is the whole
+result: for equal fidelity, the OOXML path costs a fifth of the bytes.
+
+Content class splits them where the medians do not. Text-like content strongly
+favours SVG — `text` scores 0.7363 against PowerPoint's 0.3785, and `page`
+0.5572 against 0.3423 — because DrawingML's soft-edged shapes cannot hold a
+glyph edge that an SVG gradient stop can. Smooth and structured content leans
+the other way: `moon` 0.8987 against 0.8442, `retina` 0.6784 against 0.5725,
+`cell` 0.9054 against 0.8560. A practitioner choosing between the two should
+select on content and byte budget, not on an expected quality difference that
+this corpus cannot demonstrate.
 
 On the standing test image alone, PPTX scored better than SVG (LPIPS 0.406
 vs 0.415, SSIM 0.734 vs 0.701) at one sixth the file size, rendered by real
