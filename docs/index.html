@@ -59,6 +59,33 @@ splat count.</p>
   </figure>
 </div>
 
+<h2>Scriptless CSS, rendered live</h2>
+<p>This is the one output that cannot be shown in a README. GitHub and PyPI both
+sanitize markup through an allowlist that omits the <code>&lt;style&gt;</code> tag
+and the <code>style</code> attribute, so a build made entirely of CSS radial
+gradients arrives there as 1,615 unstyled <code>&lt;div&gt;</code> elements. This
+page has no sanitizer, so it renders for real below — no script, no canvas, no
+SVG, no bitmap. View source on the frame.</p>
+
+<div class="grid" style="grid-template-columns: repeat(2, 1fr);">
+  <figure>
+    <img src="demo/source.png" alt="Source photo">
+    <figcaption><strong>Source</strong> · 476×502</figcaption>
+  </figure>
+  <figure>
+    <iframe class="demo-frame" src="demo/chameleon-css.html"
+            style="width:100%;aspect-ratio:364/384;border:0;background:#fff"
+            loading="lazy" title="Scriptless CSS splats, rendered live"></iframe>
+    <figcaption><strong>Scriptless CSS</strong> · SSIM 0.8748 · 0.8 MB · 1,615 DOM elements</figcaption>
+  </figure>
+</div>
+
+<p class="note">Scored against the source at 364×384 in the governing Chromium
+capture, on the same 1,615-splat population the SVG uses — so the difference
+between them is the compositor alone, not the fit.</p>
+
+<h2>Historical snapshot</h2>
+
 <p class="note">The historical SVG above is rendered live — true vector and
 scalable, but it predates the corrected compositor. It uses the
 <code>scripted-matrix</code> recipe (109 KB raw, ~43 KB gzipped on the

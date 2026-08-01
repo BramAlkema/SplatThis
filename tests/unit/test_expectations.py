@@ -25,13 +25,30 @@ def test_expectations_data_lives_inside_the_package() -> None:
     assert (package_dir / "data" / "compositor-fidelity.json").is_file()
 
 
-def test_published_band_is_internally_consistent() -> None:
-    band = compositor_fidelity("svg")
+@pytest.mark.parametrize("fmt", SUPPORTED_FORMATS)
+def test_published_band_is_internally_consistent(fmt: str) -> None:
+    band = compositor_fidelity(fmt)
 
     assert band.minimum <= band.p10 <= band.median <= band.maximum
-    assert 0.0 < band.minimum < 1.0
-    assert band.maximum < 1.0, "a lossless emitter would make this module pointless"
+    assert 0.0 < band.minimum <= band.maximum <= 1.0
     assert band.corpus_images >= 21
+    assert band.summary
+
+
+def test_emitters_differ_by_far_more_than_their_own_spread() -> None:
+    """The choice of emitter dominates, and that is the actionable result.
+
+    The pixel runtime evaluates the splat formula directly, so it is a parity
+    model of the reference renderer. SVG approximates a Gaussian with a radial
+    gradient and pays about a quarter of SSIM for it. A consumer supplying its
+    own splats should pick on this axis before tuning anything else.
+    """
+    svg = compositor_fidelity("svg")
+    runtime = compositor_fidelity("pixel-runtime")
+
+    assert runtime.median > 0.99, "the runtime should be effectively lossless"
+    assert svg.median < 0.85
+    assert runtime.median - svg.median > 0.2
 
 
 def test_compositor_loss_is_not_content_predictable() -> None:

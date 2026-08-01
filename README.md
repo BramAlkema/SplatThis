@@ -288,9 +288,35 @@ feature.
 
 ## What quality to expect
 
-These are seed-0 medians over all 21 stored corpus images at a maximum edge of
-roughly 384 px. Each score comes from the deployed artifact: the historical
-Chrome ImageData pixel buffer, Chromium SVG, or Microsoft PowerPoint.
+**Fidelity is predicted by content, not by format.** Across the 21-image
+governing corpus, mean gradient magnitude correlates with SSIM at **r = −0.84**.
+Smooth, structured content reaches 0.84–0.86; broadband texture bottoms out
+around 0.35. Splitting the corpus at its median gradient:
+
+| | median SSIM |
+|---|---:|
+| smooth half — `cell` 0.86, `moon` 0.84, `brick` 0.84 | **0.72** |
+| textured half — `gravel` 0.41, `checkerboard` 0.36, `grass` 0.35 | **0.53** |
+
+That gap is larger than the gap between any two output formats, and it is
+knowable before you spend four minutes finding out: if your image is foliage,
+gravel or fine repeating texture, a splat representation will struggle
+regardless of which compositor you deploy it to.
+
+The relationship is weaker on LPIPS (r = +0.53), so treat it as a statement
+about structural agreement rather than perceptual distance. Both numbers are
+full-population; a 13-image subset of the same corpus reports −0.94 and +0.86,
+which is a good illustration of why this project publishes the whole set.
+
+If you are supplying your own splats rather than fitting them — projecting 3D
+Gaussians, for instance — none of the above applies to you, because it is
+dominated by fitting error. Call `splatthis.compositor_fidelity()` for the
+emitter term on its own.
+
+The tables below are seed-0 medians over all 21 stored corpus images at a
+maximum edge of roughly 384 px. Each score comes from the deployed artifact:
+the historical Chrome ImageData pixel buffer, Chromium SVG, or Microsoft
+PowerPoint.
 
 | Artifact | Requested budget | Median final splats | SSIM ↑ | LPIPS ↓ | Median size | Median training |
 |---|---:|---:|---:|---:|---:|---:|
