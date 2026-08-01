@@ -8,7 +8,7 @@ authors:
 repository-code: "https://github.com/BramAlkema/SplatThis"
 url: "https://bramalkema.github.io/SplatThis/"
 license: MIT
-version: 0.2.3
+version: 0.2.4
 date-released: "2026-08-01"
 keywords:
   - gaussian-splatting

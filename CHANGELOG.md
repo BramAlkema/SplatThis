@@ -2,6 +2,54 @@
 
 All notable changes to SplatThis are documented here.
 
+## 0.2.4 - 2026-08-01
+
+### Added
+
+- `splatthis.compositor_fidelity()`, publishing how faithfully a deployed
+  compositor reproduces the *same* splat population the internal reference
+  renderer draws. A consumer that supplies its own splats -- projecting 3D
+  Gaussians through EWA rather than fitting a bitmap -- inherits only this
+  term, not the fitting loss that dominates the headline source-fidelity
+  numbers, and previously had to re-derive it from the corpus.
+
+      compositor SSIM_sRGB   min 0.5965   median 0.7540   max 0.8991   (n=21)
+      r(content gradient)    -0.470
+
+  The correlation is the substantive result. End-to-end fidelity correlates
+  with content gradient at -0.84, which invites the conclusion that a splat
+  view's quality is predictable from what it depicts. It is not: that
+  dependence is almost entirely the fitting stage, and compositor loss is
+  broadly uniform. `is_content_predictable()` returns that judgement so it
+  cannot be re-inferred wrongly.
+
+- `--save-json` on the CLI. `ConversionRequest.save_json` was honoured but
+  unreachable from the command line.
+
+### Changed
+
+- Acceptance no longer gates on wall-clock by default. `max_runtime_sec: 60.0`
+  failed correct runs against presets that train for minutes -- 8 of 70 stored
+  manifests failed on runtime alone, including full-quality runs at SSIM 0.91.
+  Runtime remains measured under `acceptance.measured` and honoured when set
+  explicitly or by `--time-budget`.
+- Run manifests record `artifact_hash_stable` (false under MLX, with a note)
+  and `memory_guard`, so reproducibility and host-memory reductions travel with
+  the data instead of living in prose.
+- Corpus result rows carry `schema_version`, and resume re-scores anything
+  older, so an evidence level can no longer vanish across a resumed run.
+
+### Fixed
+
+- A failing SSIM silently became an inflated one: `except Exception` around the
+  skimage call fell through to a global SSIM reading ~0.10 higher, far above
+  the 0.50 acceptance floor. Only an absent dependency or an input too small to
+  carry a window may fall back now.
+- Colour transforms no longer raise a negative base to a fractional exponent on
+  the discarded branch of `np.where`, which warned during ordinary compositing.
+- The splat-orientation convention is pinned by direct tests, and
+  `mixed_primitives.py` no longer open-codes it.
+
 ## 0.2.3 - 2026-08-01
 
 ### Changed
