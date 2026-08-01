@@ -2,6 +2,47 @@
 
 All notable changes to SplatThis are documented here.
 
+## 0.2.2 - 2026-08-01
+
+### Changed
+
+- The README showcase now carries the current best artifact for each
+  compositor, selected by measurement. The published demo scored 0.7270
+  SSIM_sRGB in Chromium at its own native size while artifacts already on disk
+  reached 0.8665; it was also 379x400 against a 476x502 source, which is why
+  `evaluate_svg_export_quality` refused to score it at all — the geometry
+  mismatch fails closed, so the published demo could not be measured without
+  hitting that wall first.
+
+      SVG   corrected-high    0.8665  1.51 MB  native vector, embedded
+      CSS   exact9-fp2.875    0.8748  0.80 MB  native DOM, linked live
+      PPTX  corrected-order   0.7885  161 KB   real PowerPoint capture
+
+  SVG and CSS appear as themselves rather than as screenshots. GitHub and PyPI
+  both strip `<style>` elements and `style` attributes from rendered markdown,
+  so a scriptless CSS build cannot render inline in a README and is linked
+  live instead; an SVG loaded as `<img>` is rendered as its own document and
+  does apply its internal CSS, which is why that one embeds. PowerPoint is the
+  single screenshot, because photographing a real slideshow is the only honest
+  way to show what PowerPoint draws, and its score is measured through that
+  capture and is therefore a lower bound.
+
+  SVG and CSS share one 1,615-splat population, so their difference is purely
+  compositor. The deck is a separate 1,674-splat run and is not a like-for-like
+  comparison against them.
+
+### Added
+
+- `tools/refresh_showcase.py`, which re-scores every surviving artifact in its
+  governing renderer and installs the winners, ignoring recorded metrics
+  entirely. Recorded numbers are a record of what a past run saw, not of what
+  is on disk: the CSS experiment reported a 0.8748 winner that nothing in the
+  named directory could match, because the artifact was in a `stage2/`
+  subdirectory under a different name. Selecting by directory name also pulled
+  a canvas render into the CSS candidate set, where it outscored every real CSS
+  build. Near-ties settle on file size, bucketed so a few hundred bytes cannot
+  outrank a real quality difference.
+
 ## 0.2.1 - 2026-08-01
 
 ### Fixed
