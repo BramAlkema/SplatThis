@@ -23,13 +23,42 @@ deployed-fidelity claim.
 
 ## See it
 
-| Source | Pixel runtime in Chrome | Live SVG |
-|---|---|---|
-| ![source image](https://bramalkema.github.io/SplatThis/demo/source.png) | ![Canvas render](https://bramalkema.github.io/SplatThis/demo/canvas_render.png) | ![Browser-rendered SVG](https://bramalkema.github.io/SplatThis/demo/chameleon.svg) |
+One 476x502 photograph, fitted to Gaussian splats and emitted to three
+compositors that share no rendering code. The middle image is a real SVG, not a
+raster of one — your browser is drawing 1,615 gradient ellipses.
 
-Open the example [SVG](https://bramalkema.github.io/SplatThis/demo/chameleon.svg) or the historical self-contained
-[pixel-runtime HTML](https://bramalkema.github.io/SplatThis/demo/canvas.html). A larger corpus overview is available in
-[docs/index.html](https://bramalkema.github.io/SplatThis/).
+| Source photograph | Native SVG | Native PowerPoint |
+|---|---|---|
+| ![source image](https://bramalkema.github.io/SplatThis/demo/source.png) | ![Browser-rendered SVG](https://bramalkema.github.io/SplatThis/demo/chameleon.svg) | ![PowerPoint slideshow capture](https://bramalkema.github.io/SplatThis/demo/chameleon-pptx.png) |
+| the input | **0.8665** SSIM · vector · 1.5 MB | **0.7885** SSIM · editable shapes · 161 KB |
+
+The third image is the only screenshot here, and it has to be: it is Microsoft
+PowerPoint in slideshow, photographed, because there is no other honest way to
+show what PowerPoint actually draws. Its score is measured through that capture
+and is therefore a lower bound.
+
+**[Open the scriptless CSS build →](https://bramalkema.github.io/SplatThis/demo/chameleon-css.html)**
+&nbsp;&nbsp;**0.8748** SSIM · 0.8 MB · no script, no canvas, no SVG, no bitmap
+
+That one is deliberately a link rather than a picture. It is 1,615 DOM elements
+with CSS radial gradients, and a screenshot of it would be indistinguishable
+from a screenshot of anything else — the point is that your browser is
+compositing it from a stylesheet. View source on it.
+
+Also available: the
+[editable .pptx](https://bramalkema.github.io/SplatThis/demo/chameleon.pptx),
+the historical self-contained
+[pixel-runtime HTML](https://bramalkema.github.io/SplatThis/demo/canvas.html),
+and a larger [corpus overview](https://bramalkema.github.io/SplatThis/).
+
+<sub>Scores are SSIM_sRGB against the source at 364x384, measured on the
+deployed artifact in its governing renderer — Chromium for SVG and CSS, a real
+PowerPoint slideshow capture for the deck. SVG and CSS share one 1,615-splat
+population, so their difference is purely compositor; the deck is a separate
+1,674-splat run and is not a like-for-like comparison against them. The SVG and
+CSS candidates were selected by re-scoring every surviving artifact rather than
+by trusting recorded metrics — rerun with
+`python tools/refresh_showcase.py --dry-run`.</sub>
 
 ## Install
 
