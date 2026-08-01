@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Literal, Sequence
+from typing import Any, Dict, List, Literal, Sequence
 
 import numpy as np
+import numpy.typing as npt
 import torch
 
 from .optimizer import SplatParams, build_optimizer
@@ -22,7 +23,7 @@ from .splat import GaussianSplat
 @dataclass(frozen=True)
 class DistillationArm:
     splats: List[GaussianSplat]
-    rendered_linear_rgb: np.ndarray
+    rendered_linear_rgb: npt.NDArray[Any]
     start_loss: float
     end_loss: float
     iterations: int
@@ -41,12 +42,12 @@ HandoffMode = Literal["full", "color-only"]
 
 def _fit(
     initial_splats: Sequence[GaussianSplat],
-    target_linear_rgb: np.ndarray,
+    target_linear_rgb: npt.NDArray[Any],
     *,
     blend_mode: str,
     iterations: int,
     normalized_top_k: int,
-    teacher_guide: np.ndarray | None = None,
+    teacher_guide: npt.NDArray[Any] | None = None,
     teacher_weight: float = 0.25,
     decay_teacher_weight: bool = True,
     exportability_weight: float = 0.0,
@@ -54,7 +55,7 @@ def _fit(
     renderer_backend: str = "torch",
     tile_size: int = 32,
     batch_tile_count: int = 16,
-    background_linear_rgb: np.ndarray | None = None,
+    background_linear_rgb: npt.NDArray[Any] | None = None,
 ) -> DistillationArm:
     fit_t0 = time.perf_counter()
     target_np = np.asarray(target_linear_rgb, dtype=np.float32)[..., :3]
@@ -192,18 +193,18 @@ def _fit(
 
 def _fit_mlx(
     initial_splats: Sequence[GaussianSplat],
-    target_linear_rgb: np.ndarray,
+    target_linear_rgb: npt.NDArray[Any],
     *,
     blend_mode: str,
     iterations: int,
     normalized_top_k: int,
-    teacher_guide: np.ndarray | None = None,
+    teacher_guide: npt.NDArray[Any] | None = None,
     teacher_weight: float = 0.25,
     decay_teacher_weight: bool = True,
     exportability_weight: float = 0.0,
     tile_size: int = 32,
     batch_tile_count: int = 16,
-    background_linear_rgb: np.ndarray | None = None,
+    background_linear_rgb: npt.NDArray[Any] | None = None,
     tile_plan_rebuild_interval: int = 1,
 ) -> DistillationArm:
     """MLX equivalent of `_fit`, including the distillation objective.
@@ -495,7 +496,7 @@ def _fit_mlx(
 
 def run_distillation_mvp(
     initial_splats: Sequence[GaussianSplat],
-    target_linear_rgb: np.ndarray,
+    target_linear_rgb: npt.NDArray[Any],
     *,
     teacher_iterations: int = 40,
     student_iterations: int = 40,
@@ -508,7 +509,7 @@ def run_distillation_mvp(
     renderer_backend: str = "torch",
     tile_size: int = 32,
     batch_tile_count: int = 16,
-    background_linear_rgb: np.ndarray | None = None,
+    background_linear_rgb: npt.NDArray[Any] | None = None,
     optimization_backend: str = "torch",
     mlx_tile_plan_rebuild_interval: int = 1,
 ) -> DistillationMvpResult:
@@ -587,7 +588,7 @@ def run_distillation_mvp(
 
 
 def summarize_mvp_metrics(
-    result: DistillationMvpResult, target_linear_rgb: np.ndarray
+    result: DistillationMvpResult, target_linear_rgb: npt.NDArray[Any]
 ) -> Dict[str, Dict[str, float]]:
     from .quality import compute_quality_metrics
 

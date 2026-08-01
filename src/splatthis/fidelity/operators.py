@@ -9,9 +9,10 @@ lands operator-by-operator with ablations per the ADR delivery plan.
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import List, Sequence
+from typing import Any, List, Sequence
 
 import numpy as np
+import numpy.typing as npt
 
 from ..splat import GaussianSplat
 from .analysis import ResidualAnalysis
@@ -83,7 +84,7 @@ class RecolorOperator:
         return proposals
 
 
-def _with_color(splat: GaussianSplat, color: np.ndarray) -> GaussianSplat:
+def _with_color(splat: GaussianSplat, color: npt.NDArray[Any]) -> GaussianSplat:
     raw = splat.to_raw_splat()
     raw = replace(raw, r=float(color[0]), g=float(color[1]), b=float(color[2]))
     updated = GaussianSplat.from_raw_splat(raw)

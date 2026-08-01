@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from html import escape as escape_html
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
+import numpy.typing as npt
 
 from .color import linear_to_srgb
 from .splat import GaussianSplat, render_importance_for_raw
@@ -15,7 +16,7 @@ def generate_parallax_pixel_runtime_html(
     splats: List[GaussianSplat],
     width: int,
     height: int,
-    background_linear_rgb: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     title: str = "SplatThis Parallax",
     parallax_strength: float = 28.0,
 ) -> str:
@@ -273,7 +274,7 @@ def generate_pixel_runtime_html(
     splats: List[GaussianSplat],
     width: int,
     height: int,
-    background_linear_rgb: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     title: str = "SplatThis Pixel Runtime",
     compositing_space: str = "linear",
 ) -> str:
@@ -508,7 +509,7 @@ def generate_webgl_pixel_runtime_html(
     splats: List[GaussianSplat],
     width: int,
     height: int,
-    background_linear_rgb: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     title: str = "SplatThis Accelerated Pixel Runtime",
     compositing_space: str = "linear",
     backend: str = "auto",

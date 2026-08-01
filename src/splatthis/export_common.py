@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
+import numpy.typing as npt
 
 from .splat import SPLAT_LAYER_NAMES, GaussianSplat, render_order_key
 
@@ -168,9 +169,9 @@ class RegionMasks:
         self,
         width: int,
         height: int,
-        foreground: Optional[np.ndarray] = None,
-        background_safe: Optional[np.ndarray] = None,
-        edge_band: Optional[np.ndarray] = None,
+        foreground: Optional[npt.NDArray[Any]] = None,
+        background_safe: Optional[npt.NDArray[Any]] = None,
+        edge_band: Optional[npt.NDArray[Any]] = None,
     ):
         self.width = int(width)
         self.height = int(height)
@@ -178,7 +179,9 @@ class RegionMasks:
         self.background_safe = self._validated(background_safe)
         self.edge_band = self._validated(edge_band)
 
-    def _validated(self, mask: Optional[np.ndarray]) -> Optional[np.ndarray]:
+    def _validated(
+        self, mask: Optional[npt.NDArray[Any]]
+    ) -> Optional[npt.NDArray[Any]]:
         if mask is None:
             return None
         arr = np.asarray(mask)
@@ -240,8 +243,8 @@ def _splat_layer(splat: GaussianSplat) -> Optional[int]:
 
 
 def _gaussian_opacity_curve(
-    t: np.ndarray, alpha: float, gradient_footprint: float
-) -> np.ndarray:
+    t: npt.NDArray[Any], alpha: float, gradient_footprint: float
+) -> npt.NDArray[Any]:
     """The opacity curve sampled by SVG gradient stops.
 
     Matches the renderer's per-splat alpha-over opacity at a normalized radius

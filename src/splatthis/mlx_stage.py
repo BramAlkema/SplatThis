@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
+import numpy.typing as npt
 
 from .mlx_losses import MlxLossConfig, make_loss_fn
 from .mlx_optimizer import (
@@ -67,7 +68,7 @@ class MlxStageConfig:
 @dataclass
 class MlxStageResult:
     splats: Sequence[GaussianSplat]
-    rendered_linear_rgb: np.ndarray
+    rendered_linear_rgb: npt.NDArray[Any]
     metrics: Dict[str, Any]
 
 
@@ -82,14 +83,14 @@ def _summarize_times(values: Sequence[float]) -> Dict[str, float]:
 
 def optimize_stage_mlx(
     splats: Sequence[GaussianSplat],
-    target_linear_rgb: np.ndarray,
+    target_linear_rgb: npt.NDArray[Any],
     width: int,
     height: int,
     num_iters: int,
     *,
     config: Optional[MlxStageConfig] = None,
     learning_rates: Optional[Mapping[str, float]] = None,
-    spatial_weight_map: Optional[np.ndarray] = None,
+    spatial_weight_map: Optional[npt.NDArray[Any]] = None,
     should_stop: Optional[Callable[[], bool]] = None,
     verbose: bool = False,
 ) -> MlxStageResult:

@@ -7,6 +7,7 @@ from html import escape as escape_html
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+import numpy.typing as npt
 
 from .color import linear_to_srgb
 from .export_common import (
@@ -24,7 +25,7 @@ def generate_css_splat_html(
     splats: List[GaussianSplat],
     width: int,
     height: int,
-    background_linear_rgb: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     title: str = "SplatThis CSS",
     parallax_strength: float = 0.0,
     hover_grid_size: int = 10,
@@ -210,7 +211,7 @@ def generate_native_canvas_html(
     splats: List[GaussianSplat],
     width: int,
     height: int,
-    background_linear_rgb: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     title: str = "SplatThis Canvas",
     parallax_strength: float = 0.0,
     k_sigma: float = 2.5,

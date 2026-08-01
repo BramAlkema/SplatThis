@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 
 
-def srgb_to_linear(srgb: np.ndarray) -> np.ndarray:
+def srgb_to_linear(srgb: npt.NDArray[Any]) -> npt.NDArray[Any]:
     """Convert normalized sRGB values to linear RGB."""
 
     values = np.asarray(srgb)
@@ -16,7 +19,7 @@ def srgb_to_linear(srgb: np.ndarray) -> np.ndarray:
     )
 
 
-def linear_to_srgb(linear: np.ndarray) -> np.ndarray:
+def linear_to_srgb(linear: npt.NDArray[Any]) -> npt.NDArray[Any]:
     """Convert normalized linear RGB values to clipped sRGB."""
 
     values = np.asarray(linear)
@@ -28,7 +31,7 @@ def linear_to_srgb(linear: np.ndarray) -> np.ndarray:
     return np.clip(srgb, 0.0, 1.0)
 
 
-def linear_to_srgb_float32(linear: np.ndarray) -> np.ndarray:
+def linear_to_srgb_float32(linear: npt.NDArray[Any]) -> npt.NDArray[Any]:
     """Convert to sRGB with the clipped float32 semantics used by scorers."""
 
     values = np.clip(np.asarray(linear), 0.0, 1.0)
@@ -39,7 +42,7 @@ def linear_to_srgb_float32(linear: np.ndarray) -> np.ndarray:
     ).astype(np.float32)
 
 
-def srgb_to_linear_float32(srgb: np.ndarray) -> np.ndarray:
+def srgb_to_linear_float32(srgb: npt.NDArray[Any]) -> npt.NDArray[Any]:
     """Convert to linear RGB with the clipped float32 scorer semantics."""
 
     values = np.clip(np.asarray(srgb), 0.0, 1.0)

@@ -56,22 +56,42 @@ jobs:
       run: |
         isort --check-only src/ tests/ tools/
 
-    - name: Type check with mypy (informational)
-      # 462 findings under `strict = true`, of which 277 are `type-arg`: bare
-      # `np.ndarray` and `Dict` that predate parameterized numpy stubs. Those
-      # are mechanical, not defects. The remainder is 48 untyped call/def and
-      # 137 assorted.
+    - name: Type check with mypy (ratcheted)
+      # Ratcheted rather than informational. 193 findings remain under
+      # `strict = true` and clearing them needs case-by-case judgement, so a
+      # hard gate at zero would fail every build and be ignored within a week.
+      # A ratchet gates the direction instead: new type errors fail the build,
+      # the backlog is allowed to persist, and it can only shrink.
       #
-      # This was 778 until the engine's seven mixins were given a declared
-      # shared surface (`engine_state.py`); 340 of the old total were one
-      # structural gap reported once per access site, not noise.
+      # History, for whoever lowers this next:
+      #   778  before the engine mixins declared a shared surface. 340 of those
+      #        were one structural gap reported once per access site.
+      #   462  after engine_state.py.
+      #   193  after parameterizing 308 bare `np.ndarray` annotations.
       #
-      # Lift `continue-on-error` once the `type-arg` sweep lands and the
-      # remainder is triaged — not before, because a gate nobody can pass is a
-      # gate everybody learns to ignore.
-      continue-on-error: true
+      # What is left is not mechanical: 51 arg-type, 35 no-untyped-call, 28
+      # assignment, and a tail of operator/union-attr/no-any-return. Lower the
+      # baseline whenever the run reports a smaller number.
+      shell: bash
+      env:
+        MYPY_BASELINE: "193"
       run: |
-        mypy src/
+        set -o pipefail
+        output=$(mypy src/ 2>&1) || true
+        echo "$output" | tail -20
+        if echo "$output" | grep -q "^Success"; then
+          count=0
+        else
+          count=$(echo "$output" | grep -oE "^Found [0-9]+" | grep -oE "[0-9]+" || echo 0)
+        fi
+        echo "mypy findings: $count (baseline $MYPY_BASELINE)"
+        if [ "$count" -gt "$MYPY_BASELINE" ]; then
+          echo "::error::mypy findings rose from $MYPY_BASELINE to $count."
+          exit 1
+        fi
+        if [ "$count" -lt "$MYPY_BASELINE" ]; then
+          echo "::notice::mypy findings fell to $count. Lower MYPY_BASELINE in ci.yml."
+        fi
 
     - name: Test with pytest
       # The coverage floor is platform-dependent by construction, not by

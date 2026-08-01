@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Optional, Sequence, Union
 
 import numpy as np
+import numpy.typing as npt
 
 from .mlx_runtime import is_mlx_available, require_mlx
 from .splat import GaussianSplat, render_importance_for_raw
@@ -61,7 +62,7 @@ def mlx_srgb_to_linear(x: Any) -> Any:
     )
 
 
-def splats_to_numpy_table(splats: Sequence[GaussianSplat]) -> np.ndarray:
+def splats_to_numpy_table(splats: Sequence[GaussianSplat]) -> npt.NDArray[Any]:
     """Convert splats to the canonical float32 table [N, 11]."""
 
     if not splats:
@@ -84,7 +85,7 @@ def splats_to_numpy_table(splats: Sequence[GaussianSplat]) -> np.ndarray:
     return rows
 
 
-def _as_numpy_table(table: ArrayLike) -> np.ndarray:
+def _as_numpy_table(table: ArrayLike) -> npt.NDArray[Any]:
     if isinstance(table, np.ndarray):
         out = table.astype(np.float32, copy=False)
     else:

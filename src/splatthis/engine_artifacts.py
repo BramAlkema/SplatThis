@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import numpy.typing as npt
 from PIL import Image
 
 from .color import srgb_to_linear
@@ -66,7 +67,7 @@ class ConversionArtifactMixin(ConversionEngineState):
         self,
         *,
         splats: List[GaussianSplat],
-        image: np.ndarray,
+        image: npt.NDArray[Any],
         width: int,
         height: int,
         artifacts_path: Optional[Path],
@@ -123,7 +124,7 @@ class ConversionArtifactMixin(ConversionEngineState):
             repeats = int(
                 max(1, self.refinement_config.get("svg_compositor_gate_repeats", 1))
             )
-            rendered_by_name: Dict[str, np.ndarray] = {}
+            rendered_by_name: Dict[str, npt.NDArray[Any]] = {}
             captures: Dict[str, Any] = {}
             for name, _, _ in candidate_specs:
                 svg_path = candidate_dir / f"{name}.svg"
@@ -224,7 +225,7 @@ class ConversionArtifactMixin(ConversionEngineState):
         self,
         *,
         splats: List[GaussianSplat],
-        image: np.ndarray,
+        image: npt.NDArray[Any],
         width: int,
         height: int,
         artifacts_path: Optional[Path],

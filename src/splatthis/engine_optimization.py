@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import numpy.typing as npt
 import psutil
 import torch
 
@@ -34,13 +35,13 @@ class ConversionOptimizationMixin(ConversionEngineState):
 
     def _optimize_splats(  # noqa: C901
         self,
-        image: np.ndarray,
+        image: npt.NDArray[Any],
         splats: List[GaussianSplat],
         rng: np.random.Generator,
         verbose: bool = True,
         artifacts_dir: Optional[Path] = None,
-        structure_primary: Optional[np.ndarray] = None,
-        structure_anisotropy: Optional[np.ndarray] = None,
+        structure_primary: Optional[npt.NDArray[Any]] = None,
+        structure_anisotropy: Optional[npt.NDArray[Any]] = None,
         monotonic_stage_selection: bool = False,
     ) -> Tuple[List[GaussianSplat], List[Dict[str, Any]]]:
         """Progressive optimization of splats."""
@@ -48,13 +49,36 @@ class ConversionOptimizationMixin(ConversionEngineState):
         target = torch.from_numpy(image[:, :, :3]).to(self.device)
         edge_map = self._build_edge_map(image)
 
-        memory_before = psutil.virtual_memory().percent
-        if memory_before > 85:
-            logger.warning(
-                "High memory usage detected: %.1f%% - reducing splat count",
-                memory_before,
-            )
-            self.max_splats = min(self.max_splats, max(1, len(splats) // 2))
+        # Safety valve for constrained machines. It halves the population when
+        # the host is already near memory exhaustion, which means a seeded run
+        # can produce different output on a busy machine than on an idle one.
+        # That is a deliberate trade -- degrading beats being OOM-killed -- but
+        # it must never be silent, so the decision is recorded in the manifest
+        # either way, and it can be disabled outright when byte-for-byte
+        # reproducibility matters more than the safety net.
+        self._memory_guard: Dict[str, Any] = {
+            "threshold_percent": self.memory_guard_percent,
+            "observed_percent": None,
+            "triggered": False,
+        }
+        if self.memory_guard_percent is not None:
+            memory_before = psutil.virtual_memory().percent
+            self._memory_guard["observed_percent"] = float(memory_before)
+            if memory_before > self.memory_guard_percent:
+                reduced = max(1, len(splats) // 2)
+                logger.warning(
+                    "High memory usage detected: %.1f%% - reducing splat count "
+                    "from %d to %d",
+                    memory_before,
+                    self.max_splats,
+                    min(self.max_splats, reduced),
+                )
+                self._memory_guard.update(
+                    triggered=True,
+                    max_splats_before=int(self.max_splats),
+                    max_splats_after=int(min(self.max_splats, reduced)),
+                )
+                self.max_splats = min(self.max_splats, reduced)
 
         renderer = self._create_training_renderer(width=width, height=height)
         loss_fn = self._create_training_loss(target=target, width=width, height=height)
@@ -252,7 +276,7 @@ class ConversionOptimizationMixin(ConversionEngineState):
                     )
                 break
 
-            coverage_after_densify: Optional[np.ndarray] = None
+            coverage_after_densify: Optional[npt.NDArray[Any]] = None
             remaining_after_stage = self._time_budget_seconds_remaining()
             in_residual_time_reserve = (
                 residual_time_reserve_sec > 0.0
@@ -798,8 +822,8 @@ class ConversionOptimizationMixin(ConversionEngineState):
         renderer: torch.nn.Module,
         loss_fn: torch.nn.Module,
         precomputed_rendered: Optional[torch.Tensor] = None,
-        precomputed_coverage_map: Optional[np.ndarray] = None,
-    ) -> Tuple[Dict[str, float], torch.Tensor, np.ndarray]:
+        precomputed_coverage_map: Optional[npt.NDArray[Any]] = None,
+    ) -> Tuple[Dict[str, float], torch.Tensor, npt.NDArray[Any]]:
         """Compute quality metrics while optionally reusing rendered and coverage maps."""
         height, width = int(target.shape[0]), int(target.shape[1])
         if not splats:

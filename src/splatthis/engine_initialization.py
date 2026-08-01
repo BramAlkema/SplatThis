@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
+import numpy.typing as npt
 
 from .engine_state import ConversionEngineState
 from .features import (
@@ -33,10 +34,10 @@ class ConversionInitializationMixin(ConversionEngineState):
 
     def _initialize_splats(  # noqa: C901
         self,
-        image: np.ndarray,
+        image: npt.NDArray[Any],
         rng: np.random.Generator,
-        structure_primary: Optional[np.ndarray] = None,
-        structure_anisotropy: Optional[np.ndarray] = None,
+        structure_primary: Optional[npt.NDArray[Any]] = None,
+        structure_anisotropy: Optional[npt.NDArray[Any]] = None,
     ) -> List[GaussianSplat]:
         """
         Initialize splats with a guaranteed-coverage base layer plus detail layer.
@@ -69,7 +70,7 @@ class ConversionInitializationMixin(ConversionEngineState):
         random_count = max(0, detail_count - adaptive_count)
         sampling_prior = self._sampling_prior_map()
         edge_count = 0
-        edge_map: Optional[np.ndarray] = None
+        edge_map: Optional[npt.NDArray[Any]] = None
         edge_positions: List[Tuple[float, float]] = []
         edge_init_fraction = float(
             np.clip(self.refinement_config.get("edge_init_fraction", 0.0), 0.0, 0.85)
@@ -437,7 +438,7 @@ class ConversionInitializationMixin(ConversionEngineState):
 
     def _sample_map_positions(
         self,
-        score_map: np.ndarray,
+        score_map: npt.NDArray[Any],
         count: int,
         rng: np.random.Generator,
         percentile: float,
@@ -476,14 +477,14 @@ class ConversionInitializationMixin(ConversionEngineState):
             positions.append((x_center, y_center))
         return positions
 
-    def _build_edge_map(self, image: np.ndarray) -> np.ndarray:
+    def _build_edge_map(self, image: npt.NDArray[Any]) -> npt.NDArray[Any]:
         """Build normalized edge-energy map used by densification."""
         grad_mag = compute_gradient_magnitude(image, method=self.gradient_method)
         return self._normalize_map(grad_mag)
 
     def _analyze_local_structure(
-        self, image: np.ndarray, x: int, y: int
-    ) -> Tuple[np.ndarray, float]:
+        self, image: npt.NDArray[Any], x: int, y: int
+    ) -> Tuple[npt.NDArray[Any], float]:
         """Analyze local orientation with conservative anisotropy gating."""
         return analyze_local_structure(
             image=image,

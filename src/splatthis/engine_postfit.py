@@ -7,6 +7,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import numpy.typing as npt
 import torch
 
 from .engine_state import ConversionEngineState
@@ -66,7 +67,7 @@ class ConversionPostfitMixin(ConversionEngineState):
         splats: List[GaussianSplat],
         width: int,
         height: int,
-    ) -> np.ndarray:
+    ) -> npt.NDArray[Any]:
         """Per-splat boolean: is this splat parked in a 'safe background'
         region where we should cap its alpha? Only used by the SVG proxy
         postfit to suppress backdrop bleed-through."""
@@ -91,7 +92,7 @@ class ConversionPostfitMixin(ConversionEngineState):
     def _run_color_alpha_postfit(  # noqa: C901
         self,
         splats: List[GaussianSplat],
-        image: np.ndarray,
+        image: npt.NDArray[Any],
         width: int,
         height: int,
         num_iters: int,
@@ -248,7 +249,7 @@ class ConversionPostfitMixin(ConversionEngineState):
     def _postfit_splats_for_svg_proxy(
         self,
         splats: List[GaussianSplat],
-        image: np.ndarray,
+        image: npt.NDArray[Any],
         width: int,
         height: int,
         num_iters: int,
@@ -282,7 +283,7 @@ class ConversionPostfitMixin(ConversionEngineState):
     def _postfit_splats_for_blur_proxy(
         self,
         splats: List[GaussianSplat],
-        image: np.ndarray,
+        image: npt.NDArray[Any],
         width: int,
         height: int,
         num_iters: int,
@@ -316,7 +317,7 @@ class ConversionPostfitMixin(ConversionEngineState):
     def _postfit_splats_for_pptx_proxy(
         self,
         splats: List[GaussianSplat],
-        image: np.ndarray,
+        image: npt.NDArray[Any],
         width: int,
         height: int,
         num_iters: int,
@@ -557,7 +558,7 @@ class ConversionPostfitMixin(ConversionEngineState):
         max_count: int,
         target: Optional[torch.Tensor] = None,
         renderer: Optional[torch.nn.Module] = None,
-        precomputed_coverage_map: Optional[np.ndarray] = None,
+        precomputed_coverage_map: Optional[npt.NDArray[Any]] = None,
     ) -> List[GaussianSplat]:
         """Prune splats by utility score: residual support + gap filling + alpha."""
         if len(splats) <= max_count:
@@ -630,7 +631,7 @@ class ConversionPostfitMixin(ConversionEngineState):
     def _postprocess_splats(
         self,
         splats: List[GaussianSplat],
-        image: np.ndarray,
+        image: npt.NDArray[Any],
         rng: np.random.Generator,
     ) -> List[GaussianSplat]:
         """Post-process splats and backfill persistent uncovered regions."""
@@ -764,7 +765,7 @@ class ConversionPostfitMixin(ConversionEngineState):
         self,
         optimized_splats: List[GaussianSplat],
         postprocessed_splats: List[GaussianSplat],
-        image: np.ndarray,
+        image: npt.NDArray[Any],
     ) -> Tuple[List[GaussianSplat], Dict[str, Any]]:
         """Accept canvas post-processing only when deployed-model quality holds.
 
@@ -822,7 +823,7 @@ class ConversionPostfitMixin(ConversionEngineState):
     def _score_canvas_runtime_model(
         self,
         splats: List[GaussianSplat],
-        image: np.ndarray,
+        image: npt.NDArray[Any],
     ) -> Dict[str, float]:
         """Score splats with the exact NumPy counterpart of emitted canvas JS."""
 

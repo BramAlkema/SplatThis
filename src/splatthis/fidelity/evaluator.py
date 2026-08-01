@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Callable, List, Optional
+from typing import Any, Callable, List, Optional
 
 import numpy as np
+import numpy.typing as npt
 
 from ..splat import GaussianSplat
 from .analysis import ResidualAnalysis, analyze_residual, select_fixed_rois
@@ -31,13 +32,13 @@ class FidelityEvaluator:
     def __init__(
         self,
         *,
-        target_linear_rgb: np.ndarray,
-        background_linear_rgb: Optional[np.ndarray],
+        target_linear_rgb: npt.NDArray[Any],
+        background_linear_rgb: Optional[npt.NDArray[Any]],
         compositing_space: str,
         emit_svg: EmitSvgFn,
         work_dir: str,
         config: FidelityConfig,
-        saliency_mask: Optional[np.ndarray] = None,
+        saliency_mask: Optional[npt.NDArray[Any]] = None,
         keep_candidate_artifacts: bool = False,
     ):
         self.target = np.clip(
@@ -58,7 +59,7 @@ class FidelityEvaluator:
 
     # -- proxies ---------------------------------------------------------
 
-    def _proxy_render(self, splats: List[GaussianSplat]) -> np.ndarray:
+    def _proxy_render(self, splats: List[GaussianSplat]) -> npt.NDArray[Any]:
         from ..renderer import render_splats_numpy
 
         h, w = self.target.shape[:2]
@@ -72,7 +73,7 @@ class FidelityEvaluator:
 
     def _deployed_render(
         self, splats: List[GaussianSplat], label: str
-    ) -> tuple[Optional[np.ndarray], str, int]:
+    ) -> tuple[Optional[npt.NDArray[Any]], str, int]:
         from ..browser_capture import render_svg_in_browser_to_linear_rgb
 
         h, w = self.target.shape[:2]

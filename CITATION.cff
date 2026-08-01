@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+title: "SplatThis: target-aware 2D Gaussian splatting for vector and document formats"
+message: "If you use this software, please cite it using these metadata."
+type: software
+authors:
+  - family-names: Alkema
+    given-names: Bram
+repository-code: "https://github.com/BramAlkema/SplatThis"
+url: "https://bramalkema.github.io/SplatThis/"
+license: MIT
+version: 0.2.3
+date-released: "2026-08-01"
+keywords:
+  - gaussian-splatting
+  - svg
+  - ooxml
+  - drawingml
+  - image-vectorization
+  - css
+abstract: >-
+  SplatThis fits 2D anisotropic Gaussian splats to a single image and emits
+  them to compositors that share no rendering code: SVG radial gradients,
+  scriptless DOM/CSS, browser-native Canvas, an accelerated pixel runtime with
+  exact CPU fallbacks, and native PowerPoint DrawingML shapes. The difficult
+  part is not the fit but the export, because the optimizer's differentiable
+  forward model and the renderer that finally draws the artifact are different
+  programs. Each output is therefore graded on the deployed artifact in its
+  governing renderer -- Chromium for browser targets, real Microsoft PowerPoint
+  for decks -- and proxy metrics are recorded as diagnostics that cannot
+  approve a candidate.
+
+# No `preferred-citation` yet. A draft write-up exists at paper/report.md, but
+# its seed noise floor and corpus-wide SVG-versus-OOXML comparison are still
+# unmeasured, and pointing a citation file at unfinished numbers is worse than
+# pointing at none. Add it here once those sections are measured.

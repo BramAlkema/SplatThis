@@ -8,6 +8,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import numpy.typing as npt
 import torch
 
 from .adaptive_compute import resolve_online_adaptive_config
@@ -68,6 +69,11 @@ class ConversionConfigurationMixin(ConversionEngineState):
     ):
         self.requested_max_splats = int(max_splats)
         self.max_splats = int(max_splats)
+        # Host-memory safety valve, in percent. Above this the optimizer halves
+        # the population rather than risk being OOM-killed. Set to None to
+        # disable it and make a seeded run independent of machine load; the
+        # decision is recorded in the run manifest either way.
+        self.memory_guard_percent: Optional[float] = 85.0
         self.k_sigma = k_sigma
         profile_defaults = self._get_profile_defaults(quality_profile)
         self.stages = list(
@@ -246,13 +252,13 @@ class ConversionConfigurationMixin(ConversionEngineState):
         self._image_width = 1000
         self._image_height = 1000
         self._background_linear_rgb = np.zeros(3, dtype=np.float32)
-        self._region_weight_map: Optional[np.ndarray] = None
-        self._region_saliency_map: Optional[np.ndarray] = None
-        self._region_detail_priority_map: Optional[np.ndarray] = None
-        self._region_background_penalty_map: Optional[np.ndarray] = None
-        self._region_foreground_mask: Optional[np.ndarray] = None
-        self._region_background_safe_mask: Optional[np.ndarray] = None
-        self._region_edge_band_mask: Optional[np.ndarray] = None
+        self._region_weight_map: Optional[npt.NDArray[Any]] = None
+        self._region_saliency_map: Optional[npt.NDArray[Any]] = None
+        self._region_detail_priority_map: Optional[npt.NDArray[Any]] = None
+        self._region_background_penalty_map: Optional[npt.NDArray[Any]] = None
+        self._region_foreground_mask: Optional[npt.NDArray[Any]] = None
+        self._region_background_safe_mask: Optional[npt.NDArray[Any]] = None
+        self._region_edge_band_mask: Optional[npt.NDArray[Any]] = None
 
     def _apply_platform_splat_cap(self) -> None:
         """Apply the explicit Apple-Silicon safety cap, if configured."""
@@ -610,7 +616,7 @@ class ConversionConfigurationMixin(ConversionEngineState):
         yy = int(np.clip(y, 0, max(height - 1, 0)))
         return float(np.clip(saliency[yy, xx], 0.0, 1.0))
 
-    def _sampling_prior_map(self) -> Optional[np.ndarray]:
+    def _sampling_prior_map(self) -> Optional[npt.NDArray[Any]]:
         """Return the saliency-like map used for sampling and layer importance."""
         if (
             bool(
@@ -674,8 +680,8 @@ class ConversionConfigurationMixin(ConversionEngineState):
         return layer, local_importance
 
     def _apply_saliency_sampling_bias(
-        self, score_map: np.ndarray, strength: float
-    ) -> np.ndarray:
+        self, score_map: npt.NDArray[Any], strength: float
+    ) -> npt.NDArray[Any]:
         """Multiply a score map by a continuous saliency prior when available."""
         score = np.asarray(score_map, dtype=np.float32)
         prior_map = self._sampling_prior_map()

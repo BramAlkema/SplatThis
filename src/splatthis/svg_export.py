@@ -11,6 +11,7 @@ import tempfile
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import numpy.typing as npt
 
 from .color import linear_to_srgb
 from .export_common import (
@@ -184,11 +185,11 @@ def save_svg(
     k_sigma: float = 2.5,
     sort_by_area: bool = False,
     sort_mode: str = DEFAULT_EXPORT_ORDER,
-    background_linear_rgb: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     export_recipe: str = "standard",
-    foreground_mask: Optional[np.ndarray] = None,
-    background_safe_mask: Optional[np.ndarray] = None,
-    edge_band_mask: Optional[np.ndarray] = None,
+    foreground_mask: Optional[npt.NDArray[Any]] = None,
+    background_safe_mask: Optional[npt.NDArray[Any]] = None,
+    edge_band_mask: Optional[npt.NDArray[Any]] = None,
     gradient_quality: str = SVG_GRADIENT_QUALITY_STANDARD,
     painter_order: str = SVG_PAINTER_ORDER_BACK_TO_FRONT,
 ) -> None:
@@ -239,11 +240,11 @@ def generate_svg_content(
     width: int,
     height: int,
     k_sigma: float = 2.5,
-    background_linear_rgb: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     export_recipe: str = "standard",
-    foreground_mask: Optional[np.ndarray] = None,
-    background_safe_mask: Optional[np.ndarray] = None,
-    edge_band_mask: Optional[np.ndarray] = None,
+    foreground_mask: Optional[npt.NDArray[Any]] = None,
+    background_safe_mask: Optional[npt.NDArray[Any]] = None,
+    edge_band_mask: Optional[npt.NDArray[Any]] = None,
     palette_size: Optional[int] = None,
     gradient_quality: str = SVG_GRADIENT_QUALITY_STANDARD,
     painter_order: str = SVG_PAINTER_ORDER_BACK_TO_FRONT,
@@ -318,8 +319,8 @@ def generate_svg_content(
         edge_band=edge_band_mask,
     )
 
-    bg_linear: Optional[np.ndarray] = None
-    bg_srgb: Optional[np.ndarray] = None
+    bg_linear: Optional[npt.NDArray[Any]] = None
+    bg_srgb: Optional[npt.NDArray[Any]] = None
     background_rect_line: Optional[str] = None
     if background_linear_rgb is not None:
         bg = np.asarray(background_linear_rgb, dtype=np.float32).reshape(-1)
@@ -341,7 +342,9 @@ def generate_svg_content(
 
     gradient_blocks: List[str] = []
 
-    def _browser_compensated_color(splat: GaussianSplat, alpha: float) -> np.ndarray:
+    def _browser_compensated_color(
+        splat: GaussianSplat, alpha: float
+    ) -> npt.NDArray[Any]:
         color_linear = np.clip(np.array(splat.color[:3], dtype=np.float32), 0.0, 1.0)
         color_srgb = linear_to_srgb(color_linear)
         if (
@@ -471,10 +474,10 @@ def generate_scripted_svg_content(
     width: int,
     height: int,
     k_sigma: float = 2.5,
-    background_linear_rgb: Optional[np.ndarray] = None,
-    foreground_mask: Optional[np.ndarray] = None,
-    background_safe_mask: Optional[np.ndarray] = None,
-    edge_band_mask: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
+    foreground_mask: Optional[npt.NDArray[Any]] = None,
+    background_safe_mask: Optional[npt.NDArray[Any]] = None,
+    edge_band_mask: Optional[npt.NDArray[Any]] = None,
     gradient_quality: str = SVG_GRADIENT_QUALITY_STANDARD,
     painter_order: str = SVG_PAINTER_ORDER_BACK_TO_FRONT,
 ) -> str:
@@ -613,10 +616,10 @@ def generate_palette_quantized_svg_content(
     width: int,
     height: int,
     k_sigma: float = 2.5,
-    background_linear_rgb: Optional[np.ndarray] = None,
-    foreground_mask: Optional[np.ndarray] = None,
-    background_safe_mask: Optional[np.ndarray] = None,
-    edge_band_mask: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
+    foreground_mask: Optional[npt.NDArray[Any]] = None,
+    background_safe_mask: Optional[npt.NDArray[Any]] = None,
+    edge_band_mask: Optional[npt.NDArray[Any]] = None,
     palette_size: int = SVG_PALETTE_QUANTIZED_DEFAULT_SIZE,
     painter_order: str = SVG_PAINTER_ORDER_BACK_TO_FRONT,
 ) -> str:
@@ -667,8 +670,8 @@ def generate_palette_quantized_svg_content(
         bg_r, bg_g, bg_b = (int(np.clip(np.round(c * 255), 0, 255)) for c in bg_srgb)
         bg_srgb_str = f"rgb({bg_r},{bg_g},{bg_b})"
 
-    bg_lin_arr: Optional[np.ndarray] = None
-    bg_srgb_arr: Optional[np.ndarray] = None
+    bg_lin_arr: Optional[npt.NDArray[Any]] = None
+    bg_srgb_arr: Optional[npt.NDArray[Any]] = None
     if background_linear_rgb is not None:
         bg_lin_arr = np.clip(
             np.asarray(background_linear_rgb, dtype=np.float32).reshape(-1)[:3],
@@ -677,7 +680,7 @@ def generate_palette_quantized_svg_content(
         )
         bg_srgb_arr = linear_to_srgb(bg_lin_arr)
 
-    def _precompensated_srgb(splat: GaussianSplat) -> np.ndarray:
+    def _precompensated_srgb(splat: GaussianSplat) -> npt.NDArray[Any]:
         """Same dark-splat display-space solve as the browser recipe.
 
         Browsers blend stops in display space; solve the stop color whose
@@ -850,7 +853,7 @@ def generate_blur_svg_content(
     width: int,
     height: int,
     k_sigma: float = 2.5,
-    background_linear_rgb: Optional[np.ndarray] = None,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     painter_order: str = SVG_PAINTER_ORDER_BACK_TO_FRONT,
 ) -> str:
     """Generate SVG using `<feGaussianBlur>` per splat instead of gradient stops.
@@ -878,7 +881,7 @@ def generate_blur_svg_content(
 
     # Build sigma buckets (geometric quantization). Cache the per-splat
     # eigendecomposition so the emit loop below doesn't redo it.
-    decomps: List[Tuple[float, float, np.ndarray]] = []
+    decomps: List[Tuple[float, float, npt.NDArray[Any]]] = []
     for s in splats:
         eigenvals, eigenvecs = s.eigendecomposition()
         decomps.append(
@@ -984,7 +987,7 @@ def generate_blur_svg_content(
 def _empty_svg_document(
     width: int,
     height: int,
-    background_linear_rgb: Optional[np.ndarray],
+    background_linear_rgb: Optional[npt.NDArray[Any]],
 ) -> str:
     bg_line = ""
     if background_linear_rgb is not None:
