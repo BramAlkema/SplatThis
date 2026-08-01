@@ -24,26 +24,28 @@ deployed-fidelity claim.
 ## See it
 
 One 476x502 photograph, fitted to Gaussian splats and emitted to three
-compositors that share no rendering code. The middle image is a real SVG, not a
-raster of one — your browser is drawing 1,615 gradient ellipses.
+compositors that share no rendering code — vector, stylesheet, and DrawingML.
 
-| Source photograph | Native SVG | Native PowerPoint |
-|---|---|---|
-| ![source image](https://bramalkema.github.io/SplatThis/demo/source.png) | ![Browser-rendered SVG](https://bramalkema.github.io/SplatThis/demo/chameleon.svg) | ![PowerPoint slideshow capture](https://bramalkema.github.io/SplatThis/demo/chameleon-pptx.png) |
-| the input | **0.8665** SSIM · vector · 1.5 MB | **0.7885** SSIM · editable shapes · 161 KB |
+| Source | SVG | Scriptless CSS | PowerPoint |
+|:---:|:---:|:---:|:---:|
+| <img src="https://bramalkema.github.io/SplatThis/demo/source.png" alt="Source photograph" width="210"> | <img src="https://bramalkema.github.io/SplatThis/demo/chameleon.svg" alt="Browser-rendered SVG" width="210"> | <img src="https://bramalkema.github.io/SplatThis/demo/chameleon-css.png" alt="Chromium capture of the scriptless CSS build" width="210"> | <img src="https://bramalkema.github.io/SplatThis/demo/chameleon-pptx.png" alt="Microsoft PowerPoint slideshow capture" width="210"> |
+| the input | **0.8665** SSIM<br>vector · 1.5 MB | **0.8748** SSIM<br>DOM + CSS · 0.8 MB | **0.7885** SSIM<br>editable shapes · 161 KB |
+| — | live vector | Chromium capture | PowerPoint capture |
 
-The third image is the only screenshot here, and it has to be: it is Microsoft
-PowerPoint in slideshow, photographed, because there is no other honest way to
-show what PowerPoint actually draws. Its score is measured through that capture
-and is therefore a lower bound.
+The SVG is the real thing: your browser is drawing 1,615 gradient ellipses, not
+displaying a picture of them. The other two are captures because they have to
+be. GitHub and PyPI both sanitize README markup through an allowlist that omits
+the `<style>` tag and the `style` attribute — PyPI's `readme_renderer` runs
+`nh3.clean()` with no CSS sanitizer configured — so a build made entirely of
+CSS radial gradients arrives as 1,615 unstyled `<div>` elements on either site.
+PowerPoint, obviously, does not run in a browser at all.
+
+Both captures are therefore lower bounds: they carry the losses of screen
+capture and rescaling on top of whatever the compositor itself costs.
 
 **[Open the scriptless CSS build →](https://bramalkema.github.io/SplatThis/demo/chameleon-css.html)**
-&nbsp;&nbsp;**0.8748** SSIM · 0.8 MB · no script, no canvas, no SVG, no bitmap
-
-That one is deliberately a link rather than a picture. It is 1,615 DOM elements
-with CSS radial gradients, and a screenshot of it would be indistinguishable
-from a screenshot of anything else — the point is that your browser is
-compositing it from a stylesheet. View source on it.
+— no script, no canvas, no SVG, no bitmap. View source on it; the capture above
+cannot show that the page is 1,615 DOM elements composited from a stylesheet.
 
 Also available: the
 [editable .pptx](https://bramalkema.github.io/SplatThis/demo/chameleon.pptx),
