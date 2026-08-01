@@ -22,7 +22,7 @@ from .roundtrip import validate_export_roundtrip
 from .storage import save_linear_rgb_png, save_splats_json
 
 if TYPE_CHECKING:
-    from .converter import PNG2SVGConverter
+    from .conversion_engine import ConversionEngine
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class EvaluationBundle:
 
 def _emit_and_write(
     *,
-    converter: "PNG2SVGConverter",
+    converter: "ConversionEngine",
     context: RunContext,
     manifest: Dict[str, Any],
     prepared: PreparedInput,
@@ -86,7 +86,7 @@ def _emit_and_write(
 
 def _evaluate_scene(
     *,
-    converter: "PNG2SVGConverter",
+    converter: "ConversionEngine",
     context: RunContext,
     prepared: PreparedInput,
     scene: SplatScene,
@@ -176,7 +176,7 @@ def _evaluate_scene(
 
 def _write_diagnostics(
     *,
-    converter: "PNG2SVGConverter",
+    converter: "ConversionEngine",
     context: RunContext,
     scene: SplatScene,
     backend: ArtifactBackend,
@@ -231,7 +231,7 @@ def _write_diagnostics(
 
 def _finalize_manifest(
     *,
-    converter: "PNG2SVGConverter",
+    converter: "ConversionEngine",
     context: RunContext,
     manifest: Dict[str, Any],
     scene: SplatScene,
@@ -284,7 +284,7 @@ def _finalize_manifest(
 
 def emit_evaluate_and_finalize(
     *,
-    converter: "PNG2SVGConverter",
+    converter: "ConversionEngine",
     context: RunContext,
     manifest: Dict[str, Any],
     prepared: PreparedInput,

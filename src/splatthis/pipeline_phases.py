@@ -16,7 +16,7 @@ from .pipeline import RunContext
 from .storage import load_png
 
 if TYPE_CHECKING:
-    from .converter import PNG2SVGConverter
+    from .conversion_engine import ConversionEngine
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class PreparedInput:
 
 
 def _install_guidance(
-    converter: "PNG2SVGConverter", guidance: Optional[Dict[str, Any]]
+    converter: "ConversionEngine", guidance: Optional[Dict[str, Any]]
 ) -> None:
     if guidance is None:
         return
@@ -49,7 +49,7 @@ def _install_guidance(
 
 def build_run_manifest(
     *,
-    converter: "PNG2SVGConverter",
+    converter: "ConversionEngine",
     context: RunContext,
     backend: ArtifactBackend,
     resolved_target_size: tuple[int, int],
@@ -130,7 +130,7 @@ def build_run_manifest(
 
 def prepare_input(
     *,
-    converter: "PNG2SVGConverter",
+    converter: "ConversionEngine",
     context: RunContext,
     manifest: Dict[str, Any],
     resolved_target_size: tuple[int, int],
@@ -287,7 +287,7 @@ def prepare_input(
 
 def fit_scene(
     *,
-    converter: "PNG2SVGConverter",
+    converter: "ConversionEngine",
     context: RunContext,
     manifest: Dict[str, Any],
     prepared: PreparedInput,

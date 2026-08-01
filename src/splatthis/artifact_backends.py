@@ -25,7 +25,7 @@ from .pptx_export import save_pptx_with_drawingml_content
 from .storage import atomic_write_text
 
 if TYPE_CHECKING:
-    from .converter import PNG2SVGConverter
+    from .conversion_engine import ConversionEngine
 
 
 class ArtifactBackend(ABC):
@@ -43,17 +43,17 @@ class ArtifactBackend(ABC):
     def monotonic_canvas_selection(self) -> bool:
         return False
 
-    def is_blur_target(self, converter: "PNG2SVGConverter") -> bool:
+    def is_blur_target(self, converter: "ConversionEngine") -> bool:
         return False
 
-    def requires_governing_render(self, converter: "PNG2SVGConverter") -> bool:
+    def requires_governing_render(self, converter: "ConversionEngine") -> bool:
         return False
 
     @abstractmethod
     def emit(
         self,
         *,
-        converter: "PNG2SVGConverter",
+        converter: "ConversionEngine",
         request: ConversionRequest,
         scene: SplatScene,
         target_linear_rgb: np.ndarray,
@@ -64,7 +64,7 @@ class ArtifactBackend(ABC):
     def write(
         self,
         *,
-        converter: "PNG2SVGConverter",
+        converter: "ConversionEngine",
         request: ConversionRequest,
         scene: SplatScene,
         payload: ArtifactPayload,
@@ -77,7 +77,7 @@ class ArtifactBackend(ABC):
     def evaluate(
         self,
         *,
-        converter: "PNG2SVGConverter",
+        converter: "ConversionEngine",
         request: ConversionRequest,
         target_linear_rgb: np.ndarray,
         fallback_linear_rgb: np.ndarray,
@@ -147,16 +147,16 @@ class SvgArtifactBackend(ArtifactBackend):
     supports_fidelity_stage = True
     svg_comparison_artifact = True
 
-    def is_blur_target(self, converter: "PNG2SVGConverter") -> bool:
+    def is_blur_target(self, converter: "ConversionEngine") -> bool:
         return converter.svg_export_recipe == "blur"
 
-    def requires_governing_render(self, converter: "PNG2SVGConverter") -> bool:
+    def requires_governing_render(self, converter: "ConversionEngine") -> bool:
         return True
 
     def emit(
         self,
         *,
-        converter: "PNG2SVGConverter",
+        converter: "ConversionEngine",
         request: ConversionRequest,
         scene: SplatScene,
         target_linear_rgb: np.ndarray,
@@ -206,7 +206,7 @@ class SvgArtifactBackend(ArtifactBackend):
     def write(
         self,
         *,
-        converter: "PNG2SVGConverter",
+        converter: "ConversionEngine",
         request: ConversionRequest,
         scene: SplatScene,
         payload: ArtifactPayload,
@@ -227,7 +227,7 @@ class SvgArtifactBackend(ArtifactBackend):
     def evaluate(
         self,
         *,
-        converter: "PNG2SVGConverter",
+        converter: "ConversionEngine",
         request: ConversionRequest,
         target_linear_rgb: np.ndarray,
         fallback_linear_rgb: np.ndarray,
@@ -255,7 +255,7 @@ class DrawingMLArtifactBackend(ArtifactBackend):
     def emit(
         self,
         *,
-        converter: "PNG2SVGConverter",
+        converter: "ConversionEngine",
         request: ConversionRequest,
         scene: SplatScene,
         target_linear_rgb: np.ndarray,
@@ -278,13 +278,13 @@ class PptxArtifactBackend(DrawingMLArtifactBackend):
     postfit_family = "pptx"
     pptx_export_mode = "drawingml-splats"
 
-    def is_blur_target(self, converter: "PNG2SVGConverter") -> bool:
+    def is_blur_target(self, converter: "ConversionEngine") -> bool:
         return converter.pptx_splat_style == "blur"
 
     def write(
         self,
         *,
-        converter: "PNG2SVGConverter",
+        converter: "ConversionEngine",
         request: ConversionRequest,
         scene: SplatScene,
         payload: ArtifactPayload,
@@ -302,7 +302,7 @@ class PptxArtifactBackend(DrawingMLArtifactBackend):
     def evaluate(
         self,
         *,
-        converter: "PNG2SVGConverter",
+        converter: "ConversionEngine",
         request: ConversionRequest,
         target_linear_rgb: np.ndarray,
         fallback_linear_rgb: np.ndarray,
@@ -326,13 +326,13 @@ class CanvasArtifactBackend(ArtifactBackend):
     media_type = "text/html"
     default_training_target = "svg"
 
-    def requires_governing_render(self, converter: "PNG2SVGConverter") -> bool:
+    def requires_governing_render(self, converter: "ConversionEngine") -> bool:
         return True
 
     def emit(
         self,
         *,
-        converter: "PNG2SVGConverter",
+        converter: "ConversionEngine",
         request: ConversionRequest,
         scene: SplatScene,
         target_linear_rgb: np.ndarray,
@@ -359,7 +359,7 @@ class CanvasArtifactBackend(ArtifactBackend):
     def evaluate(
         self,
         *,
-        converter: "PNG2SVGConverter",
+        converter: "ConversionEngine",
         request: ConversionRequest,
         target_linear_rgb: np.ndarray,
         fallback_linear_rgb: np.ndarray,
@@ -383,13 +383,13 @@ class CssArtifactBackend(ArtifactBackend):
     media_type = "text/html"
     default_training_target = "svg"
 
-    def requires_governing_render(self, converter: "PNG2SVGConverter") -> bool:
+    def requires_governing_render(self, converter: "ConversionEngine") -> bool:
         return True
 
     def emit(
         self,
         *,
-        converter: "PNG2SVGConverter",
+        converter: "ConversionEngine",
         request: ConversionRequest,
         scene: SplatScene,
         target_linear_rgb: np.ndarray,
@@ -423,7 +423,7 @@ class CssArtifactBackend(ArtifactBackend):
     def evaluate(
         self,
         *,
-        converter: "PNG2SVGConverter",
+        converter: "ConversionEngine",
         request: ConversionRequest,
         target_linear_rgb: np.ndarray,
         fallback_linear_rgb: np.ndarray,
@@ -451,7 +451,7 @@ class PixelRuntimeArtifactBackend(ArtifactBackend):
         return True
 
     @staticmethod
-    def _parallax_strength(converter: "PNG2SVGConverter") -> float:
+    def _parallax_strength(converter: "ConversionEngine") -> float:
         return float(
             converter.refinement_config.get(
                 "pixel_runtime_parallax_strength",
@@ -459,13 +459,13 @@ class PixelRuntimeArtifactBackend(ArtifactBackend):
             )
         )
 
-    def requires_governing_render(self, converter: "PNG2SVGConverter") -> bool:
+    def requires_governing_render(self, converter: "ConversionEngine") -> bool:
         return self._parallax_strength(converter) <= 0.0
 
     def emit(
         self,
         *,
-        converter: "PNG2SVGConverter",
+        converter: "ConversionEngine",
         request: ConversionRequest,
         scene: SplatScene,
         target_linear_rgb: np.ndarray,
@@ -500,7 +500,7 @@ class PixelRuntimeArtifactBackend(ArtifactBackend):
     def evaluate(
         self,
         *,
-        converter: "PNG2SVGConverter",
+        converter: "ConversionEngine",
         request: ConversionRequest,
         target_linear_rgb: np.ndarray,
         fallback_linear_rgb: np.ndarray,

@@ -14,7 +14,7 @@ import torch
 from .config import ConversionRequest, ConverterConfig, thaw
 
 if TYPE_CHECKING:
-    from .converter import PNG2SVGConverter
+    from .conversion_engine import ConversionEngine
 
 
 @dataclass
@@ -57,7 +57,7 @@ class RunContext:
 class ConversionPipeline:
     """Creates isolated execution state and invokes the conversion phases."""
 
-    def __init__(self, converter: "PNG2SVGConverter") -> None:
+    def __init__(self, converter: "ConversionEngine") -> None:
         self._converter = converter
         self._config = ConverterConfig.from_converter(converter)
 
