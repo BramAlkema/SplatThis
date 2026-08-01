@@ -89,7 +89,14 @@ jobs:
           echo "::error::mypy findings rose from $MYPY_BASELINE to $count."
           exit 1
         fi
-        if [ "$count" -lt "$MYPY_BASELINE" ]; then
+        # The baseline is the macOS ARM64 count, which is the highest: MLX is
+        # only installed there, so its six untyped-import findings do not appear
+        # on Linux or Windows. Those platforms therefore report a lower number
+        # legitimately, and lowering the baseline to match one of them would
+        # break the reference platform. Only suggest lowering it where the
+        # count is authoritative.
+        if [ "$count" -lt "$MYPY_BASELINE" ] \
+           && [ "${{ runner.os }}" = "macOS" ] && [ "${{ runner.arch }}" = "ARM64" ]; then
           echo "::notice::mypy findings fell to $count. Lower MYPY_BASELINE in ci.yml."
         fi
 
