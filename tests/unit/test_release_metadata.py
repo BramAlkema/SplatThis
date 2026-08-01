@@ -44,9 +44,16 @@ def test_readme_has_no_relative_links() -> None:
     """
     readme = (REPO / "README.md").read_text(encoding="utf-8")
 
+    # Both syntaxes: markdown ](target) and raw HTML src="target". The showcase
+    # table uses <img src=... width=...> because width is one of the few
+    # attributes PyPI's allowlist keeps, so checking markdown alone would miss
+    # every image on the page.
+    targets = re.findall(r"\]\(([^)]+)\)", readme) + re.findall(
+        r'src="([^"]+)"', readme
+    )
     relative = [
         target
-        for target in re.findall(r"\]\(([^)]+)\)", readme)
+        for target in targets
         if not target.startswith(("http://", "https://", "#", "mailto:"))
     ]
     assert relative == [], f"README links must be absolute for PyPI: {relative}"
