@@ -69,6 +69,16 @@ All notable changes to SplatThis are documented here.
 
 ### Changed
 
+- Reworked the release workflow onto PyPI Trusted Publishing, matching the
+  sibling `openxml-audit` repository, which has shipped five releases through
+  the same shape. No API token is stored in the repository: PyPI mints a
+  short-lived credential per workflow run via OIDC. The trigger also moves from
+  `release: published` to `push: tags: v*` — the old trigger required a GitHub
+  Release to exist before the workflow would run, so pushing a tag alone did
+  nothing; the workflow now creates the release itself. Build, PyPI publish, and
+  GitHub release are separate jobs sharing one built artifact, and the wheel
+  smoke test runs in a throwaway venv so it cannot be satisfied by build
+  dependencies present in the job environment.
 - Declared the conversion engine's shared mixin surface in `engine_state.py`:
   35 state attributes and 32 cross-mixin method signatures, inherited by all
   seven mixins. Only 4 of those attributes previously carried any annotation.
