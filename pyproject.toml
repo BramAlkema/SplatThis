@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "splatthis"
 version = "0.2.0"
-description = "Convert images to SVG using 2D Gaussian splatting"
+description = "Fit 2D Gaussian splats to an image and deploy them as SVG, CSS, Canvas, a pixel runtime, or editable PowerPoint shapes"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
-    {name = "SplatThis Team", email = "team@splat-this.dev"}
+    {name = "Bram Alkema"}
 ]
-keywords = ["svg", "animation", "parallax", "image", "splat", "gaussian"]
+keywords = ["svg", "pptx", "canvas", "css", "parallax", "image", "splat", "gaussian"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
