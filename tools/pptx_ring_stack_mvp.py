@@ -53,12 +53,29 @@ IMAGES = tuple(
 )
 K_SIGMA = 2.5
 _K = int(os.environ.get("RING_COUNT", "4"))
+#: "equal" spaces ring radii evenly (unequal alpha jumps, banding pools in
+#: the outer contours); "quantile" spaces them at equal alpha steps so the
+#: contour amplitude is uniform.
+_LAYOUT = os.environ.get("RING_LAYOUT", "equal")
 RING_FRACTIONS = tuple((_K - i) / _K for i in range(_K))
 #: Feather each ring with the calibrated DrawingML blur (sigma = rad/3.25)
 #: to melt the stepwise falloff into a smooth ramp; the factor scales the
 #: blur radius relative to the ring gap. 0 disables.
 _BLUR = float(os.environ.get("RING_BLUR", "0"))
-SUFFIX = f"-k{_K}" + (f"-b{_BLUR:g}" if _BLUR else "")
+#: Feather only splats whose mean extent exceeds this many pixels; small,
+#: hard splats never band visibly and blur only smears their detail.
+_BLUR_MIN_EXT_PX = float(os.environ.get("RING_BLUR_MIN_EXT", "0"))
+#: Feather only splats at or below this peak alpha (1.0 = always): banding
+#: lives in translucent blobs, while opaque splats carry the hard edges
+#: that feathering destroys.
+_BLUR_MAX_ALPHA = float(os.environ.get("RING_BLUR_MAX_ALPHA", "1"))
+SUFFIX = (
+    f"-k{_K}"
+    + ("-q" if _LAYOUT == "quantile" else "")
+    + (f"-b{_BLUR:g}" if _BLUR else "")
+    + (f"-m{_BLUR_MIN_EXT_PX:g}" if _BLUR_MIN_EXT_PX else "")
+    + (f"-a{_BLUR_MAX_ALPHA:g}" if _BLUR_MAX_ALPHA < 1 else "")
+)
 if SUFFIX == "-k4":
     SUFFIX = ""
 
@@ -73,26 +90,48 @@ PEAK_ALPHA_PATTERN = re.compile(
 )
 
 
-def ring_alphas(peak_alpha: float) -> List[float]:
-    """Per-ring alphas so cumulative sRGB-over matches the Gaussian profile.
+def ring_layout(peak_alpha: float) -> List[tuple]:
+    """Rings as (radius_fraction, ring_alpha, gap_fraction), outermost first.
 
-    Region j (between ring j+1 and ring j, outermost first) is covered by
-    rings 1..j; its target is the Gaussian at the region midpoint.
+    Per-ring alphas are solved so the cumulative sRGB alpha-over composite
+    matches the Gaussian profile target of each ring's region. The equal
+    layout fixes the radii and reads targets at region midpoints; the
+    quantile layout fixes equal alpha steps and derives each radius from the
+    Gaussian's inverse, so every contour has the same amplitude.
     """
-    fractions = list(RING_FRACTIONS) + [0.0]
-    midpoints = [
-        (fractions[i] + fractions[i + 1]) / 2 for i in range(len(RING_FRACTIONS))
-    ]
-    targets = [peak_alpha * math.exp(-((K_SIGMA * m) ** 2) / 2.0) for m in midpoints]
-    alphas: List[float] = []
+    if _LAYOUT == "quantile":
+        targets = [peak_alpha * (i - 0.5) / _K for i in range(1, _K + 1)]
+        fractions = [
+            min(
+                1.0,
+                math.sqrt(-2.0 * math.log(max(t / peak_alpha, 1e-6))) / K_SIGMA,
+            )
+            for t in targets
+        ]
+        # Keep radii strictly descending after the outer clamp.
+        for i in range(1, len(fractions)):
+            fractions[i] = min(fractions[i], fractions[i - 1] - 1e-3)
+    else:
+        fractions = list(RING_FRACTIONS)
+        boundaries = fractions + [0.0]
+        targets = [
+            peak_alpha
+            * math.exp(
+                -((K_SIGMA * (boundaries[i] + boundaries[i + 1]) / 2) ** 2) / 2.0
+            )
+            for i in range(len(fractions))
+        ]
+    rings: List[tuple] = []
     remaining = 1.0
-    for target in targets:
+    for index, target in enumerate(targets):
         cumulative_before = 1.0 - remaining
         ring = (target - cumulative_before) / remaining if remaining > 1e-6 else 0.0
         ring = min(max(ring, 0.0), 1.0)
-        alphas.append(ring)
+        outer = fractions[index]
+        inner = fractions[index + 1] if index + 1 < len(fractions) else 0.0
+        rings.append((outer, ring, outer - inner))
         remaining *= 1.0 - ring
-    return alphas
+    return rings
 
 
 def transform_shape(match: re.Match, counter: List[int]) -> str:
@@ -110,7 +149,7 @@ def transform_shape(match: re.Match, counter: List[int]) -> str:
     peak_alpha = int(peak.group(1)) / 100000.0
 
     rings = []
-    for fraction, alpha in zip(RING_FRACTIONS, ring_alphas(peak_alpha)):
+    for fraction, alpha, gap in ring_layout(peak_alpha):
         if alpha <= 0.0005:
             continue
         counter[0] += 1
@@ -118,6 +157,13 @@ def transform_shape(match: re.Match, counter: List[int]) -> str:
         cy = max(1, int(round(ext_y * fraction)))
         ox = off_x + (ext_x - cx) // 2
         oy = off_y + (ext_y - cy) // 2
+        mean_extent_px = (ext_x + ext_y) / 2 / 9525  # EMU -> px
+        feather = (
+            _BLUR
+            if mean_extent_px >= _BLUR_MIN_EXT_PX and peak_alpha <= _BLUR_MAX_ALPHA
+            else 0.0
+        )
+        blur_rad = int(round(feather * gap * (ext_x + ext_y) / 4))
         rings.append(
             f'<p:sp><p:nvSpPr><p:cNvPr id="{counter[0]}" '
             f'name="Ring {counter[0]}"/><p:cNvSpPr>'
@@ -129,9 +175,8 @@ def transform_shape(match: re.Match, counter: List[int]) -> str:
             f'<a:alpha val="{int(round(alpha * 100000))}"/></a:srgbClr>'
             f"</a:solidFill><a:ln><a:noFill/></a:ln>"
             + (
-                f'<a:effectLst><a:blur rad="{int(round(_BLUR * (ext_x + ext_y) / (4 * _K)))}"/>'
-                f"</a:effectLst>"
-                if _BLUR
+                f'<a:effectLst><a:blur rad="{blur_rad}"/></a:effectLst>'
+                if _BLUR and blur_rad > 0
                 else ""
             )
             + "</p:spPr></p:sp>"
