@@ -25,6 +25,16 @@ All notable changes to SplatThis are documented here.
   0.2.5-era imports survive the rename (the field set still changed with the
   deployed/compositor split).
 
+- **The corpus gallery shows every format for every image.** Five columns
+  per corpus image at /corpus/: the original, the scripted pixel runtime
+  rendering live (JS/WebGL evaluating the splat formula), the scriptless CSS
+  build as live DOM, the corrected-exporter SVG as a live vector, and the
+  deck as a real-PowerPoint slideshow capture with the editable .pptx one
+  click away. Captions carry LPIPS, SSIM, splat count, and artifact size per
+  cell, quoted from the freshest ledger for each format; splat counts are
+  recorded at emit time in docs/corpus/stats.json and the build fails closed
+  on any missing asset.
+
 - **The home page shows the regenerated corpus, end to end.** A fourth
   generated region on the landing page publishes per-format deployed medians
   over all 21 governing images -- the fresh schema-v2 SVG rerun, the
