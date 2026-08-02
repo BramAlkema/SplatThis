@@ -388,6 +388,32 @@ Reported because they cost real time and are absent from the literature.
   construction that lifted CSS (§3.2) does not pay in SVG: mask and
   linearRGB-filter variants failed their quality-or-cost gates on the
   Chameleon MVP and were excluded from the corpus study.
+- **Solid-alpha ring stacks as a DrawingML primitive.** PowerPoint renders
+  alpha-ramp `gradFill` splats with substantial divergence from any model we
+  can write, so we replaced each Gaussian with K concentric solid-alpha
+  ellipses — the one primitive a probe deck showed PowerPoint composites
+  predictably (§6). Contour-free rendering requires K=8, since fewer rings
+  band visibly on smooth content whatever the radii or feathering; K=8 costs
+  eight times the shapes, 3.2x the deck, and **34 seconds to open one slide
+  against 4 seconds** for the gradient deck. Quality and cost are governed by
+  the same knob, so no K satisfies both. With a ring-aware differentiable fit
+  the primitive did beat the gradient baseline on the hardest test image
+  (LPIPS 0.2075 → 0.1962, OKLab ΔE 0.0568 → 0.0297), but a structural gain
+  under the seed noise floor and a colour gain do not buy back an unusable
+  deck. Reported because the colour half of the result is real and may be
+  worth recovering by other means.
+
+- **Assuming a primitive is modelable without measuring it.** The ring work
+  above was motivated by the claim that ring stacks, unlike gradients, are
+  exactly modelable. Measured afterwards, the exact ring model predicts its
+  real PowerPoint capture at LPIPS 0.084 against the plain Gaussian model's
+  0.096 on its own capture — twelve percent, not the order of magnitude the
+  claim implied. Sub-pixel misregistration accounts for ~0.002 of that common
+  floor and 8-bit per-step framebuffer rounding for ~0.005, leaving ~0.079
+  unexplained and shared by both primitives. Every PowerPoint fidelity figure
+  in this report carries that term, and no primitive or training-target
+  change addresses it.
+
 - **torch on Apple MPS.** 4.5× *slower* than CPU on the same workload
   (269 s vs 59 s, 400 px / 2000 splats). MLX, not MPS, was the answer.
 - **sRGB compositing as a fixed-splat change.** Matching the browser's blend

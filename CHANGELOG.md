@@ -25,6 +25,16 @@ All notable changes to SplatThis are documented here.
   0.2.5-era imports survive the rename (the field set still changed with the
   deployed/compositor split).
 
+- **Ring-stack PPTX primitive: investigated, measured, closed.** Replacing
+  DrawingML gradient splats with solid-alpha ring stacks -- plus a
+  ring-aware differentiable fit -- did beat the gradient baseline on the
+  hardest test image and nearly halved its OKLab colour error, but requires
+  K=8 rings to render contour-free, which costs 8x the shapes and **34
+  seconds to open one slide against 4 seconds**. Quality and cost share one
+  knob, so the line is closed rather than parked; both the result and the
+  flawed "exactly modelable" premise that motivated it are recorded in the
+  report's negative results and `docs/pptx-ring-stack.md`.
+
 - **PowerPoint captures are now color-managed, and the fix moved nothing it
   shouldn't.** The capture path converts every screenshot through its
   embedded ICC profile to sRGB (macOS records Display P3; the primaries of
