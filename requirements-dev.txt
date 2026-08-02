@@ -10,6 +10,7 @@ flake8==7.3.0
 isort==5.13.2
 build>=1.2.0
 twine>=5.0.0
+markdown>=3.6
 
 # Additional development tools
 pre-commit>=4.0.0

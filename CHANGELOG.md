@@ -4,25 +4,6 @@ All notable changes to SplatThis are documented here.
 
 ## 0.2.6 - 2026-08-02
 
-### Added
-
-- `compositor_fidelity("css")`, completing the browser targets. Measured by
-  emitting CSS from the existing corpus splat populations -- no retraining, the
-  populations were already on disk -- and capturing each in governing Chromium.
-
-      svg             median 0.7540   p10 0.6524
-      css             median 0.7488   p10 0.6510
-      pixel-runtime   median 0.9993   p10 0.9989
-
-  The result is that **emitter family separates, individual format does not**.
-  SVG and CSS both approximate a Gaussian with a radial gradient and land within
-  five thousandths of each other; the pixel runtime evaluates the splat formula
-  instead and is effectively lossless. A consumer choosing between SVG and CSS
-  is choosing on embedding constraints, not fidelity. Choosing the runtime over
-  either is worth about a quarter of SSIM.
-
-## 0.2.6 - 2026-08-02
-
 ### Fixed
 
 - **The shipped CSS exporter now produces what the README showcases.** The demo
@@ -43,22 +24,57 @@ All notable changes to SplatThis are documented here.
       p10                           0.6510 -> 0.9154
       improved on                   21 of 21 corpus images
 
-### Added
+### Changed
 
-- `compositor_fidelity("css")`, completing the browser targets. Measured by
-  emitting from the existing corpus splat populations -- no retraining needed,
-  the populations were already on disk -- and capturing each in governing
-  Chromium.
+- **Published expectations now keep deployed and compositor fidelity apart.**
+  `expected_fidelity()` replaces `compositor_fidelity()` as the entry point
+  (the old function name remains as a deprecated alias; the
+  `CompositorFidelity` dataclass is renamed `Fidelity` without one). Each
+  measured format publishes *deployed* fidelity -- the artifact against the
+  original image, what a user of this tool gets -- separately from
+  *compositor* fidelity, the emitter-only term that matters to a caller
+  supplying its own splats. Deployed, the declarative emitters are
+  indistinguishable: median LPIPS 0.2433 / 0.2439 / 0.2429 for
+  svg / svg-high / css, with an SSIM spread below the 0.029 seed noise floor.
+  Compositor-only, from the shipped emitters:
 
-      svg             median 0.7540   p10 0.6524
-      css             median 0.9426   p10 0.9154
-      pixel-runtime   median 0.9993   p10 0.9989
+      svg             median 0.9303 SSIM_sRGB   0.0310 LPIPS
+      svg-high        median 0.9486             0.0181
+      css             median 0.9426             0.0221
+      pixel-runtime   median 0.9993             0.0001
 
-  **The emitter separates, not the format family.** CSS overtakes SVG by 0.19
-  because it can express a mask; SVG's `radialGradient` cannot, so the technique
-  does not transfer. A consumer choosing a declarative target should prefer CSS
-  on fidelity and pick SVG only when vector editability or a single-file asset
-  is the requirement.
+  This corrects the svg compositor median published under 0.2.5 (0.7540),
+  which was measured on artifacts that did not come from the shipped emitter,
+  and retires the conclusion drawn from it ("CSS overtakes SVG by 0.19"):
+  with the corrected number the three declarative emitters sit within 0.018
+  SSIM of each other. The exact-stop sampling half of the CSS technique
+  already transfers to SVG's evenly spaced gradient stops; the alpha-mask
+  half cannot, and no longer needs to carry the difference it was thought to.
+
+- **The README quality tables are generated, not maintained.**
+  `tools/update_readme.py` renders the corpus-results block from the
+  committed ledgers, cross-checking every published median against its
+  per-image evidence -- and the compositor SSIM medians against the
+  independent `result/svg-quality/measurements.json` -- before writing
+  anything. `tests/unit/test_readme_results.py` runs its `--check` mode, so a
+  ledger change that is not reflected in the README fails CI.
+
+- `--profile` validates its choices at argparse (`m4-fast-loop`, `fast`,
+  `balanced`, `max-fidelity`, from `profiles.PROFILE_NAMES`); an unknown
+  profile used to surface as a late `ValueError` and the valid names were
+  documented nowhere. `--svg-recipe`'s help no longer claims its default
+  comes from the quality profile -- no profile sets one; the default is
+  `standard` unconditionally.
+
+- **The technical report is published, and it is living.** `paper/report.md`
+  gained its missing sections (introduction, OOXML findings, conclusion,
+  references), withdrew the renderer-independence claim that later artifacts
+  falsified, and dated its historical eras. Its §5.4 -- the corrected-emitter
+  results and the fit/emitter decomposition -- is regenerated from the
+  versioned ledgers by `tools/update_paper.py`, which also renders the report
+  to GitHub Pages at `/paper/`; `tests/unit/test_paper_page.py` fails CI when
+  either copy goes stale. `CITATION.cff` now carries a `preferred-citation`
+  for the report instead of a comment explaining why it could not.
 
 ## 0.2.5 - 2026-08-02
 
