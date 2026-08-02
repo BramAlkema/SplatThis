@@ -27,6 +27,7 @@ from .export_common import (
     PPTX_PAINTER_ORDER_BACK_TO_FRONT,
     PPTX_SOFT_EDGE_ALPHA_SCALE,
     PPTX_SOFT_EDGE_K_SIGMA_SCALE,
+    _gaussian_opacity_curve,
     PPTX_SOFT_EDGE_RADIUS_FACTOR,
     SVG_GRADIENT_STOPS,
     _layer_title,
@@ -362,11 +363,14 @@ def _splat_to_drawingml_shape_lines(
     # path="shape" matched the PowerPoint roundtrip better than "circle".
     alpha_clamped = float(np.clip(splat.alpha * PPTX_GRADIENT_ALPHA_SCALE, 0.0, 1.0))
     footprint = ELLIPSE_OVERLAP_BOOST * k_sigma
+    # One definition of the opacity curve, shared with the SVG and CSS
+    # emitters and with the training proxy that models this deck. Restating
+    # it here is how the curve came to exist in three places.
+    offsets = np.linspace(0.0, 1.0, SVG_GRADIENT_STOPS)
+    opacities = _gaussian_opacity_curve(offsets, alpha_clamped, footprint)
     stop_lines: List[str] = []
-    for j in range(SVG_GRADIENT_STOPS):
-        t = j / (SVG_GRADIENT_STOPS - 1)
-        opacity = 1.0 - math.exp(-alpha_clamped * math.exp(-0.5 * (t * footprint) ** 2))
-        pos = int(round(t * 100000.0))
+    for t, opacity in zip(offsets, opacities):
+        pos = int(round(float(t) * 100000.0))
         a_units = int(np.clip(round(opacity * 100000.0), 0, 100000))
         stop_lines.extend(
             render_template_lines(
