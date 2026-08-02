@@ -17,8 +17,11 @@
 > PowerPoint half is `powerpoint_results.jsonl`, fully regenerated: every
 > deck re-emitted with the corrected-order default and captured from a real
 > PowerPoint slideshow (median LPIPS 0.3200 / SSIM 0.6279, reproducing the
-> order-study medians exactly). Artifacts and captures are on disk under
-> `corpus/runs/` again, with the July decks backed up as `*_july2026.*`.
+> order-study medians exactly). Captures are ICC-converted to sRGB since
+> 2026-08-02 (`docs/pptx-colorspace.md`: macOS screenshots record Display
+> P3, which previously desaturated every scored primary). Artifacts and
+> captures are on disk under `corpus/runs/` again, with the July decks
+> backed up as `*_july2026.*`.
 > Reproduce with `tools/corpus_benchmark.py --run --formats svg --seeds 0
 > --run-tag <tag>`, then the attended `tools/run_powerpoint_pass.py` followed
 > by `tools/corpus_benchmark.py --score-powerpoint`.
