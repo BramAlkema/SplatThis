@@ -76,7 +76,19 @@ legacy order four times. Its median moved from 0.5973 to 0.7111 SSIM and from
 the incumbent to corrected-standard, which bounds the gate's floor at the
 default emitter's 0.7404/0.2433.
 
-The versioned summary is in
+## Incumbent validation (August 2026)
+
+Re-running the study under the corrected-standard incumbent -- same
+populations, same emitter, same policy, fresh Chromium captures -- confirmed
+the structural argument: the gate selected corrected-high on 15 images and
+the default corrected-standard on 6, and legacy never won an image outright.
+Gate medians moved from 0.7111 to 0.7483 SSIM at LPIPS 0.2439, now equal to
+the best fixed choice. The per-variant medians reproduced the July study to
+the fourth decimal. Versioned with per-image evidence in
+[`data/svg-compositor-corpus-v2.json`](../data/svg-compositor-corpus-v2.json);
+regenerate with `tools/validate_svg_gate_incumbent.py`.
+
+The July summary is in
 [`data/svg-compositor-corpus.json`](../data/svg-compositor-corpus.json). The
 individual live SVGs, browser screenshots, and metric vectors are generated
 under `./tmp/svg-compositor-corpus/` by

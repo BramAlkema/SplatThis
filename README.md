@@ -327,11 +327,11 @@ Numbers in this block are computed from the committed ledgers by `tools/update_r
 | SVG (`--svg-gradient-quality high`) | 0.2439 | 0.4532 | 0.7483 | 1,331 KB |
 | Scriptless CSS | 0.2429 | 0.4586 | 0.7517 | not measured |
 
-The rows above measure each emitter family unconditionally. A bare default run (`max-fidelity` profile) additionally applies the SVG compositor gate, which chooses per image. In the July corpus study, run against the then-incumbent legacy order, it kept `high` gradients on 17 images, legacy on 4 and `standard` on 0 (gate median SSIM 0.7111 / LPIPS 0.2439); the incumbent is now the default corrected-standard emitter, so the gate's floor is the default output and legacy must win an image outright.
+The rows above measure each emitter family unconditionally. A bare default run (`max-fidelity` profile) additionally applies the SVG compositor gate, which chooses per image against the default corrected-standard emitter as incumbent. Validated on the corpus after the 0.2.6 incumbent change: the gate kept `high` gradients on 15 images and the default `standard` on 6, never legacy, for gate medians of SSIM 0.7483 / LPIPS 0.2439 -- up from 0.7111 under the July legacy incumbent.
 
 Against the original, the declarative emitters are indistinguishable: median LPIPS 0.2433 / 0.2439 / 0.2429 for svg / svg-high / css, a spread of 0.001, and an SSIM spread of 0.011 that sits below the 0.029 seed noise floor. Emitter choice is not where deployed quality comes from; the fit is. Compositor-only figures make the emitters look far more different than they are, and must not be quoted as quality.
 
-**Fitted and deployed, per format.** Each format trains against its own export target; this is best-effort per format, not one splat set exported several ways. The pixel-runtime rows are the historical governing ledger passes -- Chrome pixel-buffer captures of stored artifacts; `expected_fidelity("pixel-runtime")` deliberately publishes no deployed expectation because those artifacts were not re-emitted by the current code:
+**Fitted and deployed, per format.** Each format trains against its own export target; this is best-effort per format, not one splat set exported several ways. The pixel-runtime rows are the historical governing ledger passes; an August 2026 re-emission of all 21 artifacts from current code reproduced the 2k medians exactly (LPIPS 0.2443 / SSIM 0.7751), so the ledger and `expected_fidelity("pixel-runtime")` agree:
 
 | Artifact | Budget | Median final splats | SSIM ↑ | LPIPS ↓ | Median size | Median training |
 |---|---:|---:|---:|---:|---:|---:|

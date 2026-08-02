@@ -84,7 +84,7 @@
     "pixel-runtime": {
       "method": {
         "reference": "render_splats_numpy(compositing_space='linear')",
-        "deployed": "Google Chrome canvas.toDataURL pixel buffer",
+        "deployed": "playwright-chromium/140.0.7339.81:worker-offscreen capture of the re-emitted current artifact",
         "metric": "ssim_srgb (windowed) and LPIPS, both compositor-only"
       },
       "corpus_images": 21,
@@ -95,8 +95,14 @@
           "ssim_srgb_median": 0.9993,
           "against": "the internal reference render of the same splats"
         },
-        "deployed": null,
-        "summary": "Evaluates the splat formula rather than approximating it, so it is a parity model of the reference renderer rather than a compositor. Effectively lossless. No deployed figure is published: it was measured from stored captures, not re-emitted from current code, so it has not had the treatment the others have."
+        "deployed": {
+          "lpips_median": 0.2443,
+          "lpips_p90": 0.4918,
+          "ssim_srgb_median": 0.7751,
+          "ssim_srgb_p10": 0.5753,
+          "against": "the original image"
+        },
+        "summary": "Evaluates the splat formula rather than approximating it, so it is a parity model of the reference renderer rather than a compositor. Effectively lossless as an emitter. Deployed figures re-measured August 2026 from artifacts re-emitted by the current code and captured in governing Chrome; they describe the seed-0 2k canvas-trained populations and are dominated, like every deployed figure, by fitting error."
       }
     }
   },
@@ -489,110 +495,152 @@
       {
         "image": "astronaut",
         "ssim_srgb": 0.9993,
-        "lpips": 0.0001
+        "lpips": 0.0001,
+        "deployed_lpips": 0.2534,
+        "deployed_ssim_srgb": 0.716
       },
       {
         "image": "brick",
         "ssim_srgb": 0.9993,
-        "lpips": 0.0001
+        "lpips": 0.0001,
+        "deployed_lpips": 0.0472,
+        "deployed_ssim_srgb": 0.9722
       },
       {
         "image": "camera",
         "ssim_srgb": 0.999,
-        "lpips": 0.0005
+        "lpips": 0.0005,
+        "deployed_lpips": 0.3673,
+        "deployed_ssim_srgb": 0.7627
       },
       {
         "image": "cell",
         "ssim_srgb": 0.9988,
-        "lpips": 0.001
+        "lpips": 0.001,
+        "deployed_lpips": 0.2361,
+        "deployed_ssim_srgb": 0.9545
       },
       {
         "image": "chameleon",
         "ssim_srgb": 0.9991,
-        "lpips": 0.0001
+        "lpips": 0.0001,
+        "deployed_lpips": 0.1284,
+        "deployed_ssim_srgb": 0.914
       },
       {
         "image": "checkerboard",
         "ssim_srgb": 0.9996,
-        "lpips": 0.0
+        "lpips": 0.0,
+        "deployed_lpips": 0.2349,
+        "deployed_ssim_srgb": 0.5753
       },
       {
         "image": "chelsea",
         "ssim_srgb": 0.9994,
-        "lpips": 0.0001
+        "lpips": 0.0001,
+        "deployed_lpips": 0.2443,
+        "deployed_ssim_srgb": 0.8589
       },
       {
         "image": "coffee",
         "ssim_srgb": 0.9992,
-        "lpips": 0.0
+        "lpips": 0.0,
+        "deployed_lpips": 0.2227,
+        "deployed_ssim_srgb": 0.7751
       },
       {
         "image": "coins",
         "ssim_srgb": 0.9993,
-        "lpips": 0.0
+        "lpips": 0.0,
+        "deployed_lpips": 0.2517,
+        "deployed_ssim_srgb": 0.7409
       },
       {
         "image": "colorwheel",
         "ssim_srgb": 0.9991,
-        "lpips": 0.0001
+        "lpips": 0.0001,
+        "deployed_lpips": 0.0117,
+        "deployed_ssim_srgb": 0.9752
       },
       {
         "image": "grass",
         "ssim_srgb": 0.9998,
-        "lpips": 0.0
+        "lpips": 0.0,
+        "deployed_lpips": 0.5287,
+        "deployed_ssim_srgb": 0.4624
       },
       {
         "image": "gravel",
         "ssim_srgb": 0.9998,
-        "lpips": 0.0
+        "lpips": 0.0,
+        "deployed_lpips": 0.5311,
+        "deployed_ssim_srgb": 0.5176
       },
       {
         "image": "hubble_deep_field",
         "ssim_srgb": 0.999,
-        "lpips": 0.0001
+        "lpips": 0.0001,
+        "deployed_lpips": 0.3935,
+        "deployed_ssim_srgb": 0.5786
       },
       {
         "image": "immunohistochemistry",
         "ssim_srgb": 0.9995,
-        "lpips": 0.0
+        "lpips": 0.0,
+        "deployed_lpips": 0.4411,
+        "deployed_ssim_srgb": 0.6467
       },
       {
         "image": "logo",
         "ssim_srgb": 0.9993,
-        "lpips": 0.0
+        "lpips": 0.0,
+        "deployed_lpips": 0.0971,
+        "deployed_ssim_srgb": 0.9203
       },
       {
         "image": "moon",
         "ssim_srgb": 0.9988,
-        "lpips": 0.0013
+        "lpips": 0.0013,
+        "deployed_lpips": 0.2653,
+        "deployed_ssim_srgb": 0.9338
       },
       {
         "image": "page",
         "ssim_srgb": 0.9994,
-        "lpips": 0.0002
+        "lpips": 0.0002,
+        "deployed_lpips": 0.4918,
+        "deployed_ssim_srgb": 0.7039
       },
       {
         "image": "retina",
         "ssim_srgb": 0.999,
-        "lpips": 0.0001
+        "lpips": 0.0001,
+        "deployed_lpips": 0.2357,
+        "deployed_ssim_srgb": 0.8598
       },
       {
         "image": "rocket",
         "ssim_srgb": 0.9989,
-        "lpips": 0.0001
+        "lpips": 0.0001,
+        "deployed_lpips": 0.1878,
+        "deployed_ssim_srgb": 0.8873
       },
       {
         "image": "stereo_motorcycle",
         "ssim_srgb": 0.9995,
-        "lpips": 0.0
+        "lpips": 0.0,
+        "deployed_lpips": 0.3049,
+        "deployed_ssim_srgb": 0.7202
       },
       {
         "image": "text",
         "ssim_srgb": 0.9993,
-        "lpips": 0.0001
+        "lpips": 0.0001,
+        "deployed_lpips": 0.1437,
+        "deployed_ssim_srgb": 0.8903
       }
     ]
   },
-  "note": "All declarative-emitter figures (svg, svg-high, css) are emitted by the current shipped code, not read from stored rasters; pixel-runtime is the stated exception, measured from stored captures and publishing no deployed expectation for that reason. Stored artifacts carry the configuration of the run that made them, and an earlier version of this file published a legacy-painter-order number as if it were the default emitter's. An earlier version of this file led with SSIM, which was wrong: the figures it published for SVG were indistinguishable from those a 2-pixel blur or an unrelated photograph would earn.",
+  "note": "All figures are emitted by the current shipped code, not read from stored rasters; pixel-runtime's deployed figures were re-measured August 2026 from artifacts re-emitted by the current code and reproduced the historical governing ledger's medians exactly (0.2443 LPIPS / 0.7751 SSIM), retroactively validating those stored captures. Stored artifacts carry the configuration of the run that made them, and an earlier version of this file published a legacy-painter-order number as if it were the default emitter's. An earlier version of this file led with SSIM, which was wrong: the figures it published for SVG were indistinguishable from those a 2-pixel blur or an unrelated photograph would earn.",
   "headline": "Against the original, the declarative emitters are indistinguishable: median LPIPS 0.2433 / 0.2439 / 0.2429 for svg / svg-high / css, a spread of 0.001, and an SSIM spread of 0.011 that sits below the 0.029 seed noise floor. Emitter choice is not where deployed quality comes from; the fit is. Compositor-only figures make the emitters look far more different than they are, and must not be quoted as quality."
 }
