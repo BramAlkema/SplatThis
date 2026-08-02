@@ -25,6 +25,12 @@ All notable changes to SplatThis are documented here.
   0.2.5-era imports survive the rename (the field set still changed with the
   deployed/compositor split).
 
+- **The home page shows the regenerated corpus, end to end.** A fourth
+  generated region on the landing page publishes per-format deployed medians
+  over all 21 governing images -- the fresh schema-v2 SVG rerun, the
+  regenerated real-PowerPoint pass, and the registry's CSS and pixel-runtime
+  blocks -- guarded in CI like the rest.
+
 - **The schema-v2 ledger regeneration ran.** 21 fresh governing SVG rows
   (`run_tag v2-governing-aug2026`): seed-0 populations retrained by current
   code under current defaults, Chromium-captured, median LPIPS 0.2392 / SSIM
