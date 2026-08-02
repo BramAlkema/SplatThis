@@ -8,7 +8,7 @@ authors:
 repository-code: "https://github.com/BramAlkema/SplatThis"
 url: "https://bramalkema.github.io/SplatThis/"
 license: MIT
-version: 0.2.5
+version: 0.2.6
 date-released: "2026-08-02"
 keywords:
   - gaussian-splatting
@@ -29,7 +29,19 @@ abstract: >-
   for decks -- and proxy metrics are recorded as diagnostics that cannot
   approve a candidate.
 
-# No `preferred-citation` yet. A draft write-up exists at paper/report.md, but
-# its seed noise floor and corpus-wide SVG-versus-OOXML comparison are still
-# unmeasured, and pointing a citation file at unfinished numbers is worse than
-# pointing at none. Add it here once those sections are measured.
+# The report's seed noise floor (§5.2) and corpus-wide SVG-versus-OOXML
+# comparison (§5.3) are measured; its living results section (§5.4) is
+# regenerated from the versioned ledgers by tools/update_paper.py and guarded
+# by tests/unit/test_paper_page.py.
+preferred-citation:
+  type: report
+  title: "Deploying 2D Gaussian Splats to Vector Document Formats"
+  authors:
+    - family-names: Alkema
+      given-names: Bram
+  year: 2026
+  month: 8
+  institution:
+    name: "SplatThis project"
+  url: "https://bramalkema.github.io/SplatThis/paper/"
+  notes: "Technical report; rendered from paper/report.md"

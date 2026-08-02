@@ -1,27 +1,39 @@
-"""Published fidelity expectations, for consumers that supply their own splats.
+"""Published fidelity expectations, measured on the governing corpus.
 
-A caller that projects 3D Gaussians through EWA rather than fitting a bitmap
-gets an exact splat population and inherits only the *emitter's* loss. It must
-not budget against this project's headline source-fidelity numbers, which are
-dominated by fitting error it does not have.
+The public entry point is :func:`expected_fidelity`. It is deliberately not
+called ``fidelity``: ``splatthis.fidelity`` is the ADR-003 accept-or-revert
+subpackage, and a function of that name is shadowed by the module as soon as
+anything imports it -- which surfaces only when the whole suite runs.
 
-This module publishes the emitter term on its own, measured by rendering one
-identical splat population two ways -- through the internal reference renderer,
-and through the deployed compositor in its governing browser -- so the only
-difference between them is the emitter.
+Two questions are kept apart here because they have very different answers, and
+conflating them is how this module's first version came to publish figures that
+looked like quality claims and were not.
 
-    >>> from splatthis import compositor_fidelity
-    >>> band = compositor_fidelity("svg")
-    >>> band.median, band.p10
-    (0.754, 0.6524)
-    >>> compositor_fidelity("pixel-runtime").median
-    0.9993
+**Deployed fidelity** compares the emitted artifact to the *original image*.
+This is what a user of this tool gets, and it is dominated by fitting error.
 
-Deriving this by reading the corpus is possible but easy to get wrong. Two
-mistakes are worth naming, because both were made while producing it: rendering
-the reference in the wrong compositing space (SVG-target models composite in
-sRGB, not linear), and quoting a subset -- a 7-image slice of the same corpus
-reports a content correlation of -0.854 against the full population's -0.470.
+**Compositor fidelity** compares the emitted artifact to the internal reference
+render of the *same splats*. It isolates the emitter, and is the relevant number
+only for a caller that supplies its own splats -- projecting 3D Gaussians
+through EWA, say -- and therefore has no fitting error.
+
+The gap between them is the point::
+
+    >>> band = expected_fidelity("svg")
+    >>> band.deployed_lpips, band.compositor_lpips
+    (0.2433, 0.031)
+
+Against the original the declarative emitters are indistinguishable: median
+LPIPS 0.2433 / 0.2439 / 0.2429 for svg / svg-high / css, a spread of 0.001,
+with an SSIM spread of 0.011 that sits below the 0.029 seed noise floor.
+Compositor-only figures make the same emitters look far more different than
+they are.
+
+**Read LPIPS, not SSIM.** On this content SSIM has almost no dynamic range:
+against the reference render of one chameleon population, a 2-pixel Gaussian
+blur scores 0.9290 and the source photograph -- a different image entirely --
+scores 0.9053, against 0.9336 for the actual SVG. LPIPS separates the same
+cases as 0.1268 / 0.1456 / 0.0411.
 """
 
 from __future__ import annotations
@@ -30,41 +42,47 @@ import json
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 _DATA = Path(__file__).resolve().parent / "data" / "compositor-fidelity.json"
 
-#: Formats this measurement covers. Others raise rather than guess.
-SUPPORTED_FORMATS: Tuple[str, ...] = ("svg", "pixel-runtime")
+#: Formats with a published measurement. Others raise rather than guess.
+SUPPORTED_FORMATS: Tuple[str, ...] = ("svg", "svg-high", "css", "pixel-runtime")
+
+#: Below this, two emitters are not distinguishable on a single seeded run.
+#: Six images at three seeds; see ``paper/report.md`` section 5.2.
+SEED_NOISE_FLOOR_SSIM = 0.029
 
 
 @dataclass(frozen=True)
-class CompositorFidelity:
-    """Expected agreement between a deployed compositor and the reference render.
+class Fidelity:
+    """Published expectation for one output format.
 
-    All figures are SSIM_sRGB against the internal renderer drawing the *same*
-    splats, so 1.0 would mean the emitter is lossless.
+    ``deployed_*`` is against the original image and is what a user sees.
+    ``compositor_*`` is against the reference render of the same splats and
+    isolates the emitter. A consumer supplying its own splats wants the second;
+    everyone else wants the first.
     """
 
     output_format: str
-    minimum: float
-    p10: float
-    median: float
-    maximum: float
-    content_gradient_correlation: float
+    deployed_lpips: Optional[float]
+    deployed_lpips_p90: Optional[float]
+    deployed_ssim: Optional[float]
+    compositor_lpips: float
+    compositor_ssim: float
     corpus_images: int
-    content_dependence: str
     summary: str
 
-    def is_content_predictable(self) -> bool:
-        """Whether content frequency meaningfully predicts this loss.
+    def is_distinguishable_from(self, other: "Fidelity") -> bool:
+        """Whether two formats differ by more than a seeded run's own noise.
 
-        False for every format measured so far: compositor loss is broadly
-        uniform, and the strong content dependence in end-to-end fidelity
-        belongs to the fitting stage. A consumer that supplies its own splats
-        should therefore budget the band, not a per-content-class estimate.
+        False for every pair of declarative emitters measured so far: their
+        deployed SSIM spread is 0.011 against a 0.029 floor, so choosing
+        between them on fidelity is choosing on noise.
         """
-        return abs(self.content_gradient_correlation) >= 0.7
+        if self.deployed_ssim is None or other.deployed_ssim is None:
+            return True
+        return abs(self.deployed_ssim - other.deployed_ssim) > SEED_NOISE_FLOOR_SSIM
 
 
 @lru_cache(maxsize=None)
@@ -75,8 +93,8 @@ def _load() -> Dict[str, Any]:
     return data
 
 
-def compositor_fidelity(output_format: str = "svg") -> CompositorFidelity:
-    """Return the published compositor-only fidelity band for ``output_format``.
+def expected_fidelity(output_format: str = "svg") -> Fidelity:
+    """Return the published fidelity expectation for ``output_format``.
 
     Raises:
         ValueError: for a format with no published measurement. Callers get an
@@ -86,21 +104,32 @@ def compositor_fidelity(output_format: str = "svg") -> CompositorFidelity:
     normalized = output_format.strip().lower()
     if normalized not in SUPPORTED_FORMATS:
         raise ValueError(
-            f"no published compositor fidelity for {output_format!r}; "
+            f"no published fidelity for {output_format!r}; "
             f"measured formats are {', '.join(SUPPORTED_FORMATS)}"
         )
     entry = _load()["formats"].get(normalized)
     if entry is None:  # pragma: no cover - guarded by SUPPORTED_FORMATS
         raise ValueError(f"published data does not cover {normalized!r}")
     expectation = entry["expectation"]
-    return CompositorFidelity(
+    deployed = expectation.get("deployed") or {}
+    compositor = expectation["compositor"]
+    return Fidelity(
         output_format=normalized,
-        minimum=float(expectation["ssim_srgb_min"]),
-        p10=float(expectation["ssim_srgb_p10"]),
-        median=float(expectation["ssim_srgb_median"]),
-        maximum=float(expectation["ssim_srgb_max"]),
-        content_gradient_correlation=float(expectation["content_gradient_correlation"]),
+        deployed_lpips=deployed.get("lpips_median"),
+        deployed_lpips_p90=deployed.get("lpips_p90"),
+        deployed_ssim=deployed.get("ssim_srgb_median"),
+        compositor_lpips=float(compositor["lpips_median"]),
+        compositor_ssim=float(compositor["ssim_srgb_median"]),
         corpus_images=int(entry["corpus_images"]),
-        content_dependence=str(expectation["content_dependence"]),
         summary=str(expectation["summary"]),
     )
+
+
+def compositor_fidelity(output_format: str = "svg") -> Fidelity:
+    """Deprecated alias for :func:`expected_fidelity`.
+
+    The original name implied the compositor figure was the headline. It is
+    not: it describes the emitter in isolation, which matters only to a caller
+    supplying its own splats.
+    """
+    return expected_fidelity(output_format)

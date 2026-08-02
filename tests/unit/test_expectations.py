@@ -1,10 +1,9 @@
-"""Published expectations must be readable by an installed consumer.
+"""Published expectations must be readable, honest, and hard to misread.
 
-The point of this module is that a downstream project does not have to re-derive
-compositor loss from the corpus. That only holds if the data ships inside the
-package: a path resolved relative to the repository root works in a checkout and
-raises FileNotFoundError from a wheel, which is the failure mode this repository
-has already shipped once with its SVG templates.
+The module exists so a downstream project does not re-derive these numbers. It
+has been restructured once already, because its first version published
+compositor-only figures that read like quality claims. The tests below pin the
+distinction that caused it.
 """
 
 from __future__ import annotations
@@ -13,68 +12,95 @@ from pathlib import Path
 
 import pytest
 
-from splatthis import compositor_fidelity
-from splatthis.expectations import SUPPORTED_FORMATS
+from splatthis import expected_fidelity
+from splatthis.expectations import SEED_NOISE_FLOOR_SSIM, SUPPORTED_FORMATS
 
 
 def test_expectations_data_lives_inside_the_package() -> None:
     """Resolved from the package, not the repository."""
     import splatthis
 
-    package_dir = Path(splatthis.__file__).parent
-    assert (package_dir / "data" / "compositor-fidelity.json").is_file()
+    assert (
+        Path(splatthis.__file__).parent / "data" / "compositor-fidelity.json"
+    ).is_file()
 
 
 @pytest.mark.parametrize("fmt", SUPPORTED_FORMATS)
-def test_published_band_is_internally_consistent(fmt: str) -> None:
-    band = compositor_fidelity(fmt)
-
-    assert band.minimum <= band.p10 <= band.median <= band.maximum
-    assert 0.0 < band.minimum <= band.maximum <= 1.0
+def test_every_format_publishes_a_compositor_figure(fmt: str) -> None:
+    band = expected_fidelity(fmt)
+    assert 0.0 <= band.compositor_lpips < 1.0
+    assert 0.0 < band.compositor_ssim <= 1.0
     assert band.corpus_images >= 21
     assert band.summary
 
 
-def test_emitters_differ_by_far_more_than_their_own_spread() -> None:
-    """The choice of emitter dominates, and that is the actionable result.
+def test_deployed_and_compositor_are_not_the_same_number() -> None:
+    """Conflating them is the mistake this module was restructured to prevent.
 
-    The pixel runtime evaluates the splat formula directly, so it is a parity
-    model of the reference renderer. SVG approximates a Gaussian with a radial
-    gradient and pays about a quarter of SSIM for it. A consumer supplying its
-    own splats should pick on this axis before tuning anything else.
+    Compositor loss is roughly an order of magnitude smaller than deployed
+    loss, because deployed fidelity carries the fit and compositor fidelity
+    does not. Quoting the compositor figure as quality overstates the artifact
+    by that whole margin.
     """
-    svg = compositor_fidelity("svg")
-    runtime = compositor_fidelity("pixel-runtime")
-
-    assert runtime.median > 0.99, "the runtime should be effectively lossless"
-    assert svg.median < 0.85
-    assert runtime.median - svg.median > 0.2
+    band = expected_fidelity("svg")
+    assert band.deployed_lpips is not None
+    assert band.deployed_lpips > band.compositor_lpips * 5
 
 
-def test_compositor_loss_is_not_content_predictable() -> None:
-    """The published guidance, asserted rather than left in prose.
+def test_declarative_emitters_are_indistinguishable_end_to_end() -> None:
+    """The finding that matters, asserted so it cannot quietly regress.
 
-    End-to-end fidelity correlates strongly with content gradient, but that
-    dependence is almost entirely the fitting stage. A consumer supplying its
-    own splats inherits only the emitter term, which is broadly uniform -- so it
-    should budget the band rather than a per-content-class estimate. A 7-image
-    slice of the same corpus reports -0.854 and would suggest the opposite.
+    Against the original image, svg, svg-high and css differ by 0.001 median
+    LPIPS and 0.011 SSIM -- the latter below the 0.029 seed noise floor. Their
+    compositor figures differ far more, which is exactly why compositor numbers
+    must not be presented as quality.
     """
-    band = compositor_fidelity("svg")
+    svg, high, css = (
+        expected_fidelity("svg"),
+        expected_fidelity("svg-high"),
+        expected_fidelity("css"),
+    )
 
-    assert abs(band.content_gradient_correlation) < 0.7
-    assert band.is_content_predictable() is False
+    for other in (high, css):
+        assert not svg.is_distinguishable_from(other)
+
+    deployed = [b.deployed_lpips for b in (svg, high, css)]
+    assert max(deployed) - min(deployed) < 0.01  # type: ignore[type-var]
+
+
+def test_the_runtime_is_a_parity_model_not_a_compositor() -> None:
+    """It evaluates the splat formula rather than approximating it."""
+    runtime = expected_fidelity("pixel-runtime")
+    assert runtime.compositor_lpips < 0.001
+    assert runtime.deployed_lpips is None, "not re-measured from current code yet"
+
+
+def test_seed_noise_floor_is_the_published_one() -> None:
+    assert SEED_NOISE_FLOOR_SSIM == pytest.approx(0.029)
 
 
 @pytest.mark.parametrize("fmt", ["SVG", " svg ", "svg"])
 def test_format_lookup_is_forgiving_about_case_and_space(fmt: str) -> None:
-    assert compositor_fidelity(fmt).output_format == "svg"
+    assert expected_fidelity(fmt).output_format == "svg"
 
 
 def test_unmeasured_formats_raise_rather_than_guess() -> None:
-    """An unmeasured expectation is exactly what this module exists to prevent."""
-    for fmt in ("pptx", "css", "canvas", "pixel-runtime"):
-        if fmt in SUPPORTED_FORMATS:
-            continue
-        with pytest.raises(ValueError, match="no published compositor fidelity"):
-            compositor_fidelity(fmt)
+    for fmt in ("pptx", "canvas"):
+        with pytest.raises(ValueError, match="no published fidelity"):
+            expected_fidelity(fmt)
+
+
+def test_docstring_examples_execute_and_pin_the_published_numbers() -> None:
+    """The module docstring quotes exact medians; run it so they stay pinned.
+
+    Nothing else in the suite asserts an exact published value -- by design,
+    since the registry changes when re-measured -- so the doctest is the one
+    place a silent registry edit that contradicts the prose gets caught.
+    """
+    import doctest
+
+    import splatthis.expectations as module
+
+    result = doctest.testmod(module)
+    assert result.attempted > 0, "the docstring examples were not collected"
+    assert result.failed == 0

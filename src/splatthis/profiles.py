@@ -8,6 +8,12 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+#: Every profile ``get_profile_defaults`` accepts, fastest first. The CLI's
+#: ``--profile`` choices come from here; a name added below must be added to
+#: the dict in ``get_profile_defaults`` (tests call each name to keep them in
+#: sync).
+PROFILE_NAMES = ("m4-fast-loop", "fast", "balanced", "max-fidelity")
+
 
 def get_profile_defaults(profile: str) -> Dict[str, Any]:
     """Return tuned defaults for quality profile."""

@@ -17,6 +17,7 @@ from .adaptive_compute import (
 )
 from .budgets import TIME_BUDGET_ALIASES, TIME_BUDGET_PRESETS
 from .converter import PNG2SVGConverter
+from .profiles import PROFILE_NAMES
 
 DEFAULT_MAX_SPLATS = 2000
 DEFAULT_APPLE_SILICON_SPLAT_CAP = 2000
@@ -183,6 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--profile",
         default="max-fidelity",
+        choices=list(PROFILE_NAMES),
         help="Quality profile (default: max-fidelity)",
     )
     parser.add_argument(
@@ -417,7 +419,7 @@ def build_parser() -> argparse.ArgumentParser:
             "palette-quantized",
             "blur",
         ],
-        help="SVG export recipe (default comes from quality profile). "
+        help="SVG export recipe (default: standard). "
         "'scripted-matrix' stores compact splat rows and expands "
         "browser-compatible gradients at load time (JS required). "
         "'palette-quantized' k-means-clusters splat colors into a small "

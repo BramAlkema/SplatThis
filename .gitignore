@@ -135,3 +135,9 @@ examples/output/
 /result/corpus/images/
 /result/corpus/runs/
 /result/corpus/index.html
+
+# svg-quality emitter lab: the emitted SVGs (globally ignored above) and the
+# viewer/captures regenerate. measurements.json is the evidence and IS
+# tracked -- tools/update_readme.py reads it for the README size column.
+/result/svg-quality/index.html
+/result/svg-quality/*.png
