@@ -35,41 +35,37 @@ def test_published_band_is_internally_consistent(fmt: str) -> None:
     assert band.summary
 
 
-def test_the_emitter_separates_not_the_format_family() -> None:
-    """What costs fidelity is how the falloff is expressed, not SVG-vs-CSS.
+def test_declarative_emitters_cluster_and_the_runtime_does_not() -> None:
+    """All three declarative targets land within 0.02; the runtime is apart.
 
-    An earlier version of this test asserted that SVG and CSS agree, because
-    both were emitting the Gaussian as opacity baked into gradient colour
-    stops. Once CSS switched to an alpha mask over a solid fill -- so the
-    browser stops interpolating colour and opacity together -- it gained about
-    0.19 median SSIM and left SVG behind on all 21 corpus images.
-
-    SVG's radialGradient cannot express a mask, so the technique does not
-    transfer. The ordering is therefore a property of what each format can say,
-    not of vector-versus-DOM.
+    This assertion has been rewritten twice, both times because a published
+    number turned out to describe an emitter the project no longer ships. The
+    first version compared CSS before its compositor fixes were ported; the
+    second compared SVG against stored rasters emitted under the legacy painter
+    order. Every figure behind it is now produced by the current code, and the
+    stable result is that how the falloff is expressed matters far less than
+    whether the format can evaluate the splat formula at all.
     """
     svg = compositor_fidelity("svg")
     css = compositor_fidelity("css")
     runtime = compositor_fidelity("pixel-runtime")
 
-    assert css.median - svg.median > 0.15, "the mask technique should dominate"
-    assert runtime.median > css.median > svg.median
+    assert abs(css.median - svg.median) < 0.05, "declarative targets should cluster"
+    assert runtime.median - max(svg.median, css.median) > 0.04
 
 
-def test_emitters_differ_by_far_more_than_their_own_spread() -> None:
-    """The choice of emitter dominates, and that is the actionable result.
+def test_high_gradient_quality_buys_fidelity_for_bytes() -> None:
+    """`--svg-gradient-quality high` is a real, measured improvement.
 
-    The pixel runtime evaluates the splat formula directly, so it is a parity
-    model of the reference renderer. SVG approximates a Gaussian with a radial
-    gradient and pays about a quarter of SSIM for it. A consumer supplying its
-    own splats should pick on this axis before tuning anything else.
+    It raises the stop budget from a mean of 3.2 per splat to 8.3 and the
+    opacity precision from 2 decimals to 4. Small but consistent: it improved
+    all 21 corpus images.
     """
-    svg = compositor_fidelity("svg")
-    runtime = compositor_fidelity("pixel-runtime")
+    standard = compositor_fidelity("svg")
+    high = compositor_fidelity("svg-high")
 
-    assert runtime.median > 0.99, "the runtime should be effectively lossless"
-    assert svg.median < 0.85
-    assert runtime.median - svg.median > 0.2
+    assert high.median > standard.median
+    assert high.p10 > standard.p10
 
 
 def test_compositor_loss_is_not_content_predictable() -> None:
