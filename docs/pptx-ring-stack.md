@@ -60,6 +60,37 @@ So the primitive is promising and exactly modelable, but the current
 construction is not shippable. The gradient style remains the default and
 the deployed baseline.
 
+## The banding is solved (same day)
+
+Two changes eliminate the visible contours: **alpha-quantile radii** (rings
+placed at equal alpha steps, so every contour has the same small amplitude
+instead of pooling in the outer rings) and **gap-proportional feathering**
+(each ring blurred by the calibrated DrawingML blur at a radius set by its
+own ring spacing, so the wide outer steps melt while tight inner rings stay
+crisp). Verified by zoomed inspection of the deployed captures: the smooth
+chameleon background, hubble's dim glows on black -- the worst case -- and
+the colorwheel all render contour-free.
+
+The scoreboard at the visually clean configuration (K=8, quantile,
+feather 1.0), deployed LPIPS against the gradient baseline:
+
+| image | gradient | rings, clean config |
+|---|---:|---:|
+| chameleon | 0.2075 | 0.2288 |
+| colorwheel | 0.2138 | 0.2593 |
+| text | 0.2653 | 0.2707 (SSIM 0.2893 → 0.3103) |
+| hubble_deep_field | 0.4167 | **0.3803** |
+
+Feathering taxes hard-edged graphic content (colorwheel pays ~0.05 against
+the unfeathered rings that won it), and neither splat size nor peak alpha
+separates the content that needs feathering from the content it hurts --
+nearly every splat is a large translucent blob by both measures. That
+tension is exactly what ring-aware training resolves: a fit that knows its
+primitive is a feathered stepwise stack will place and size splats to hide
+the steps itself. Until that lands, rings are a visually clean, exactly
+modelable alternative that wins dark-sparse and text-like content but does
+not yet beat the gradient on aggregate.
+
 ## Next steps
 
 1. Alpha-quantile radii: place rings at equal alpha steps, so the banding
