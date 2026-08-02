@@ -25,6 +25,18 @@ All notable changes to SplatThis are documented here.
   0.2.5-era imports survive the rename (the field set still changed with the
   deployed/compositor split).
 
+- **PowerPoint's color space is measured, and it is a hybrid.** A synthetic
+  probe deck captured in real PowerPoint (`tools/pptx_colorspace_probe.py`)
+  shows gradFill color ramps interpolating in linear light (opposite of
+  browsers) while alpha compositing happens in display sRGB -- neither of the
+  project's training models, which explains the sRGB-training MVP's split
+  decision (`tools/pptx_srgb_training_mvp.py`). The probe's calibration
+  swatches also exposed a capture-chain bias: macOS screenshots record
+  Display P3 coordinates that the scoring pipeline reads as sRGB, so every
+  PowerPoint capture is scored with desaturated primaries. Findings and
+  implications in `docs/pptx-colorspace.md`; the capture-profile fix is a
+  governing-protocol change and is deliberately not patched quietly here.
+
 - **The corpus gallery shows every format for every image.** Five columns
   per corpus image at /corpus/: the original, the scripted pixel runtime
   rendering live (JS/WebGL evaluating the splat formula), the scriptless CSS

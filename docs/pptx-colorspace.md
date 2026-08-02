@@ -1,0 +1,56 @@
+# What color space does PowerPoint composite in?
+
+Measured 2026-08-02 on real Microsoft PowerPoint (macOS slideshow capture),
+with `tools/pptx_colorspace_probe.py`: one synthetic probe deck whose patch
+midpoints distinguish linear-light from display-sRGB math, classified
+against calibration swatches from the same capture, plus a corpus-wide tally
+of both internal compositing models against the 21 real captures. Raw data:
+`tmp/pptx-colorspace-probe/results.json` (regenerable in one 20-second
+capture).
+
+## Verdicts
+
+**1. Gradient color ramps interpolate in linear light.** The red-to-green
+`gradFill` midpoint measured within one 8-bit step of the linear-light
+prediction (distance 0.010 vs 0.129 for sRGB interpolation). This is the
+opposite of browsers, which interpolate gradient stops in display sRGB.
+
+**2. Alpha compositing happens in display sRGB.** A 50%-alpha shape over a
+backdrop and a black-to-transparent alpha ramp over white both landed on the
+sRGB-blend prediction (the alpha ramp within a thousandth). This matches
+browsers.
+
+**3. PowerPoint is therefore a hybrid compositor** — linear gradient ramps
+feeding sRGB alpha-over — that neither of this project's training models
+describes. The corpus tally agrees: rendering the same populations under
+pure-linear vs pure-sRGB compositing and comparing with the real captures
+splits 9 / 12 across the 21 images. This also explains the sRGB-training
+MVP's mixed result (`tools/pptx_srgb_training_mvp.py`: chameleon clearly
+worse, text clearly better, ΔE-p95 better on all four): each pure model
+matches one half of the real compositor.
+
+**4. The capture chain desaturates every PowerPoint score.** The probe's
+opaque calibration swatches came back as (234, 51, 35) for `FF0000` and
+(117, 251, 76) for `00FF00` — sRGB primaries re-expressed in Display P3
+coordinates. The macOS screenshot records the P3 framebuffer and the scoring
+pipeline reads those numbers as sRGB, so every PowerPoint capture is scored
+with systematically desaturated primaries (grays are unaffected). Part of
+"PowerPoint renders less vibrant" is this measurement bias, not PowerPoint.
+The probe's verdicts are unaffected because its predictions were computed
+from the captured swatches themselves.
+
+## Implications
+
+- **Measurement first:** the PowerPoint capture path should convert the
+  screenshot through its embedded ICC profile to sRGB before scoring. That
+  is a governing-protocol change — all PPTX fidelity numbers (ΔE above all)
+  shift when it lands, so it must be applied once, re-captured once, and
+  republished through the ledgers, not patched quietly.
+- **Training second:** a faithful PPTX training proxy is the measured
+  hybrid — interpolate the per-splat gradient ramp in linear light, apply
+  alpha-over in sRGB. Neither the current linear default nor the
+  `--training-export-target svg` sRGB proxy is right, which the MVP's split
+  decision already suggested.
+- **The DrawingML skirt-washing remains real** regardless: `gradFill` cannot
+  separate color from alpha the way the CSS mask does, so a residual gap to
+  the browser targets is expected even after both fixes.
