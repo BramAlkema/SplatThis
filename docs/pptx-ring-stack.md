@@ -8,8 +8,12 @@ Microsoft PowerPoint slideshows under the ICC-corrected protocol.
 
 PowerPoint renders this project's alpha-ramp gradient splats with a median
 **0.10 LPIPS of emitter loss** against the reference render of the same
-splats — three to five times the SVG (0.031) or CSS (0.022) emitters. But
-the probe showed PowerPoint composites *solid-alpha* shapes in clean,
+splats, which looked like three to five times the SVG (0.031) or CSS
+(0.022) emitters. That comparison is unfair and was the flaw in this
+experiment's motivation: SVG and CSS emitter loss is measured on
+native-size Playwright screenshots, while every PowerPoint figure travels
+through a screen capture, crop, matte trim and resample. See "what
+measurement says" below. The probe did show PowerPoint composites *solid-alpha* shapes in clean,
 predictable display sRGB, within 0.006 of the model. So: stop using the
 primitive it mangles. Approximate each Gaussian as K concentric solid-alpha
 ellipses whose per-ring alphas are solved so the cumulative sRGB alpha-over
@@ -34,16 +38,35 @@ picture is two wins, one tie, one small deficit — achieved with populations
 fitting for the new primitive at all. Deck sizes grow from ~160 KB to
 250–450 KB, still a fraction of the SVG artifact.
 
-## Why this is the right direction anyway
+## Why this looked right — and what measurement says
 
-The strategic property is not the four scores; it is that the ring
-compositor is **exactly modelable**. The gradient emitter's 0.10 LPIPS loss
-is unfixable by training because no proxy reproduces PowerPoint's ramp
-rendering; the ring emitter's loss is a computable function of K and the
-radii, and the fit can train directly against the true deployed composite.
-That converts PPTX from the one format with an unmodelable compositor into
-one with a closed loop, the same move that took browser SVG from 0.40 to
-0.24 deployed LPIPS.
+The strategic argument was that the ring compositor is *exactly modelable*
+where the gradient one is not: ring loss is a computable function of K and
+the radii, so a fit could train against the true deployed composite and
+close the loop that took browser SVG from 0.40 to 0.24 deployed LPIPS.
+
+**That argument does not survive measurement, and the correction matters
+more than the original claim.** Rendering the exact feathered ring stack in
+float and comparing it with the real PowerPoint capture of the same deck
+gives LPIPS **0.0843** — against **0.0959** for the plain Gaussian model
+against its own gradient-deck capture. Rings are better modelable by about
+12%, not by the order of magnitude "exactly" implies, and both sit far
+above the SVG emitter's 0.031.
+
+Two candidate explanations for that common floor were tested and largely
+excluded. Sub-pixel misregistration accounts for ~0.002: a full shift and
+scale scan bottoms out at 0.0940 from 0.0959. Eight-bit framebuffer
+rounding after every one of ~1,700 alpha-over steps accounts for ~0.005:
+sequential compositing quantized per step scores 0.0790 against float's
+0.0843. **Roughly 0.079 LPIPS remains unexplained**, is common to both
+primitives, and is the honest research target — a property of PowerPoint's
+rasterization or of the capture chain, not of the primitive we choose.
+
+The consequence for this experiment is direct: a ring-aware fit optimizes
+against a proxy that still diverges from the deployed artifact by about as
+much as the error the ring stack was meant to remove. The loop is better
+aligned, but it is not closed, and no claim of a closed loop should be made
+for PPTX until that 0.079 is explained.
 
 ## Visual verdict: not shippable yet
 
