@@ -1,5 +1,7 @@
 """Tests for PNG->DrawingML generation utilities."""
 
+import inspect
+import re
 from pathlib import Path
 
 from splatthis.io import (
@@ -178,3 +180,52 @@ def test_save_drawingml_writes_file(tmp_path: Path):
     text = out.read_text(encoding="utf-8")
     assert "<p:sld " in text
     assert "<p:sp>" in text
+
+
+def test_pptx_gradient_stops_follow_the_shared_opacity_curve() -> None:
+    """The emitted stops must equal the curve the training proxy models.
+
+    ``_PPTXGradientProxyRenderer`` reproduces the deck by scaling the alpha
+    column by ``PPTX_GRADIENT_ALPHA_SCALE``, which is only correct while the
+    emitter's stops follow ``_gaussian_opacity_curve`` at that scaled alpha.
+    Asserting against the shared helper -- rather than a retyped copy of the
+    formula -- means a change to the curve fails here instead of silently
+    splitting the fit from the deck.
+    """
+    import numpy as np
+
+    from splatthis.export_common import (
+        ELLIPSE_OVERLAP_BOOST,
+        PPTX_GRADIENT_ALPHA_SCALE,
+        _gaussian_opacity_curve,
+    )
+
+    stop_pattern = re.compile(
+        r'<a:gs pos="(\d+)">\s*<a:srgbClr val="[0-9A-F]{6}">'
+        r'(?:<a:alpha val="(\d+)"/>)?'
+    )
+    # Track the emitter's own default rather than restating it.
+    k_sigma = (
+        inspect.signature(generate_drawingml_slide_content)
+        .parameters["k_sigma"]
+        .default
+    )
+    footprint = ELLIPSE_OVERLAP_BOOST * k_sigma
+
+    for alpha in (0.05, 0.2, 0.5, 0.9):
+        splat = create_isotropic_splat(
+            center=[50.0, 50.0], sigma=6.0, color=[1.0, 0.0, 0.0], alpha=alpha
+        )
+        xml = generate_drawingml_slide_content([splat], width=100, height=100)
+        shape = re.search(r"<p:sp>.*?</p:sp>", xml, re.S).group(0)
+        stops = stop_pattern.findall(shape)
+        positions = np.array([int(pos) / 100000 for pos, _ in stops])
+        emitted = np.array([(int(a) / 100000 if a else 1.0) for _, a in stops])
+
+        modelled = _gaussian_opacity_curve(
+            positions, alpha * PPTX_GRADIENT_ALPHA_SCALE, footprint
+        )
+        assert np.allclose(modelled, emitted, atol=2e-4), (
+            f"alpha={alpha}: emitted stops diverge from the shared curve the "
+            f"training proxy models"
+        )

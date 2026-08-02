@@ -19,11 +19,7 @@ from .adaptive_compute import (
     evaluate_online_checkpoints,
 )
 from .engine_state import ConversionEngineState
-from .export_common import (
-    PPTX_GRADIENT_ALPHA_SCALE,
-    PPTX_SOFT_EDGE_ALPHA_SCALE,
-    PPTX_SOFT_EDGE_K_SIGMA_SCALE,
-)
+from .export_common import PPTX_SOFT_EDGE_ALPHA_SCALE, PPTX_SOFT_EDGE_K_SIGMA_SCALE
 from .mlx_losses import MlxLossConfig
 from .mlx_stage import MlxRendererConfig, MlxStageConfig, optimize_stage_mlx
 from .optimizer import SplatParams, build_optimizer
@@ -736,7 +732,7 @@ class ConversionOptimizationMixin(ConversionEngineState):
             else self.compositing_space
         )
         pptx_softedge_mode = self._use_pptx_proxy_training()
-        pptx_gradient_mode = self._use_pptx_gradient_proxy_training()
+        pptx_gradient_mode = self.training_export_target == "pptx-gradient"
         # Mirror the torch training renderer: SVG/PPTX targets deploy via
         # source-over, so force alpha-over alongside the sRGB compositing.
         mlx_blend_mode = (
@@ -756,12 +752,6 @@ class ConversionOptimizationMixin(ConversionEngineState):
                 compositing_space=mlx_compositing_space,
                 pptx_softedge_mode=pptx_softedge_mode,
                 pptx_gradient_mode=pptx_gradient_mode,
-                pptx_gradient_alpha_scale=float(
-                    self.refinement_config.get(
-                        "pptx_gradient_train_alpha_scale",
-                        PPTX_GRADIENT_ALPHA_SCALE,
-                    )
-                ),
                 pptx_alpha_scale=float(
                     self.refinement_config.get(
                         "pptx_proxy_train_alpha_scale", PPTX_SOFT_EDGE_ALPHA_SCALE

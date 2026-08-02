@@ -437,7 +437,7 @@ in [`data/artifact-gates.json`](https://github.com/BramAlkema/SplatThis/blob/mai
 | `--time-budget PRESET` | Select a content-aware schedule and detail budget |
 | `--max-edge N` | Bound the input resolution while preserving aspect ratio |
 | `--optimizer-backend {mlx,torch}` | Select the optimizer implementation |
-| `--training-export-target {auto,pixel-runtime,browser-gradient,svg,pptx-softedge}` | Select the training compositor (`canvas` is a legacy alias for `pixel-runtime`) |
+| `--training-export-target {auto,pixel-runtime,browser-gradient,svg,pptx-gradient,pptx-softedge}` | Select the training compositor (`canvas` is a legacy alias for `pixel-runtime`) |
 | `--svg-recipe RECIPE` | Select the emitted SVG primitive family |
 | `--svg-gradient-quality {standard,high}` | Select compact or stricter adaptive SVG gradients |
 | `--svg-painter-order {back-to-front,legacy}` | Select corrected or historical SVG element order |

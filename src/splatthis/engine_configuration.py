@@ -17,7 +17,6 @@ from .engine_state import ConversionEngineState
 from .export_common import (
     DEFAULT_PPTX_SPLAT_STYLE,
     PPTX_PAINTER_ORDER_BACK_TO_FRONT,
-    PPTX_GRADIENT_ALPHA_SCALE,
     PPTX_SOFT_EDGE_ALPHA_SCALE,
     PPTX_SOFT_EDGE_K_SIGMA_SCALE,
     SVG_BROWSER_COMPAT_RECIPE,
@@ -38,6 +37,9 @@ from .renderer import L1SSIMLoss, create_renderer, resolve_renderer_backend
 from .splat import LAYER_DETAIL, LAYER_EDGE, SPLAT_LAYER_NAMES, GaussianSplat
 
 logger = logging.getLogger(__name__)
+
+#: Training targets that swap in a PowerPoint proxy renderer.
+_PPTX_PROXY_TRAINING_TARGETS = frozenset({"pptx-softedge", "pptx-gradient"})
 
 
 class ConversionConfigurationMixin(ConversionEngineState):
@@ -417,8 +419,7 @@ class ConversionConfigurationMixin(ConversionEngineState):
             self.time_budget is not None
             or self.region_weighting_enabled
             or self.layered_saliency
-            or self._use_pptx_proxy_training()
-            or self._use_pptx_gradient_proxy_training()
+            or self.training_export_target in _PPTX_PROXY_TRAINING_TARGETS
             or self._use_mlx_spatial_weights()
             or int(max(0, self.refinement_config.get("svg_proxy_postfit_iters", 0))) > 0
             or int(max(0, self.refinement_config.get("pptx_proxy_postfit_iters", 0)))
@@ -766,11 +767,7 @@ class ConversionConfigurationMixin(ConversionEngineState):
             "powerpoint",
         }:
             return "pptx-softedge"
-        if normalized in {
-            "pptx-gradient",
-            "pptx-grad",
-            "powerpoint-gradient",
-        }:
+        if normalized == "pptx-gradient":
             return "pptx-gradient"
         raise ValueError(f"Unsupported training export target: {value}")
 
@@ -780,14 +777,6 @@ class ConversionConfigurationMixin(ConversionEngineState):
 
     def _use_pptx_proxy_training(self) -> bool:
         return self.training_export_target == "pptx-softedge"
-
-    def _use_pptx_gradient_proxy_training(self) -> bool:
-        """Train against the shipped DrawingML gradient primitive.
-
-        Distinct from the soft-edge proxy: the gradient emitter needs no
-        sigma rescaling, only the alpha scale its stop curve applies.
-        """
-        return self.training_export_target == "pptx-gradient"
 
     def _create_training_renderer(self, width: int, height: int) -> torch.nn.Module:
         compositing_space = (
@@ -843,17 +832,11 @@ class ConversionConfigurationMixin(ConversionEngineState):
             batch_tile_count=batch_tile_count,
             max_active_splats_per_tile=max_active_splats_per_tile,
         )
-        if self._use_pptx_gradient_proxy_training():
-            return _PPTXGradientProxyRenderer(
-                base_renderer=base_renderer,
-                alpha_scale=float(
-                    self.refinement_config.get(
-                        "pptx_gradient_train_alpha_scale",
-                        PPTX_GRADIENT_ALPHA_SCALE,
-                    )
-                ),
-            ).to(self.device)
-        if not self._use_pptx_proxy_training():
+        if self.training_export_target == "pptx-gradient":
+            return _PPTXGradientProxyRenderer(base_renderer=base_renderer).to(
+                self.device
+            )
+        if self.training_export_target != "pptx-softedge":
             return base_renderer
         return _PPTXSoftEdgeProxyRenderer(
             base_renderer=base_renderer,

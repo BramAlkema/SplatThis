@@ -58,13 +58,16 @@ class _PPTXGradientProxyRenderer(torch.nn.Module):
     """Approximate native PPTX gradient-fill ellipses with the base renderer.
 
     The gradient emitter writes stops of ``1 - exp(-scale * alpha * G(r))``
-    (``_gaussian_opacity_curve``) and PowerPoint interpolates them linearly,
-    compositing the result alpha-over in display sRGB. The base renderer
-    already computes ``1 - exp(-a * G(r))``, so scaling the alpha column by
-    the same ``scale`` reproduces the deployed opacity curve exactly at every
-    stop; the piecewise-linear residual between stops is bounded by
-    ``SVG_GRADIENT_STOP_MAX_ERROR`` by construction, because the emitter
-    chooses its stop count to satisfy that bound.
+    and PowerPoint interpolates them linearly, compositing the result
+    alpha-over in display sRGB. The base renderer already computes
+    ``1 - exp(-a * G(r))``, so scaling the alpha column by the same ``scale``
+    reproduces the deployed opacity curve exactly at every stop.
+
+    Between stops the deck is piecewise-linear where this proxy is smooth.
+    The PPTX path emits a fixed ``SVG_GRADIENT_STOPS`` ramp rather than
+    calling ``_adaptive_gradient_stops``, so that residual is not bounded by
+    ``SVG_GRADIENT_STOP_MAX_ERROR`` -- it is simply small at eight stops, and
+    is the known approximation this proxy makes.
 
     Unlike the soft-edge proxy this needs no sigma scaling: the emitted
     ellipse spans the same footprint the renderer integrates over.
@@ -78,18 +81,16 @@ class _PPTXGradientProxyRenderer(torch.nn.Module):
         super().__init__()
         self.base_renderer = base_renderer
         self.alpha_scale = float(np.clip(alpha_scale, 1e-4, 1.0))
+        # A row of ones with the alpha column set to the scale: one fused
+        # multiply per forward instead of slicing the table apart and
+        # concatenating it back every training iteration. SplatParams
+        # already constrains alpha to [0, 1] after each optimizer step.
+        gain = torch.ones(1, 11)
+        gain[0, 9] = self.alpha_scale
+        self.register_buffer("alpha_gain", gain)
 
     def forward(self, splats_tensor: torch.Tensor) -> torch.Tensor:
-        scaled_alpha = torch.clamp(splats_tensor[:, 9], 0.0, 1.0) * self.alpha_scale
-        fitted = torch.cat(
-            [
-                splats_tensor[:, 0:9],
-                scaled_alpha.unsqueeze(-1),
-                splats_tensor[:, 10:11],
-            ],
-            dim=-1,
-        )
-        return self.base_renderer(fitted)
+        return self.base_renderer(splats_tensor * self.alpha_gain)
 
 
 class _PPTXProxyLoss(torch.nn.Module):

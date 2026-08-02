@@ -48,7 +48,7 @@ black src/splatthis/ tests/unit/
 splatthis docs/demo/source.png -o out.svg --seed 42 --artifacts-dir artifacts/
 # Key flags: --profile (default max-fidelity), --splats, --stages, --time-budget,
 # --optimizer-backend {mlx,torch}, --format {svg,pptx,canvas,css,pixel-runtime},
-# --svg-recipe, --training-export-target {auto,pixel-runtime,browser-gradient,svg,pptx-softedge} (canvas = legacy alias)
+# --svg-recipe, --training-export-target {auto,pixel-runtime,browser-gradient,svg,pptx-gradient,pptx-softedge} (canvas = legacy alias)
 ```
 MLX is the default optimizer backend (falls back to torch with a warning when
 mlx is missing). Torch is the cross-platform reference; keep the two in parity —

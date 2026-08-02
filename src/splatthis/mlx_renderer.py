@@ -12,6 +12,7 @@ from typing import Any, Optional, Sequence, Union
 import numpy as np
 import numpy.typing as npt
 
+from .export_common import PPTX_GRADIENT_ALPHA_SCALE
 from .mlx_runtime import is_mlx_available, require_mlx
 from .splat import GaussianSplat, render_importance_for_raw
 
@@ -118,7 +119,7 @@ class MlxBatchedGaussianRenderer:
         pptx_softedge_mode: bool = False,
         pptx_alpha_scale: float = 0.25,
         pptx_gradient_mode: bool = False,
-        pptx_gradient_alpha_scale: float = 0.40,
+        pptx_gradient_alpha_scale: float = PPTX_GRADIENT_ALPHA_SCALE,
         pptx_sigma_scale: float = 0.92,
     ):
         mlx = _require_mlx()
@@ -145,6 +146,7 @@ class MlxBatchedGaussianRenderer:
         self.pptx_gradient_alpha_scale = float(
             np.clip(pptx_gradient_alpha_scale, 1e-4, 1.0)
         )
+        self._pptx_gradient_gain: Any = None
         self.pptx_sigma_scale = float(np.clip(pptx_sigma_scale, 0.25, 3.0))
         self.culling_sigma = float(max(1.0, culling_sigma))
         if max_active_splats_per_tile is None:
@@ -291,17 +293,13 @@ class MlxBatchedGaussianRenderer:
         """
 
         mlx = _require_mlx()
-        scaled_alpha = (
-            mlx.clip(table_mx[:, 9], 0.0, 1.0) * self.pptx_gradient_alpha_scale
-        )
-        return mlx.concatenate(
-            [
-                table_mx[:, 0:9],
-                mlx.expand_dims(scaled_alpha, axis=-1),
-                table_mx[:, 10:11],
-            ],
-            axis=-1,
-        )
+        # One fused multiply by a cached gain row rather than slicing the
+        # table apart and concatenating it back on every render.
+        if self._pptx_gradient_gain is None:
+            gain = np.ones((1, 11), dtype=np.float32)
+            gain[0, 9] = self.pptx_gradient_alpha_scale
+            self._pptx_gradient_gain = mlx.array(gain)
+        return table_mx * self._pptx_gradient_gain
 
     def _apply_pptx_softedge_transform(self, table_mx: Any) -> Any:
         """Mirror _PPTXSoftEdgeProxyRenderer in converter.py for the MLX path.

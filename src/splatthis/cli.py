@@ -410,7 +410,12 @@ def build_parser() -> argparse.ArgumentParser:
         "produces the closest match in real PowerPoint but can look washed "
         "out in soffice/LibreOffice (which renders the file more literally). "
         "Pass --training-export-target pptx-softedge explicitly if your "
-        "deployment target is real PowerPoint.",
+        "deployment target is real PowerPoint. The 'pptx-gradient' target "
+        "trains against the gradient primitive the deck actually ships, "
+        "matching the emitter's stop curve and PowerPoint's sRGB "
+        "alpha-over compositing; measured better than the pixel-runtime "
+        "default on the images tried so far, but not yet corpus-wide, so "
+        "it stays opt-in.",
     )
     parser.add_argument(
         "--svg-recipe",
