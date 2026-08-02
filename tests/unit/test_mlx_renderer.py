@@ -347,6 +347,97 @@ def test_mlx_pptx_softedge_mode_matches_torch_proxy_renderer() -> None:
 
 
 @pytest.mark.skipif(not is_mlx_available(), reason="MLX is not installed")
+def test_mlx_pptx_gradient_mode_matches_torch_proxy_renderer() -> None:
+    """The DrawingML gradient proxy must render identically on both backends.
+
+    The gradient primitive is trained against, so a backend divergence here
+    would put the fit and the deployed deck on different curves -- the exact
+    train/deploy split this project exists to close.
+    """
+    from splatthis.proxies import _PPTXGradientProxyRenderer
+
+    splats = _sample_splats()
+
+    base = create_renderer(
+        backend="torch-batched",
+        width=WIDTH,
+        height=HEIGHT,
+        device=torch.device("cpu"),
+        tile_size=TILE_SIZE,
+        blend_mode="alpha-over",
+        background_color=BACKGROUND,
+        compositing_space="srgb",
+        batch_tile_count=BATCH_TILE_COUNT,
+    )
+    proxy = _PPTXGradientProxyRenderer(base_renderer=base)
+    reference = proxy(splats_to_tensor(splats)).detach().numpy()
+
+    mlx_renderer = MlxBatchedGaussianRenderer(
+        width=WIDTH,
+        height=HEIGHT,
+        tile_size=TILE_SIZE,
+        batch_tile_count=BATCH_TILE_COUNT,
+        blend_mode="alpha-over",
+        background_color=BACKGROUND,
+        compositing_space="srgb",
+        pptx_gradient_mode=True,
+    )
+    assert mlx_renderer.pptx_gradient_alpha_scale == pytest.approx(proxy.alpha_scale)
+
+    import mlx.core as mx
+
+    table = splats_to_numpy_table(splats)
+    image = mlx_renderer.render(table, plan=mlx_renderer.build_plan(table))
+    mx.eval(image)
+
+    _assert_images_close(np.asarray(image), reference)
+
+
+def test_pptx_gradient_proxy_reproduces_the_emitted_stop_curve() -> None:
+    """The proxy's opacity must equal the stops the emitter actually writes.
+
+    This is the claim the whole training target rests on: the base renderer's
+    ``1 - exp(-a*G)`` with the alpha column scaled by PPTX_GRADIENT_ALPHA_SCALE
+    is the same curve ``_gaussian_opacity_curve`` writes into the deck.
+    """
+    import re
+
+    from splatthis.export_common import (
+        ELLIPSE_OVERLAP_BOOST,
+        PPTX_GRADIENT_ALPHA_SCALE,
+    )
+    from splatthis.pptx_export import generate_drawingml_slide_content
+    from splatthis.splat import create_isotropic_splat
+
+    DEFAULT_K_SIGMA = 2.5
+    for alpha in (0.05, 0.2, 0.5, 0.9):
+        splat = create_isotropic_splat(
+            center=[50.0, 50.0], sigma=6.0, color=[1.0, 0.0, 0.0], alpha=alpha
+        )
+        xml = generate_drawingml_slide_content([splat], width=100, height=100)
+        shape = re.search(r"<p:sp>.*?</p:sp>", xml, re.S).group(0)
+        stops = re.findall(
+            r'<a:gs pos="(\d+)">\s*<a:srgbClr val="[0-9A-F]{6}">'
+            r'(?:<a:alpha val="(\d+)"/>)?',
+            shape,
+        )
+        positions = np.array([int(pos) / 100000 for pos, _ in stops])
+        emitted = np.array([(int(a) / 100000 if a else 1.0) for _, a in stops])
+        # The renderer's own curve, with the proxy's alpha scaling applied.
+        # The emitter spans its stops over ELLIPSE_OVERLAP_BOOST * k_sigma
+        # (pptx_export._pptx_gradient_stop_lines).
+        footprint = ELLIPSE_OVERLAP_BOOST * DEFAULT_K_SIGMA
+        modelled = 1.0 - np.exp(
+            -PPTX_GRADIENT_ALPHA_SCALE
+            * alpha
+            * np.exp(-0.5 * (positions * footprint) ** 2)
+        )
+        assert np.allclose(
+            modelled, emitted, atol=2e-4
+        ), f"alpha={alpha}: proxy curve diverges from the emitted stops"
+
+
+@pytest.mark.skipif(not is_mlx_available(), reason="MLX is not installed")
 def test_mlx_tied_importances_match_torch_backends() -> None:
     # Overlapping splats sharing one importance value: only a stable sort keeps
     # their input order identical across backends, so this pins the stable

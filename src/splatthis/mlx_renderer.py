@@ -117,6 +117,8 @@ class MlxBatchedGaussianRenderer:
         compositing_space: str = "linear",
         pptx_softedge_mode: bool = False,
         pptx_alpha_scale: float = 0.25,
+        pptx_gradient_mode: bool = False,
+        pptx_gradient_alpha_scale: float = 0.40,
         pptx_sigma_scale: float = 0.92,
     ):
         mlx = _require_mlx()
@@ -139,6 +141,10 @@ class MlxBatchedGaussianRenderer:
         # value that produces center_opacity = (1 - exp(-alpha)) * pptx_alpha_scale.
         self.pptx_softedge_mode = bool(pptx_softedge_mode)
         self.pptx_alpha_scale = float(np.clip(pptx_alpha_scale, 1e-4, 1.0))
+        self.pptx_gradient_mode = bool(pptx_gradient_mode)
+        self.pptx_gradient_alpha_scale = float(
+            np.clip(pptx_gradient_alpha_scale, 1e-4, 1.0)
+        )
         self.pptx_sigma_scale = float(np.clip(pptx_sigma_scale, 0.25, 3.0))
         self.culling_sigma = float(max(1.0, culling_sigma))
         if max_active_splats_per_tile is None:
@@ -275,6 +281,28 @@ class MlxBatchedGaussianRenderer:
             tile_size=self.tile_size,
         )
 
+    def _apply_pptx_gradient_transform(self, table_mx: Any) -> Any:
+        """Mirror _PPTXGradientProxyRenderer in proxies.py for the MLX path.
+
+        Scales the alpha column so the renderer's ``1 - exp(-a * G)`` matches
+        the gradient emitter's stop curve. Pure MLX ops, so it composes with
+        mx.compile. Parity with the torch proxy is pinned by
+        tests/unit/test_mlx_renderer.py.
+        """
+
+        mlx = _require_mlx()
+        scaled_alpha = (
+            mlx.clip(table_mx[:, 9], 0.0, 1.0) * self.pptx_gradient_alpha_scale
+        )
+        return mlx.concatenate(
+            [
+                table_mx[:, 0:9],
+                mlx.expand_dims(scaled_alpha, axis=-1),
+                table_mx[:, 10:11],
+            ],
+            axis=-1,
+        )
+
     def _apply_pptx_softedge_transform(self, table_mx: Any) -> Any:
         """Mirror _PPTXSoftEdgeProxyRenderer in converter.py for the MLX path.
 
@@ -325,6 +353,8 @@ class MlxBatchedGaussianRenderer:
 
         if self.pptx_softedge_mode:
             table_mx = self._apply_pptx_softedge_transform(table_mx)
+        if self.pptx_gradient_mode:
+            table_mx = self._apply_pptx_gradient_transform(table_mx)
 
         srgb_mode = self.compositing_space == "srgb"
         saved_background = self.background

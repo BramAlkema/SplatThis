@@ -397,6 +397,7 @@ def build_parser() -> argparse.ArgumentParser:
             "pixel-runtime",
             "browser-gradient",
             "svg",
+            "pptx-gradient",
             "canvas",
             "pptx-softedge",
         ],

@@ -12,7 +12,11 @@ from typing import Optional
 import numpy as np
 import torch
 
-from .export_common import PPTX_SOFT_EDGE_ALPHA_SCALE, PPTX_SOFT_EDGE_K_SIGMA_SCALE
+from .export_common import (
+    PPTX_GRADIENT_ALPHA_SCALE,
+    PPTX_SOFT_EDGE_ALPHA_SCALE,
+    PPTX_SOFT_EDGE_K_SIGMA_SCALE,
+)
 from .renderer import L1SSIMLoss, torch_linear_to_srgb
 
 
@@ -43,6 +47,44 @@ class _PPTXSoftEdgeProxyRenderer(torch.nn.Module):
                 scaled_sigma,
                 splats_tensor[:, 4:9],
                 effective_alpha.unsqueeze(-1),
+                splats_tensor[:, 10:11],
+            ],
+            dim=-1,
+        )
+        return self.base_renderer(fitted)
+
+
+class _PPTXGradientProxyRenderer(torch.nn.Module):
+    """Approximate native PPTX gradient-fill ellipses with the base renderer.
+
+    The gradient emitter writes stops of ``1 - exp(-scale * alpha * G(r))``
+    (``_gaussian_opacity_curve``) and PowerPoint interpolates them linearly,
+    compositing the result alpha-over in display sRGB. The base renderer
+    already computes ``1 - exp(-a * G(r))``, so scaling the alpha column by
+    the same ``scale`` reproduces the deployed opacity curve exactly at every
+    stop; the piecewise-linear residual between stops is bounded by
+    ``SVG_GRADIENT_STOP_MAX_ERROR`` by construction, because the emitter
+    chooses its stop count to satisfy that bound.
+
+    Unlike the soft-edge proxy this needs no sigma scaling: the emitted
+    ellipse spans the same footprint the renderer integrates over.
+    """
+
+    def __init__(
+        self,
+        base_renderer: torch.nn.Module,
+        alpha_scale: float = PPTX_GRADIENT_ALPHA_SCALE,
+    ):
+        super().__init__()
+        self.base_renderer = base_renderer
+        self.alpha_scale = float(np.clip(alpha_scale, 1e-4, 1.0))
+
+    def forward(self, splats_tensor: torch.Tensor) -> torch.Tensor:
+        scaled_alpha = torch.clamp(splats_tensor[:, 9], 0.0, 1.0) * self.alpha_scale
+        fitted = torch.cat(
+            [
+                splats_tensor[:, 0:9],
+                scaled_alpha.unsqueeze(-1),
                 splats_tensor[:, 10:11],
             ],
             dim=-1,

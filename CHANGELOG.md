@@ -25,6 +25,32 @@ All notable changes to SplatThis are documented here.
   0.2.5-era imports survive the rename (the field set still changed with the
   deployed/compositor split).
 
+- **`--training-export-target pptx-gradient`: fit the splats for the deck
+  PowerPoint actually draws.** The DrawingML gradient emitter writes stops of
+  `1 - exp(-PPTX_GRADIENT_ALPHA_SCALE * alpha * G(r))` and PowerPoint
+  composites them alpha-over in display sRGB, while training defaulted to a
+  linear-light true Gaussian -- a train/deploy split of exactly the kind that
+  cost browser SVG half its quality until 0.2.x. The new target closes it,
+  and it is a twenty-line parameter transform rather than a new renderer:
+  scaling the alpha column by the constant the emitter already applies makes
+  the base renderer reproduce the deployed opacity curve at every stop, with
+  the piecewise-linear residual bounded by the emitter's own stop-placement
+  error budget.
+
+  Implemented in the existing proxy architecture -- `_PPTXGradientProxyRenderer`
+  in `proxies.py` beside the soft-edge proxy, its MLX mirror in
+  `mlx_renderer.py`, torch/MLX parity and emitter-curve fidelity pinned by
+  tests. Measured on one image against a real PowerPoint capture: chameleon
+  LPIPS 0.2075 -> 0.1895, SSIM 0.8395 -> 0.8557, and OKLab colour error
+  halved at 0.0568 -> 0.0289, on the shipped primitive at 1,675 shapes and
+  4 seconds to open -- beating the ring-stack line that cost 8x the shapes
+  and 34 seconds. Opt-in, not the `auto` default: that needs a corpus pass.
+
+  Known follow-up: `_postfit_splats_for_pptx_proxy` still refines against a
+  plain Gaussian, so a `pptx-gradient` run that also enables
+  `--pptx-proxy-postfit-iters` trains and post-fits on different curves.
+  Left unchanged pending measurement rather than patched silently.
+
 - **Ring-stack PPTX primitive: investigated, measured, closed.** Replacing
   DrawingML gradient splats with solid-alpha ring stacks -- plus a
   ring-aware differentiable fit -- did beat the gradient baseline on the

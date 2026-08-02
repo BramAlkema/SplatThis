@@ -17,6 +17,7 @@ from .engine_state import ConversionEngineState
 from .export_common import (
     DEFAULT_PPTX_SPLAT_STYLE,
     PPTX_PAINTER_ORDER_BACK_TO_FRONT,
+    PPTX_GRADIENT_ALPHA_SCALE,
     PPTX_SOFT_EDGE_ALPHA_SCALE,
     PPTX_SOFT_EDGE_K_SIGMA_SCALE,
     SVG_BROWSER_COMPAT_RECIPE,
@@ -28,7 +29,11 @@ from .export_common import (
     _normalize_svg_gradient_quality,
     _normalize_svg_painter_order,
 )
-from .proxies import _PPTXProxyLoss, _PPTXSoftEdgeProxyRenderer
+from .proxies import (
+    _PPTXGradientProxyRenderer,
+    _PPTXProxyLoss,
+    _PPTXSoftEdgeProxyRenderer,
+)
 from .renderer import L1SSIMLoss, create_renderer, resolve_renderer_backend
 from .splat import LAYER_DETAIL, LAYER_EDGE, SPLAT_LAYER_NAMES, GaussianSplat
 
@@ -402,7 +407,7 @@ class ConversionConfigurationMixin(ConversionEngineState):
         validation/preview renders must composite there too or they misreport
         deployed fidelity.
         """
-        if self.training_export_target in {"svg", "pptx-softedge"}:
+        if self.training_export_target in self._SRGB_TRAINING_TARGETS:
             return "srgb"
         return self.compositing_space
 
@@ -413,6 +418,7 @@ class ConversionConfigurationMixin(ConversionEngineState):
             or self.region_weighting_enabled
             or self.layered_saliency
             or self._use_pptx_proxy_training()
+            or self._use_pptx_gradient_proxy_training()
             or self._use_mlx_spatial_weights()
             or int(max(0, self.refinement_config.get("svg_proxy_postfit_iters", 0))) > 0
             or int(max(0, self.refinement_config.get("pptx_proxy_postfit_iters", 0)))
@@ -760,20 +766,38 @@ class ConversionConfigurationMixin(ConversionEngineState):
             "powerpoint",
         }:
             return "pptx-softedge"
+        if normalized in {
+            "pptx-gradient",
+            "pptx-grad",
+            "powerpoint-gradient",
+        }:
+            return "pptx-gradient"
         raise ValueError(f"Unsupported training export target: {value}")
+
+    #: Targets that deploy through a display-sRGB compositor, so training,
+    #: validation and preview renders must all composite there.
+    _SRGB_TRAINING_TARGETS = frozenset({"svg", "pptx-softedge", "pptx-gradient"})
 
     def _use_pptx_proxy_training(self) -> bool:
         return self.training_export_target == "pptx-softedge"
 
+    def _use_pptx_gradient_proxy_training(self) -> bool:
+        """Train against the shipped DrawingML gradient primitive.
+
+        Distinct from the soft-edge proxy: the gradient emitter needs no
+        sigma rescaling, only the alpha scale its stop curve applies.
+        """
+        return self.training_export_target == "pptx-gradient"
+
     def _create_training_renderer(self, width: int, height: int) -> torch.nn.Module:
         compositing_space = (
             "srgb"
-            if self.training_export_target in {"svg", "pptx-softedge"}
+            if self.training_export_target in self._SRGB_TRAINING_TARGETS
             else self.compositing_space
         )
         blend_mode = self.blend_mode
         if (
-            self.training_export_target in {"svg", "pptx-softedge"}
+            self.training_export_target in self._SRGB_TRAINING_TARGETS
             and blend_mode != "alpha-over"
         ):
             # The SVG/PPTX emitters model per-splat source-over opacity
@@ -819,6 +843,16 @@ class ConversionConfigurationMixin(ConversionEngineState):
             batch_tile_count=batch_tile_count,
             max_active_splats_per_tile=max_active_splats_per_tile,
         )
+        if self._use_pptx_gradient_proxy_training():
+            return _PPTXGradientProxyRenderer(
+                base_renderer=base_renderer,
+                alpha_scale=float(
+                    self.refinement_config.get(
+                        "pptx_gradient_train_alpha_scale",
+                        PPTX_GRADIENT_ALPHA_SCALE,
+                    )
+                ),
+            ).to(self.device)
         if not self._use_pptx_proxy_training():
             return base_renderer
         return _PPTXSoftEdgeProxyRenderer(

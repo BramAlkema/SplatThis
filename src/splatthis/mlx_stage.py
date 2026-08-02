@@ -48,6 +48,8 @@ class MlxRendererConfig:
     pptx_softedge_mode: bool = False
     pptx_alpha_scale: float = 0.25
     pptx_sigma_scale: float = 0.92
+    pptx_gradient_mode: bool = False
+    pptx_gradient_alpha_scale: float = 0.40
 
 
 @dataclass(frozen=True)
@@ -165,6 +167,8 @@ def optimize_stage_mlx(
         compositing_space=stage_config.renderer.compositing_space,
         pptx_softedge_mode=stage_config.renderer.pptx_softedge_mode,
         pptx_alpha_scale=stage_config.renderer.pptx_alpha_scale,
+        pptx_gradient_mode=stage_config.renderer.pptx_gradient_mode,
+        pptx_gradient_alpha_scale=stage_config.renderer.pptx_gradient_alpha_scale,
         pptx_sigma_scale=stage_config.renderer.pptx_sigma_scale,
     )
     plan: Optional[MlxTilePlan] = None
@@ -487,6 +491,7 @@ def optimize_stage_mlx(
         "renderer_batch_tile_count": int(stage_config.renderer.batch_tile_count),
         "renderer_compositing_space": str(stage_config.renderer.compositing_space),
         "renderer_pptx_softedge_mode": bool(stage_config.renderer.pptx_softedge_mode),
+        "renderer_pptx_gradient_mode": bool(stage_config.renderer.pptx_gradient_mode),
         "mlx_compile_enabled": True,
     }
     return MlxStageResult(
