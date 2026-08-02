@@ -46,13 +46,13 @@
       },
       "corpus_images": 21,
       "expectation": {
-        "ssim_srgb_min": 0.5949,
-        "ssim_srgb_p10": 0.651,
-        "ssim_srgb_median": 0.7488,
-        "ssim_srgb_max": 0.8976,
-        "content_gradient_correlation": -0.509,
-        "content_dependence": "weak, as for SVG. Compositor loss is broadly uniform across content.",
-        "summary": "Indistinguishable from SVG (median 0.7488 vs 0.7540). Both approximate a Gaussian with a radial gradient and pay the same ~0.25 SSIM for it; choose between them on embedding constraints, not fidelity."
+        "ssim_srgb_min": 0.8944,
+        "ssim_srgb_p10": 0.9154,
+        "ssim_srgb_median": 0.9426,
+        "ssim_srgb_max": 0.9925,
+        "content_gradient_correlation": -0.722,
+        "content_dependence": "weak, as for the other emitters.",
+        "summary": "Best declarative target. Emits colour in linear sRGB and applies the Gaussian falloff as an alpha mask over a solid fill, sampling the exact opacity curve at nine stops, so colour and opacity are not interpolated together. Close to the pixel runtime and far ahead of SVG, which cannot express a mask."
       }
     }
   },
@@ -303,89 +303,89 @@
     "css": [
       {
         "image": "astronaut",
-        "compositor_ssim_srgb": 0.7045
+        "compositor_ssim_srgb": 0.9583
       },
       {
         "image": "brick",
-        "compositor_ssim_srgb": 0.8037
+        "compositor_ssim_srgb": 0.9426
       },
       {
         "image": "camera",
-        "compositor_ssim_srgb": 0.8527
+        "compositor_ssim_srgb": 0.9623
       },
       {
         "image": "cell",
-        "compositor_ssim_srgb": 0.8712
+        "compositor_ssim_srgb": 0.9817
       },
       {
         "image": "chameleon",
-        "compositor_ssim_srgb": 0.7473
+        "compositor_ssim_srgb": 0.9598
       },
       {
         "image": "checkerboard",
-        "compositor_ssim_srgb": 0.651
+        "compositor_ssim_srgb": 0.9329
       },
       {
         "image": "chelsea",
-        "compositor_ssim_srgb": 0.6632
+        "compositor_ssim_srgb": 0.9389
       },
       {
         "image": "coffee",
-        "compositor_ssim_srgb": 0.7336
+        "compositor_ssim_srgb": 0.935
       },
       {
         "image": "coins",
-        "compositor_ssim_srgb": 0.788
+        "compositor_ssim_srgb": 0.9405
       },
       {
         "image": "colorwheel",
-        "compositor_ssim_srgb": 0.7488
+        "compositor_ssim_srgb": 0.9925
       },
       {
         "image": "grass",
-        "compositor_ssim_srgb": 0.6959
+        "compositor_ssim_srgb": 0.9053
       },
       {
         "image": "gravel",
-        "compositor_ssim_srgb": 0.628
+        "compositor_ssim_srgb": 0.9453
       },
       {
         "image": "hubble_deep_field",
-        "compositor_ssim_srgb": 0.8775
+        "compositor_ssim_srgb": 0.9631
       },
       {
         "image": "immunohistochemistry",
-        "compositor_ssim_srgb": 0.722
+        "compositor_ssim_srgb": 0.9391
       },
       {
         "image": "logo",
-        "compositor_ssim_srgb": 0.8089
+        "compositor_ssim_srgb": 0.9639
       },
       {
         "image": "moon",
-        "compositor_ssim_srgb": 0.8976
+        "compositor_ssim_srgb": 0.9796
       },
       {
         "image": "page",
-        "compositor_ssim_srgb": 0.7514
+        "compositor_ssim_srgb": 0.8944
       },
       {
         "image": "retina",
-        "compositor_ssim_srgb": 0.5949
+        "compositor_ssim_srgb": 0.9776
       },
       {
         "image": "rocket",
-        "compositor_ssim_srgb": 0.7902
+        "compositor_ssim_srgb": 0.9375
       },
       {
         "image": "stereo_motorcycle",
-        "compositor_ssim_srgb": 0.6884
+        "compositor_ssim_srgb": 0.9327
       },
       {
         "image": "text",
-        "compositor_ssim_srgb": 0.7993
+        "compositor_ssim_srgb": 0.9154
       }
     ]
   },
-  "note": "Emitter families, not individual formats, are what separate: gradient-approximating emitters (svg, css) cluster at ~0.75, while the pixel runtime evaluates the splat formula directly and is effectively lossless at ~0.999."
+  "note": "The emitter, not the format family, is what separates. CSS applies the Gaussian as an alpha mask over a solid fill and reaches 0.94; SVG bakes opacity into gradient colour stops and reaches 0.75; the pixel runtime evaluates the formula and is effectively lossless at 0.999. SVG's radialGradient cannot express a mask, so the CSS technique does not transfer to it directly."
 }

@@ -15,10 +15,16 @@ from .export_common import (
     MIN_ELLIPSE_RADIUS_PX,
     _adaptive_gradient_stops,
     _density_aware_stop_error,
+    _gaussian_opacity_curve,
     _sort_splats_for_export,
     _splat_layer,
 )
 from .splat import LAYER_BASE, LAYER_MASS, GaussianSplat
+
+#: Evenly spaced samples of the exact Gaussian opacity curve per CSS splat.
+#: Nine was the value the compositor MVP selected; fewer loses the tail that
+#: alpha-over accumulation depends on, more costs bytes for no measured gain.
+CSS_EXACT_GRADIENT_STOPS = 9
 
 
 def generate_css_splat_html(
@@ -70,9 +76,13 @@ def generate_css_splat_html(
     bg_rgb = tuple(int(np.clip(np.round(channel * 255), 0, 255)) for channel in bg_srgb)
     background_css = f"rgb({bg_rgb[0]},{bg_rgb[1]},{bg_rgb[2]})"
 
+    # CSS composites in DOM order, permanently, so emitting back-to-front is
+    # the difference between a splat stack that accumulates correctly and one
+    # that does not. This mirrors the corrected painter order the SVG exporter
+    # already defaults to.
     ordered_splats = _sort_splats_for_export(splats)
+    ordered_splats.reverse()
     gradient_footprint = ELLIPSE_OVERLAP_BOOST * float(k_sigma)
-    stop_error = _density_aware_stop_error(len(ordered_splats))
 
     def _plane_for(splat: GaussianSplat) -> str:
         layer = _splat_layer(splat)
@@ -95,28 +105,39 @@ def generate_css_splat_html(
         rotation = math.degrees(
             math.atan2(float(eigenvecs[1, 0]), float(eigenvecs[0, 0]))
         )
-        color_srgb = linear_to_srgb(
-            np.clip(np.asarray(splat.color[:3], dtype=np.float32), 0.0, 1.0)
+        # Colour is emitted in linear sRGB and the Gaussian falloff is applied
+        # as an alpha mask over a solid fill, rather than baked into the
+        # gradient's own colour stops. Painting the colour through the gradient
+        # makes the browser interpolate colour and opacity together, which
+        # darkens the skirt of every splat; masking separates them.
+        colour = np.clip(np.asarray(splat.color[:3], dtype=np.float32), 0.0, 1.0)
+        fill = (
+            f"color(srgb-linear {float(colour[0]):.6f} "
+            f"{float(colour[1]):.6f} {float(colour[2]):.6f})"
         )
-        color = tuple(
-            int(np.clip(np.round(channel * 255), 0, 255)) for channel in color_srgb
+
+        # Nine evenly spaced samples of the exact Gaussian opacity curve. The
+        # adaptive placement used previously spends its stop budget where the
+        # curve bends most, which is correct for minimising fitted error but
+        # loses the tail that alpha-over compositing accumulates over hundreds
+        # of overlapping splats.
+        offsets = np.linspace(0.0, 1.0, CSS_EXACT_GRADIENT_STOPS)
+        opacities = _gaussian_opacity_curve(
+            offsets, float(np.clip(splat.alpha, 0.0, 1.0)), gradient_footprint
         )
-        stops = _adaptive_gradient_stops(
-            float(np.clip(splat.alpha, 0.0, 1.0)),
-            gradient_footprint,
-            1.0,
-            max_error=stop_error,
+        mask_stops = ",".join(
+            f"rgba(0,0,0,{float(opacity):.4f}) {float(offset) * 100.0:.2f}%"
+            for offset, opacity in zip(offsets, opacities)
         )
-        gradient = ",".join(
-            f"rgba({color[0]},{color[1]},{color[2]},{opacity:.2f}) {offset * 100:.1f}%"
-            for offset, opacity in stops
-        )
+
         cx, cy = (float(splat.mu[0]), float(splat.mu[1]))
         style = (
             f"left:{cx:.2f}px;top:{cy:.2f}px;"
             f"width:{2.0 * rx:.2f}px;height:{2.0 * ry:.2f}px;"
             f"transform:translate(-50%,-50%) rotate({rotation:.2f}deg);"
-            f"background:radial-gradient(ellipse 50% 50% at center,{gradient})"
+            f"background:{fill};"
+            f"mask-image:radial-gradient(ellipse 50% 50% at center,{mask_stops});"
+            "mask-mode:alpha;mask-repeat:no-repeat"
         )
         return f'<i class="splat" data-splat="{index}" style="{style}"></i>'
 

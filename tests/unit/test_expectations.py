@@ -35,21 +35,25 @@ def test_published_band_is_internally_consistent(fmt: str) -> None:
     assert band.summary
 
 
-def test_gradient_emitters_agree_and_the_runtime_does_not() -> None:
-    """Emitter *family* is what separates, not individual format.
+def test_the_emitter_separates_not_the_format_family() -> None:
+    """What costs fidelity is how the falloff is expressed, not SVG-vs-CSS.
 
-    SVG and CSS both approximate a Gaussian with a radial gradient, and land
-    within a few thousandths of each other. The pixel runtime evaluates the
-    formula instead and is effectively lossless. A consumer choosing between
-    SVG and CSS is choosing on embedding constraints, not fidelity; choosing
-    the runtime over either is worth about a quarter of SSIM.
+    An earlier version of this test asserted that SVG and CSS agree, because
+    both were emitting the Gaussian as opacity baked into gradient colour
+    stops. Once CSS switched to an alpha mask over a solid fill -- so the
+    browser stops interpolating colour and opacity together -- it gained about
+    0.19 median SSIM and left SVG behind on all 21 corpus images.
+
+    SVG's radialGradient cannot express a mask, so the technique does not
+    transfer. The ordering is therefore a property of what each format can say,
+    not of vector-versus-DOM.
     """
     svg = compositor_fidelity("svg")
     css = compositor_fidelity("css")
     runtime = compositor_fidelity("pixel-runtime")
 
-    assert abs(svg.median - css.median) < 0.02, "gradient emitters should agree"
-    assert runtime.median - max(svg.median, css.median) > 0.2
+    assert css.median - svg.median > 0.15, "the mask technique should dominate"
+    assert runtime.median > css.median > svg.median
 
 
 def test_emitters_differ_by_far_more_than_their_own_spread() -> None:
