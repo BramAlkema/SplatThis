@@ -1,59 +1,33 @@
 {
-  "schema": "splatthis.compositor-fidelity/4",
-  "what": "How faithfully a deployed compositor reproduces the SAME splat population that the internal reference renderer draws. Both renders take identical splats, so any difference is the emitter and its runtime, not the fit.",
-  "why": "A consumer that supplies its own splats -- projecting 3D Gaussians through EWA rather than fitting a bitmap -- inherits only this term. It must not budget against source-fidelity numbers, which are dominated by fitting error it does not have.",
+  "schema": "splatthis.fidelity/7",
+  "what": "Two different questions, kept apart because they have very different answers.\n\n`deployed`  -- the emitted artifact against the ORIGINAL image. This is what a user of this tool gets, and it is dominated by fitting error.\n`compositor` -- the emitted artifact against the internal reference render of the SAME splats. This isolates the emitter, and is only the relevant number for a caller that supplies its own splats (projecting 3D Gaussians through EWA, say) and therefore has no fitting error.",
+  "why": "A consumer supplying its own splats -- projecting 3D Gaussians through EWA rather than fitting a bitmap -- inherits only this term, not the fitting error that dominates source-fidelity numbers.",
+  "metrics": "**Read LPIPS. SSIM is published only for continuity and should not be used to judge these artifacts.** On this content SSIM has almost no dynamic range: measured against the reference render of one chameleon population, a 2-pixel Gaussian blur scores 0.9290 and the *source photograph* -- a different image entirely -- scores 0.9053, against 0.9336 for the actual SVG. A flat grey field still scores 0.6373. LPIPS separates the same four cases as 0.1268 / 0.1456 / 0.0411 / 0.9422. This is the blur bias CLAUDE.md warns about, and it is why the project gates on LPIPS.",
   "formats": {
     "svg": {
       "method": {
         "reference": "render_splats_numpy(compositing_space='srgb')",
         "deployed": "Playwright Chromium viewport-clipped PNG screenshot",
         "gradient_quality": "standard",
-        "metric": "ssim_srgb, windowed",
+        "metric": "ssim_srgb (windowed) and LPIPS, both compositor-only",
         "emitted_by": "splatthis.svg_export.save_svg at the current default painter order"
       },
       "corpus_images": 21,
       "expectation": {
-        "ssim_srgb_min": 0.8921,
-        "ssim_srgb_p10": 0.9136,
-        "ssim_srgb_median": 0.9303,
-        "ssim_srgb_max": 0.9815,
-        "content_gradient_correlation": -0.323,
-        "content_dependence": "weak.",
-        "summary": "gradient_quality='standard'. Default. Supersedes an earlier published figure of 0.754, which was measured from stored gate rasters emitted before the corrected painter order became the default -- i.e. an emitter the project no longer ships."
-      }
-    },
-    "pixel-runtime": {
-      "method": {
-        "reference": "render_splats_numpy(compositing_space='linear')",
-        "deployed": "Google Chrome canvas.toDataURL pixel buffer",
-        "metric": "ssim_srgb, windowed"
-      },
-      "corpus_images": 21,
-      "expectation": {
-        "ssim_srgb_min": 0.9988,
-        "ssim_srgb_p10": 0.9989,
-        "ssim_srgb_median": 0.9993,
-        "ssim_srgb_max": 0.9998,
-        "content_gradient_correlation": 0.0,
-        "content_dependence": "none measurable. The runtime evaluates the splat formula directly rather than approximating it, so it is a parity model of the reference renderer.",
-        "summary": "Effectively lossless. Choose this over SVG when fidelity matters more than vector editability; the emitter costs ~0.001 SSIM instead of ~0.25."
-      }
-    },
-    "css": {
-      "method": {
-        "reference": "render_splats_numpy(compositing_space='srgb')",
-        "deployed": "Playwright Chromium capture of the scriptless CSS build",
-        "metric": "ssim_srgb, windowed"
-      },
-      "corpus_images": 21,
-      "expectation": {
-        "ssim_srgb_min": 0.8944,
-        "ssim_srgb_p10": 0.9154,
-        "ssim_srgb_median": 0.9426,
-        "ssim_srgb_max": 0.9925,
-        "content_gradient_correlation": -0.722,
-        "content_dependence": "weak, as for the other emitters.",
-        "summary": "Best declarative target. Emits colour in linear sRGB and applies the Gaussian falloff as an alpha mask over a solid fill, sampling the exact opacity curve at nine stops, so colour and opacity are not interpolated together. Close to the pixel runtime and far ahead of SVG, which cannot express a mask."
+        "primary_metric": "lpips",
+        "deployed": {
+          "lpips_median": 0.2433,
+          "lpips_p90": 0.4619,
+          "ssim_srgb_median": 0.7404,
+          "ssim_srgb_p10": 0.5639,
+          "against": "the original image"
+        },
+        "compositor": {
+          "lpips_median": 0.031,
+          "ssim_srgb_median": 0.9303,
+          "against": "the internal reference render of the same splats"
+        },
+        "summary": "gradient_quality='standard', the default. Mean 3.2 gradient stops per splat at 2-decimal opacity."
       }
     },
     "svg-high": {
@@ -61,374 +35,564 @@
         "reference": "render_splats_numpy(compositing_space='srgb')",
         "deployed": "Playwright Chromium viewport-clipped PNG screenshot",
         "gradient_quality": "high",
-        "metric": "ssim_srgb, windowed",
+        "metric": "ssim_srgb (windowed) and LPIPS, both compositor-only",
         "emitted_by": "splatthis.svg_export.save_svg at the current default painter order"
       },
       "corpus_images": 21,
       "expectation": {
-        "ssim_srgb_min": 0.8991,
-        "ssim_srgb_p10": 0.9247,
-        "ssim_srgb_median": 0.9486,
-        "ssim_srgb_max": 0.9877,
-        "content_gradient_correlation": -0.293,
-        "content_dependence": "weak.",
-        "summary": "gradient_quality='high'. Raises the stop budget from a mean of 3.2 stops per splat to 8.3 and the opacity precision from 2 decimals to 4, for +0.018 median SSIM at 1.74x the bytes. "
+        "primary_metric": "lpips",
+        "deployed": {
+          "lpips_median": 0.2439,
+          "lpips_p90": 0.4532,
+          "ssim_srgb_median": 0.7483,
+          "ssim_srgb_p10": 0.5696,
+          "against": "the original image"
+        },
+        "compositor": {
+          "lpips_median": 0.0181,
+          "ssim_srgb_median": 0.9486,
+          "against": "the internal reference render of the same splats"
+        },
+        "summary": "gradient_quality='high'. Raises the stop budget to a mean of 8.3 per splat and opacity precision to 4 decimals. SSIM calls this +0.018; LPIPS nearly halves, 0.0310 to 0.0181, which is the better description of what changed. Costs 1.74x the bytes."
+      }
+    },
+    "css": {
+      "method": {
+        "reference": "render_splats_numpy(compositing_space='srgb')",
+        "deployed": "Playwright Chromium capture of the scriptless CSS build",
+        "metric": "ssim_srgb (windowed) and LPIPS, both compositor-only",
+        "emitted_by": "splatthis.browser_export.generate_css_splat_html: linear-sRGB solid fill with the Gaussian as a 9-stop exact-sample alpha mask"
+      },
+      "corpus_images": 21,
+      "expectation": {
+        "primary_metric": "lpips",
+        "deployed": {
+          "lpips_median": 0.2429,
+          "lpips_p90": 0.4586,
+          "ssim_srgb_median": 0.7517,
+          "ssim_srgb_p10": 0.5696,
+          "against": "the original image"
+        },
+        "compositor": {
+          "lpips_median": 0.0221,
+          "ssim_srgb_median": 0.9426,
+          "against": "the internal reference render of the same splats"
+        },
+        "summary": "Emits colour in linear sRGB and applies the Gaussian as an alpha mask over a solid fill, sampling the exact opacity curve at nine stops, so the browser never interpolates colour and opacity together."
+      }
+    },
+    "pixel-runtime": {
+      "method": {
+        "reference": "render_splats_numpy(compositing_space='linear')",
+        "deployed": "Google Chrome canvas.toDataURL pixel buffer",
+        "metric": "ssim_srgb (windowed) and LPIPS, both compositor-only"
+      },
+      "corpus_images": 21,
+      "expectation": {
+        "primary_metric": "lpips",
+        "compositor": {
+          "lpips_median": 0.0001,
+          "ssim_srgb_median": 0.9993,
+          "against": "the internal reference render of the same splats"
+        },
+        "deployed": null,
+        "summary": "Evaluates the splat formula rather than approximating it, so it is a parity model of the reference renderer rather than a compositor. Effectively lossless. No deployed figure is published: it was measured from stored captures, not re-emitted from current code, so it has not had the treatment the others have."
       }
     }
-  },
-  "provenance": {
-    "svg_source": "tmp/svg-recipe-gate-chromium/summary.json",
-    "pixel_runtime_source": "result/corpus/results.jsonl (seed 0)",
-    "gate_generated_at": "2026-07-31T17:44:17.704997+00:00",
-    "label_note": "pixel-runtime rows are recorded in the corpus under the historical label 'canvas'. They are the ImageData software renderer, not the native Canvas 2D gradient emitter, which has no published measurement yet.",
-    "subset_warning": "Full populations only. A 7-image slice of the SVG data reports a content correlation of -0.854 against the full population's -0.470.",
-    "css_source": "emitted from result/corpus/runs/*_svg_s0_art populations; no retraining"
   },
   "per_image": {
     "svg": [
       {
         "image": "astronaut",
-        "compositor_ssim_srgb": 0.9461
+        "deployed_lpips": 0.2422,
+        "deployed_ssim_srgb": 0.6896,
+        "compositor_lpips": 0.0265
       },
       {
         "image": "brick",
-        "compositor_ssim_srgb": 0.9303
+        "deployed_lpips": 0.147,
+        "deployed_ssim_srgb": 0.8278,
+        "compositor_lpips": 0.031
       },
       {
         "image": "camera",
-        "compositor_ssim_srgb": 0.9468
+        "deployed_lpips": 0.3278,
+        "deployed_ssim_srgb": 0.7404,
+        "compositor_lpips": 0.0371
       },
       {
         "image": "cell",
-        "compositor_ssim_srgb": 0.9241
+        "deployed_lpips": 0.299,
+        "deployed_ssim_srgb": 0.8852,
+        "compositor_lpips": 0.199
       },
       {
         "image": "chameleon",
-        "compositor_ssim_srgb": 0.9336
+        "deployed_lpips": 0.1672,
+        "deployed_ssim_srgb": 0.8494,
+        "compositor_lpips": 0.0411
       },
       {
         "image": "checkerboard",
-        "compositor_ssim_srgb": 0.9363
+        "deployed_lpips": 0.1733,
+        "deployed_ssim_srgb": 0.6064,
+        "compositor_lpips": 0.0211
       },
       {
         "image": "chelsea",
-        "compositor_ssim_srgb": 0.9136
+        "deployed_lpips": 0.2459,
+        "deployed_ssim_srgb": 0.7805,
+        "compositor_lpips": 0.045
       },
       {
         "image": "coffee",
-        "compositor_ssim_srgb": 0.9149
+        "deployed_lpips": 0.2349,
+        "deployed_ssim_srgb": 0.6963,
+        "compositor_lpips": 0.0251
       },
       {
         "image": "coins",
-        "compositor_ssim_srgb": 0.9274
+        "deployed_lpips": 0.2433,
+        "deployed_ssim_srgb": 0.6935,
+        "compositor_lpips": 0.0225
       },
       {
         "image": "colorwheel",
-        "compositor_ssim_srgb": 0.9815
+        "deployed_lpips": 0.0155,
+        "deployed_ssim_srgb": 0.9463,
+        "compositor_lpips": 0.0065
       },
       {
         "image": "grass",
-        "compositor_ssim_srgb": 0.915
+        "deployed_lpips": 0.5114,
+        "deployed_ssim_srgb": 0.4267,
+        "compositor_lpips": 0.0293
       },
       {
         "image": "gravel",
-        "compositor_ssim_srgb": 0.935
+        "deployed_lpips": 0.5403,
+        "deployed_ssim_srgb": 0.3938,
+        "compositor_lpips": 0.0393
       },
       {
         "image": "hubble_deep_field",
-        "compositor_ssim_srgb": 0.9518
+        "deployed_lpips": 0.4402,
+        "deployed_ssim_srgb": 0.5639,
+        "compositor_lpips": 0.0307
       },
       {
         "image": "immunohistochemistry",
-        "compositor_ssim_srgb": 0.9284
+        "deployed_lpips": 0.4078,
+        "deployed_ssim_srgb": 0.6192,
+        "compositor_lpips": 0.0385
       },
       {
         "image": "logo",
-        "compositor_ssim_srgb": 0.9477
+        "deployed_lpips": 0.0863,
+        "deployed_ssim_srgb": 0.8885,
+        "compositor_lpips": 0.0182
       },
       {
         "image": "moon",
-        "compositor_ssim_srgb": 0.9426
+        "deployed_lpips": 0.2404,
+        "deployed_ssim_srgb": 0.8831,
+        "compositor_lpips": 0.0729
       },
       {
         "image": "page",
-        "compositor_ssim_srgb": 0.8994
+        "deployed_lpips": 0.4619,
+        "deployed_ssim_srgb": 0.6523,
+        "compositor_lpips": 0.0512
       },
       {
         "image": "retina",
-        "compositor_ssim_srgb": 0.9535
+        "deployed_lpips": 0.3704,
+        "deployed_ssim_srgb": 0.7881,
+        "compositor_lpips": 0.0489
       },
       {
         "image": "rocket",
-        "compositor_ssim_srgb": 0.8921
+        "deployed_lpips": 0.2136,
+        "deployed_ssim_srgb": 0.796,
+        "compositor_lpips": 0.0463
       },
       {
         "image": "stereo_motorcycle",
-        "compositor_ssim_srgb": 0.9245
+        "deployed_lpips": 0.309,
+        "deployed_ssim_srgb": 0.6644,
+        "compositor_lpips": 0.0292
       },
       {
         "image": "text",
-        "compositor_ssim_srgb": 0.9143
-      }
-    ],
-    "pixel-runtime": [
-      {
-        "image": "astronaut",
-        "compositor_ssim_srgb": 0.9993
-      },
-      {
-        "image": "brick",
-        "compositor_ssim_srgb": 0.9993
-      },
-      {
-        "image": "camera",
-        "compositor_ssim_srgb": 0.999
-      },
-      {
-        "image": "cell",
-        "compositor_ssim_srgb": 0.9988
-      },
-      {
-        "image": "chameleon",
-        "compositor_ssim_srgb": 0.9991
-      },
-      {
-        "image": "checkerboard",
-        "compositor_ssim_srgb": 0.9996
-      },
-      {
-        "image": "chelsea",
-        "compositor_ssim_srgb": 0.9994
-      },
-      {
-        "image": "coffee",
-        "compositor_ssim_srgb": 0.9992
-      },
-      {
-        "image": "coins",
-        "compositor_ssim_srgb": 0.9993
-      },
-      {
-        "image": "colorwheel",
-        "compositor_ssim_srgb": 0.9991
-      },
-      {
-        "image": "grass",
-        "compositor_ssim_srgb": 0.9998
-      },
-      {
-        "image": "gravel",
-        "compositor_ssim_srgb": 0.9998
-      },
-      {
-        "image": "hubble_deep_field",
-        "compositor_ssim_srgb": 0.999
-      },
-      {
-        "image": "immunohistochemistry",
-        "compositor_ssim_srgb": 0.9995
-      },
-      {
-        "image": "logo",
-        "compositor_ssim_srgb": 0.9993
-      },
-      {
-        "image": "moon",
-        "compositor_ssim_srgb": 0.9988
-      },
-      {
-        "image": "page",
-        "compositor_ssim_srgb": 0.9994
-      },
-      {
-        "image": "retina",
-        "compositor_ssim_srgb": 0.999
-      },
-      {
-        "image": "rocket",
-        "compositor_ssim_srgb": 0.9989
-      },
-      {
-        "image": "stereo_motorcycle",
-        "compositor_ssim_srgb": 0.9995
-      },
-      {
-        "image": "text",
-        "compositor_ssim_srgb": 0.9993
-      }
-    ],
-    "css": [
-      {
-        "image": "astronaut",
-        "compositor_ssim_srgb": 0.9583
-      },
-      {
-        "image": "brick",
-        "compositor_ssim_srgb": 0.9426
-      },
-      {
-        "image": "camera",
-        "compositor_ssim_srgb": 0.9623
-      },
-      {
-        "image": "cell",
-        "compositor_ssim_srgb": 0.9817
-      },
-      {
-        "image": "chameleon",
-        "compositor_ssim_srgb": 0.9598
-      },
-      {
-        "image": "checkerboard",
-        "compositor_ssim_srgb": 0.9329
-      },
-      {
-        "image": "chelsea",
-        "compositor_ssim_srgb": 0.9389
-      },
-      {
-        "image": "coffee",
-        "compositor_ssim_srgb": 0.935
-      },
-      {
-        "image": "coins",
-        "compositor_ssim_srgb": 0.9405
-      },
-      {
-        "image": "colorwheel",
-        "compositor_ssim_srgb": 0.9925
-      },
-      {
-        "image": "grass",
-        "compositor_ssim_srgb": 0.9053
-      },
-      {
-        "image": "gravel",
-        "compositor_ssim_srgb": 0.9453
-      },
-      {
-        "image": "hubble_deep_field",
-        "compositor_ssim_srgb": 0.9631
-      },
-      {
-        "image": "immunohistochemistry",
-        "compositor_ssim_srgb": 0.9391
-      },
-      {
-        "image": "logo",
-        "compositor_ssim_srgb": 0.9639
-      },
-      {
-        "image": "moon",
-        "compositor_ssim_srgb": 0.9796
-      },
-      {
-        "image": "page",
-        "compositor_ssim_srgb": 0.8944
-      },
-      {
-        "image": "retina",
-        "compositor_ssim_srgb": 0.9776
-      },
-      {
-        "image": "rocket",
-        "compositor_ssim_srgb": 0.9375
-      },
-      {
-        "image": "stereo_motorcycle",
-        "compositor_ssim_srgb": 0.9327
-      },
-      {
-        "image": "text",
-        "compositor_ssim_srgb": 0.9154
+        "deployed_lpips": 0.1287,
+        "deployed_ssim_srgb": 0.8214,
+        "compositor_lpips": 0.026
       }
     ],
     "svg-high": [
       {
         "image": "astronaut",
-        "compositor_ssim_srgb": 0.9626
+        "deployed_lpips": 0.2326,
+        "deployed_ssim_srgb": 0.7022,
+        "compositor_lpips": 0.012
       },
       {
         "image": "brick",
-        "compositor_ssim_srgb": 0.9367
+        "deployed_lpips": 0.1401,
+        "deployed_ssim_srgb": 0.841,
+        "compositor_lpips": 0.0232
       },
       {
         "image": "camera",
-        "compositor_ssim_srgb": 0.956
+        "deployed_lpips": 0.3198,
+        "deployed_ssim_srgb": 0.7483,
+        "compositor_lpips": 0.0228
       },
       {
         "image": "cell",
-        "compositor_ssim_srgb": 0.9409
+        "deployed_lpips": 0.2645,
+        "deployed_ssim_srgb": 0.9016,
+        "compositor_lpips": 0.1273
       },
       {
         "image": "chameleon",
-        "compositor_ssim_srgb": 0.9521
+        "deployed_lpips": 0.1491,
+        "deployed_ssim_srgb": 0.8665,
+        "compositor_lpips": 0.0181
       },
       {
         "image": "checkerboard",
-        "compositor_ssim_srgb": 0.9402
+        "deployed_lpips": 0.1557,
+        "deployed_ssim_srgb": 0.6132,
+        "compositor_lpips": 0.0174
       },
       {
         "image": "chelsea",
-        "compositor_ssim_srgb": 0.9381
+        "deployed_lpips": 0.2447,
+        "deployed_ssim_srgb": 0.8047,
+        "compositor_lpips": 0.0176
       },
       {
         "image": "coffee",
-        "compositor_ssim_srgb": 0.9281
+        "deployed_lpips": 0.2337,
+        "deployed_ssim_srgb": 0.7038,
+        "compositor_lpips": 0.0128
       },
       {
         "image": "coins",
-        "compositor_ssim_srgb": 0.9486
+        "deployed_lpips": 0.2439,
+        "deployed_ssim_srgb": 0.7111,
+        "compositor_lpips": 0.0129
       },
       {
         "image": "colorwheel",
-        "compositor_ssim_srgb": 0.9877
+        "deployed_lpips": 0.0127,
+        "deployed_ssim_srgb": 0.9501,
+        "compositor_lpips": 0.0038
       },
       {
         "image": "grass",
-        "compositor_ssim_srgb": 0.9299
+        "deployed_lpips": 0.5223,
+        "deployed_ssim_srgb": 0.4375,
+        "compositor_lpips": 0.0197
       },
       {
         "image": "gravel",
-        "compositor_ssim_srgb": 0.9537
+        "deployed_lpips": 0.5523,
+        "deployed_ssim_srgb": 0.4189,
+        "compositor_lpips": 0.0164
       },
       {
         "image": "hubble_deep_field",
-        "compositor_ssim_srgb": 0.9593
+        "deployed_lpips": 0.4276,
+        "deployed_ssim_srgb": 0.5696,
+        "compositor_lpips": 0.0214
       },
       {
         "image": "immunohistochemistry",
-        "compositor_ssim_srgb": 0.9541
+        "deployed_lpips": 0.4169,
+        "deployed_ssim_srgb": 0.6447,
+        "compositor_lpips": 0.0123
       },
       {
         "image": "logo",
-        "compositor_ssim_srgb": 0.9645
+        "deployed_lpips": 0.0789,
+        "deployed_ssim_srgb": 0.8956,
+        "compositor_lpips": 0.0079
       },
       {
         "image": "moon",
-        "compositor_ssim_srgb": 0.9525
+        "deployed_lpips": 0.2351,
+        "deployed_ssim_srgb": 0.8924,
+        "compositor_lpips": 0.054
       },
       {
         "image": "page",
-        "compositor_ssim_srgb": 0.9099
+        "deployed_lpips": 0.4532,
+        "deployed_ssim_srgb": 0.6637,
+        "compositor_lpips": 0.0457
       },
       {
         "image": "retina",
-        "compositor_ssim_srgb": 0.9686
+        "deployed_lpips": 0.3616,
+        "deployed_ssim_srgb": 0.7987,
+        "compositor_lpips": 0.0208
       },
       {
         "image": "rocket",
-        "compositor_ssim_srgb": 0.8991
+        "deployed_lpips": 0.1896,
+        "deployed_ssim_srgb": 0.8013,
+        "compositor_lpips": 0.0314
       },
       {
         "image": "stereo_motorcycle",
-        "compositor_ssim_srgb": 0.9412
+        "deployed_lpips": 0.3127,
+        "deployed_ssim_srgb": 0.6786,
+        "compositor_lpips": 0.0161
       },
       {
         "image": "text",
-        "compositor_ssim_srgb": 0.9247
+        "deployed_lpips": 0.1267,
+        "deployed_ssim_srgb": 0.8316,
+        "compositor_lpips": 0.0204
+      }
+    ],
+    "css": [
+      {
+        "image": "astronaut",
+        "deployed_lpips": 0.2351,
+        "deployed_ssim_srgb": 0.7016,
+        "compositor_lpips": 0.0162
+      },
+      {
+        "image": "brick",
+        "deployed_lpips": 0.1388,
+        "deployed_ssim_srgb": 0.8445,
+        "compositor_lpips": 0.0264
+      },
+      {
+        "image": "camera",
+        "deployed_lpips": 0.3143,
+        "deployed_ssim_srgb": 0.7517,
+        "compositor_lpips": 0.0248
+      },
+      {
+        "image": "cell",
+        "deployed_lpips": 0.2568,
+        "deployed_ssim_srgb": 0.9389,
+        "compositor_lpips": 0.1355
+      },
+      {
+        "image": "chameleon",
+        "deployed_lpips": 0.1456,
+        "deployed_ssim_srgb": 0.8748,
+        "compositor_lpips": 0.015
+      },
+      {
+        "image": "checkerboard",
+        "deployed_lpips": 0.1614,
+        "deployed_ssim_srgb": 0.612,
+        "compositor_lpips": 0.0221
+      },
+      {
+        "image": "chelsea",
+        "deployed_lpips": 0.252,
+        "deployed_ssim_srgb": 0.8052,
+        "compositor_lpips": 0.0183
+      },
+      {
+        "image": "coffee",
+        "deployed_lpips": 0.2386,
+        "deployed_ssim_srgb": 0.7077,
+        "compositor_lpips": 0.0141
+      },
+      {
+        "image": "coins",
+        "deployed_lpips": 0.2429,
+        "deployed_ssim_srgb": 0.7059,
+        "compositor_lpips": 0.0164
+      },
+      {
+        "image": "colorwheel",
+        "deployed_lpips": 0.0122,
+        "deployed_ssim_srgb": 0.9554,
+        "compositor_lpips": 0.0033
+      },
+      {
+        "image": "grass",
+        "deployed_lpips": 0.5222,
+        "deployed_ssim_srgb": 0.4258,
+        "compositor_lpips": 0.0268
+      },
+      {
+        "image": "gravel",
+        "deployed_lpips": 0.547,
+        "deployed_ssim_srgb": 0.4131,
+        "compositor_lpips": 0.0221
+      },
+      {
+        "image": "hubble_deep_field",
+        "deployed_lpips": 0.4271,
+        "deployed_ssim_srgb": 0.5696,
+        "compositor_lpips": 0.0258
+      },
+      {
+        "image": "immunohistochemistry",
+        "deployed_lpips": 0.4226,
+        "deployed_ssim_srgb": 0.6329,
+        "compositor_lpips": 0.017
+      },
+      {
+        "image": "logo",
+        "deployed_lpips": 0.0823,
+        "deployed_ssim_srgb": 0.8969,
+        "compositor_lpips": 0.0092
+      },
+      {
+        "image": "moon",
+        "deployed_lpips": 0.2114,
+        "deployed_ssim_srgb": 0.9166,
+        "compositor_lpips": 0.0587
+      },
+      {
+        "image": "page",
+        "deployed_lpips": 0.4586,
+        "deployed_ssim_srgb": 0.653,
+        "compositor_lpips": 0.0487
+      },
+      {
+        "image": "retina",
+        "deployed_lpips": 0.3651,
+        "deployed_ssim_srgb": 0.8051,
+        "compositor_lpips": 0.0165
+      },
+      {
+        "image": "rocket",
+        "deployed_lpips": 0.1856,
+        "deployed_ssim_srgb": 0.8335,
+        "compositor_lpips": 0.0288
+      },
+      {
+        "image": "stereo_motorcycle",
+        "deployed_lpips": 0.3149,
+        "deployed_ssim_srgb": 0.6735,
+        "compositor_lpips": 0.0219
+      },
+      {
+        "image": "text",
+        "deployed_lpips": 0.1337,
+        "deployed_ssim_srgb": 0.8201,
+        "compositor_lpips": 0.0288
+      }
+    ],
+    "pixel-runtime": [
+      {
+        "image": "astronaut",
+        "ssim_srgb": 0.9993,
+        "lpips": 0.0001
+      },
+      {
+        "image": "brick",
+        "ssim_srgb": 0.9993,
+        "lpips": 0.0001
+      },
+      {
+        "image": "camera",
+        "ssim_srgb": 0.999,
+        "lpips": 0.0005
+      },
+      {
+        "image": "cell",
+        "ssim_srgb": 0.9988,
+        "lpips": 0.001
+      },
+      {
+        "image": "chameleon",
+        "ssim_srgb": 0.9991,
+        "lpips": 0.0001
+      },
+      {
+        "image": "checkerboard",
+        "ssim_srgb": 0.9996,
+        "lpips": 0.0
+      },
+      {
+        "image": "chelsea",
+        "ssim_srgb": 0.9994,
+        "lpips": 0.0001
+      },
+      {
+        "image": "coffee",
+        "ssim_srgb": 0.9992,
+        "lpips": 0.0
+      },
+      {
+        "image": "coins",
+        "ssim_srgb": 0.9993,
+        "lpips": 0.0
+      },
+      {
+        "image": "colorwheel",
+        "ssim_srgb": 0.9991,
+        "lpips": 0.0001
+      },
+      {
+        "image": "grass",
+        "ssim_srgb": 0.9998,
+        "lpips": 0.0
+      },
+      {
+        "image": "gravel",
+        "ssim_srgb": 0.9998,
+        "lpips": 0.0
+      },
+      {
+        "image": "hubble_deep_field",
+        "ssim_srgb": 0.999,
+        "lpips": 0.0001
+      },
+      {
+        "image": "immunohistochemistry",
+        "ssim_srgb": 0.9995,
+        "lpips": 0.0
+      },
+      {
+        "image": "logo",
+        "ssim_srgb": 0.9993,
+        "lpips": 0.0
+      },
+      {
+        "image": "moon",
+        "ssim_srgb": 0.9988,
+        "lpips": 0.0013
+      },
+      {
+        "image": "page",
+        "ssim_srgb": 0.9994,
+        "lpips": 0.0002
+      },
+      {
+        "image": "retina",
+        "ssim_srgb": 0.999,
+        "lpips": 0.0001
+      },
+      {
+        "image": "rocket",
+        "ssim_srgb": 0.9989,
+        "lpips": 0.0001
+      },
+      {
+        "image": "stereo_motorcycle",
+        "ssim_srgb": 0.9995,
+        "lpips": 0.0
+      },
+      {
+        "image": "text",
+        "ssim_srgb": 0.9993,
+        "lpips": 0.0001
       }
     ]
   },
-  "note": "All figures are emitted by the current shipped code, not read from stored rasters. Stored artifacts carry the configuration of the run that made them, and an earlier version of this file published a legacy-painter-order number as if it were the default emitter's."
+  "note": "All declarative-emitter figures (svg, svg-high, css) are emitted by the current shipped code, not read from stored rasters; pixel-runtime is the stated exception, measured from stored captures and publishing no deployed expectation for that reason. Stored artifacts carry the configuration of the run that made them, and an earlier version of this file published a legacy-painter-order number as if it were the default emitter's. An earlier version of this file led with SSIM, which was wrong: the figures it published for SVG were indistinguishable from those a 2-pixel blur or an unrelated photograph would earn.",
+  "headline": "Against the original, the declarative emitters are indistinguishable: median LPIPS 0.2433 / 0.2439 / 0.2429 for svg / svg-high / css, a spread of 0.001, and an SSIM spread of 0.011 that sits below the 0.029 seed noise floor. Emitter choice is not where deployed quality comes from; the fit is. Compositor-only figures make the emitters look far more different than they are, and must not be quoted as quality."
 }
