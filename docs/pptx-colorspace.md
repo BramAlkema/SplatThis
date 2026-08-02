@@ -54,3 +54,23 @@ from the captured swatches themselves.
 - **The DrawingML skirt-washing remains real** regardless: `gradFill` cannot
   separate color from alpha the way the CSS mask does, so a residual gap to
   the browser targets is expected even after both fixes.
+
+## Postscript: the fix landed (same day)
+
+The capture path now converts every screenshot through its embedded ICC
+profile to sRGB before cropping (`tools/full_corpus_mvp._screen_to_srgb`),
+and the whole corpus was re-captured and re-scored under the corrected
+protocol. Probe calibration swatches read pure (255, 0, 0) / (0, 255, 0)
+afterwards, and all three compositor verdicts held with sharper separation.
+
+Two sobering follow-ups. The headline PPTX medians barely moved (SSIM
+0.6279 unchanged, LPIPS 0.3200 -> 0.3212): the bias lived in the color axis
+that SSIM and LPIPS mostly ignore, so the published quality story survives,
+and color metrics are now fair. And the sRGB-training MVP, re-scored on
+unbiased captures, reproduced its split verdict almost exactly -- so the
+linear training default stays, chosen on clean evidence. Note the probe's
+linear-gradient verdict concerns *color* ramps; this project's splats are
+constant-color with alpha ramps, so the compositing-space story does not by
+itself explain the remaining per-image differences between proxies. That
+residue -- stop quantization, rasterization, and fit interaction -- is the
+open question a future PPTX proxy should target.

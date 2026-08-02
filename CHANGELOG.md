@@ -25,6 +25,15 @@ All notable changes to SplatThis are documented here.
   0.2.5-era imports survive the rename (the field set still changed with the
   deployed/compositor split).
 
+- **PowerPoint captures are now color-managed, and the fix moved nothing it
+  shouldn't.** The capture path converts every screenshot through its
+  embedded ICC profile to sRGB (macOS records Display P3; the primaries of
+  every prior PowerPoint score were desaturated). The corpus was re-captured
+  and re-scored under the corrected protocol: headline medians held (SSIM
+  0.6279, LPIPS 0.3212) because the bias lived in the color axis, and the
+  sRGB-training experiment reproduced its split verdict on clean data -- so
+  the linear training default stays, now chosen on unbiased evidence.
+
 - **PowerPoint's color space is measured, and it is a hybrid.** A synthetic
   probe deck captured in real PowerPoint (`tools/pptx_colorspace_probe.py`)
   shows gradFill color ramps interpolating in linear light (opposite of

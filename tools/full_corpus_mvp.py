@@ -178,6 +178,28 @@ def run_mixed(
             print(f"done ({elapsed:.1f}s)")
 
 
+def _screen_to_srgb(image):
+    """Decode a macOS screenshot into sRGB via its embedded display profile.
+
+    screencapture records the display framebuffer (Display P3 on modern
+    Macs) and tags the PNG with that profile. Reading the raw numbers as
+    sRGB desaturates every primary -- FF0000 comes back as (234, 51, 35),
+    measured in docs/pptx-colorspace.md -- so the screenshot is converted
+    to sRGB here, once, before any cropping or scoring.
+    """
+    icc = image.info.get("icc_profile")
+    if not icc:
+        return image
+    import io as _io
+
+    from PIL import ImageCms
+
+    source_profile = ImageCms.ImageCmsProfile(_io.BytesIO(icc))
+    return ImageCms.profileToProfile(
+        image.convert("RGB"), source_profile, ImageCms.createProfile("sRGB")
+    )
+
+
 def _capture_powerpoint_slideshow(
     pptx: Path,
     output: Path,
@@ -351,7 +373,8 @@ end timeout
     if capture.returncode or not screen.exists():
         return int(capture.returncode or 1), messages
 
-    with Image.open(screen) as image:
+    with Image.open(screen) as raw_screen:
+        image = _screen_to_srgb(raw_screen)
         crop_box = _powerpoint_slide_crop_box(
             image.size,
             window_bounds,

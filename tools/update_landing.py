@@ -182,8 +182,20 @@ def pptx_fragment() -> str:
     for asset in (PPTX_DECK, PPTX_CAPTURE):
         if not asset.is_file():
             raise TOOL.LedgerError(f"missing demo asset: {asset.relative_to(REPO)}")
+    import json as _json
+
     row = _pptx_chameleon(TOOL._load_json(TOOL.PPTX_CORPUS))
-    corrected = row["corrected_order"]
+    ppt_rows = {
+        r["image"]: r
+        for r in (
+            _json.loads(line)
+            for line in (TOOL.RESULTS.with_name("powerpoint_results.jsonl"))
+            .read_text(encoding="utf-8")
+            .splitlines()
+            if line
+        )
+    }
+    fresh = ppt_rows["chameleon"]
     size_kb = PPTX_DECK.stat().st_size / 1024
     return (
         "  <figure>\n"
@@ -191,8 +203,8 @@ def pptx_fragment() -> str:
         'alt="Real Microsoft PowerPoint slideshow capture of the deck">\n'
         f"    <figcaption><strong>PowerPoint</strong> · "
         f"{row['splats']:,} native DrawingML shapes · back-to-front build "
-        f"(default) · SSIM {corrected['ssim_srgb']:.4f} · LPIPS "
-        f"{corrected['lpips']:.4f} · {size_kb:.0f} KB deck</figcaption>\n"
+        f"(default) · SSIM {fresh['ssim_srgb']:.4f} · LPIPS "
+        f"{fresh['lpips']:.4f} · {size_kb:.0f} KB deck</figcaption>\n"
         "  </figure>"
     )
 
