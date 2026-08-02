@@ -114,7 +114,44 @@ the steps itself. Until that lands, rings are a visually clean, exactly
 modelable alternative that wins dark-sparse and text-like content but does
 not yet beat the gradient on aggregate.
 
-## Next steps
+## Verdict: closed, negative on cost
+
+Ring-aware training works. Fine-tuning the chameleon population for 300
+iterations against the exact feathered ring composite -- warm-started from
+the gradient-trained population -- produced the first ring deck to beat the
+gradient baseline, and it is contour-free on inspection:
+
+| chameleon, real PowerPoint | SSIM | LPIPS | ΔE mean |
+|---|---:|---:|---:|
+| gradient (shipping default) | 0.8395 | 0.2075 | 0.0568 |
+| rings, untrained | 0.8204 | 0.2288 | 0.0589 |
+| rings + ring-aware training | **0.8457** | **0.1962** | **0.0297** |
+
+The colour error nearly halves, which is exactly the axis the original
+"less vibrant" observation was about. But the structural gain is small --
++0.006 SSIM sits well under the 0.029 seed noise floor and is not claimable
+-- and the cost is decisive:
+
+| | gradient | rings + training |
+|---|---:|---:|
+| PowerPoint open + render | 4.1 s | **34.0 s** |
+| deck size | 161 KB | 522 KB |
+| shapes | 1,675 | 13,393 |
+| fitting | ~7 min | ~7 + 25 min |
+
+Thirty-four seconds to open a single slide, measured twice warm, makes the
+deck unusable for a format whose entire proposition is native editable
+shapes. Per shape the rings are actually cheaper than gradients (0.038 vs
+0.096 KB, since a solid fill is far less XML than an eight-stop gradient),
+but eight times as many of them still triples the deck and erodes PPTX's
+advantage over SVG from 5.5x to 1.7x.
+
+The structural obstacle is that quality and cost share one knob. K=8 is what
+it takes to remove the banding; cost is linear in K; K=4 restores the
+contours at 17 s. No K satisfies both, so the line is closed rather than
+parked. The colour result is the part worth recovering by other means.
+
+## Next steps (not scheduled)
 
 1. Alpha-quantile radii: place rings at equal alpha steps, so the banding
    energy is spread evenly instead of concentrated in the outer contours.
@@ -127,3 +164,9 @@ not yet beat the gradient on aggregate.
 4. Full-corpus comparison at the winning configuration, judged by the
    standard real-PowerPoint pass **and a side-by-side eyeball**, before any
    `--pptx-splat-style rings` default discussion.
+
+None of these are scheduled: they all raise or hold the shape count, which
+is the binding constraint. A cheaper route to the colour gain -- the part of
+this result that survives -- would have to work at the current shape budget,
+and identifying the ~0.079 unexplained floor (above) is the better next
+question.
