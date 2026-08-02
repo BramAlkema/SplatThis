@@ -227,7 +227,10 @@ PAGE_FOOT = """
   const fitFrames = () => {
     document.querySelectorAll(".fitframe").forEach((box) => {
       const frame = box.querySelector("iframe");
-      if (frame) frame.style.transform = `scale(${box.clientWidth / box.dataset.w})`;
+      if (!frame) return;
+      const s = box.clientWidth / box.dataset.w;
+      const ox = box.dataset.ox || 0, oy = box.dataset.oy || 0;
+      frame.style.transform = `scale(${s}) translate(${-ox}px, ${-oy}px)`;
     });
   };
   addEventListener("resize", fitFrames);
@@ -292,8 +295,9 @@ def build_index(registry: Dict[str, Any]) -> str:
             f"{_lf_kb(assets['source']):,.0f} KB</figcaption>\n"
             f"  </figure>\n"
             f"  <figure>\n"
-            f'    <div class="fitframe" data-w="{frame_w}" data-h="{frame_h}" '
-            f'style="aspect-ratio:{frame_w}/{frame_h};background:#111">\n'
+            f'    <div class="fitframe" data-w="{width}" data-h="{height}" '
+            f'data-ox="{RUNTIME_PAD_W // 2}" data-oy="{RUNTIME_PAD_W // 2}" '
+            f'style="aspect-ratio:{width}/{height};background:#111">\n'
             f'      <iframe src="runtime/{image}.html" width="{frame_w}" '
             f'height="{frame_h}" loading="lazy" '
             f'title="{image} scripted pixel runtime, live"></iframe>\n'
