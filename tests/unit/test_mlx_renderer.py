@@ -180,7 +180,7 @@ def _render_mlx(
     blend_mode: str = "alpha-over",
     compositing_space: str = "linear",
     max_active_splats_per_tile: Optional[int] = None,
-    pptx_softedge_mode: bool = False,
+    pptx_proxy: str = "none",
     normalized_top_k: int = 10,
 ) -> np.ndarray:
     import mlx.core as mx
@@ -195,7 +195,7 @@ def _render_mlx(
         background_color=BACKGROUND,
         compositing_space=compositing_space,
         max_active_splats_per_tile=max_active_splats_per_tile,
-        pptx_softedge_mode=pptx_softedge_mode,
+        pptx_proxy=pptx_proxy,
     )
     table = splats_to_numpy_table(list(splats))
     image = renderer.render(table, plan=renderer.build_plan(table))
@@ -330,7 +330,7 @@ def test_mlx_pptx_softedge_mode_matches_torch_proxy_renderer() -> None:
         blend_mode="alpha-over",
         background_color=BACKGROUND,
         compositing_space="srgb",
-        pptx_softedge_mode=True,
+        pptx_proxy="softedge",
     )
     # The MLX defaults must line up with the converter proxy defaults, or the
     # parity below would silently compare different soft-edge transforms.
@@ -380,7 +380,7 @@ def test_mlx_pptx_gradient_mode_matches_torch_proxy_renderer() -> None:
         blend_mode="alpha-over",
         background_color=BACKGROUND,
         compositing_space="srgb",
-        pptx_gradient_mode=True,
+        pptx_proxy="gradient",
     )
     assert mlx_renderer.pptx_gradient_alpha_scale == pytest.approx(proxy.alpha_scale)
 

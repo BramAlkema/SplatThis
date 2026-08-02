@@ -12,7 +12,7 @@ from typing import Any, Optional, Sequence, Union
 import numpy as np
 import numpy.typing as npt
 
-from .export_common import PPTX_GRADIENT_ALPHA_SCALE
+from .export_common import PPTX_GRADIENT_ALPHA_SCALE, PPTX_PROXY_MODES
 from .mlx_runtime import is_mlx_available, require_mlx
 from .splat import GaussianSplat, render_importance_for_raw
 
@@ -116,9 +116,8 @@ class MlxBatchedGaussianRenderer:
         culling_sigma: float = 3.0,
         max_active_splats_per_tile: Optional[int] = None,
         compositing_space: str = "linear",
-        pptx_softedge_mode: bool = False,
+        pptx_proxy: str = "none",
         pptx_alpha_scale: float = 0.25,
-        pptx_gradient_mode: bool = False,
         pptx_gradient_alpha_scale: float = PPTX_GRADIENT_ALPHA_SCALE,
         pptx_sigma_scale: float = 0.92,
     ):
@@ -137,12 +136,16 @@ class MlxBatchedGaussianRenderer:
         # PPTX soft-edge proxy: mirror _PPTXSoftEdgeProxyRenderer in
         # converter.py. PowerPoint renders ellipses brighter and slightly
         # softer than a true Gaussian; without this transform a PPTX export
-        # of the trained splats looks washed out. With pptx_softedge_mode=True,
+        # of the trained splats looks washed out. With pptx_proxy="softedge",
         # render() applies sigma *= pptx_sigma_scale and rewrites alpha to the
         # value that produces center_opacity = (1 - exp(-alpha)) * pptx_alpha_scale.
-        self.pptx_softedge_mode = bool(pptx_softedge_mode)
+        if pptx_proxy not in PPTX_PROXY_MODES:
+            raise ValueError(
+                f"Unsupported pptx proxy mode: {pptx_proxy!r}; "
+                f"expected one of {', '.join(sorted(PPTX_PROXY_MODES))}"
+            )
+        self.pptx_proxy = pptx_proxy
         self.pptx_alpha_scale = float(np.clip(pptx_alpha_scale, 1e-4, 1.0))
-        self.pptx_gradient_mode = bool(pptx_gradient_mode)
         self.pptx_gradient_alpha_scale = float(
             np.clip(pptx_gradient_alpha_scale, 1e-4, 1.0)
         )
@@ -186,11 +189,13 @@ class MlxBatchedGaussianRenderer:
         order_np = np.argsort(table_np[:, 10], kind="stable").astype(np.int32)
         sorted_table = table_np[order_np]
 
-        # In pptx_softedge_mode the render-time transform scales sigma by
+        # With the soft-edge proxy the render-time transform scales sigma by
         # pptx_sigma_scale AFTER planning, so the culling radius must account
         # for it here or scales > 1 under-cull and clip splat footprints.
+        # Only the soft-edge proxy rescales sigma; the gradient proxy
+        # touches alpha alone, so its footprint needs no plan padding.
         sigma_plan_scale = (
-            float(self.pptx_sigma_scale) if self.pptx_softedge_mode else 1.0
+            float(self.pptx_sigma_scale) if self.pptx_proxy == "softedge" else 1.0
         )
         radius = (
             self.culling_sigma
@@ -339,7 +344,7 @@ class MlxBatchedGaussianRenderer:
         sRGB->linear so external interfaces stay linear-RGB. Mirrors the
         torch path in renderer.py:305-317.
 
-        In pptx_softedge_mode=True the table is first run through the
+        With pptx_proxy="softedge" the table is first run through the
         sigma/alpha proxy transform that mirrors PowerPoint's soft-edge
         rendering; see _apply_pptx_softedge_transform.
         """
@@ -349,9 +354,9 @@ class MlxBatchedGaussianRenderer:
         if plan is None:
             plan = self.build_plan(table)
 
-        if self.pptx_softedge_mode:
+        if self.pptx_proxy == "softedge":
             table_mx = self._apply_pptx_softedge_transform(table_mx)
-        if self.pptx_gradient_mode:
+        elif self.pptx_proxy == "gradient":
             table_mx = self._apply_pptx_gradient_transform(table_mx)
 
         srgb_mode = self.compositing_space == "srgb"

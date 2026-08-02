@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import numpy.typing as npt
 
+from .export_common import PPTX_GRADIENT_ALPHA_SCALE
 from .mlx_losses import MlxLossConfig, make_loss_fn
 from .mlx_optimizer import (
     MlxSplatParams,
@@ -45,11 +46,10 @@ class MlxRendererConfig:
     culling_sigma: float = 3.0
     max_active_splats_per_tile: Optional[int] = None
     compositing_space: str = "linear"
-    pptx_softedge_mode: bool = False
+    pptx_proxy: str = "none"
     pptx_alpha_scale: float = 0.25
     pptx_sigma_scale: float = 0.92
-    pptx_gradient_mode: bool = False
-    pptx_gradient_alpha_scale: float = 0.40
+    pptx_gradient_alpha_scale: float = PPTX_GRADIENT_ALPHA_SCALE
 
 
 @dataclass(frozen=True)
@@ -165,9 +165,8 @@ def optimize_stage_mlx(
         culling_sigma=stage_config.renderer.culling_sigma,
         max_active_splats_per_tile=stage_config.renderer.max_active_splats_per_tile,
         compositing_space=stage_config.renderer.compositing_space,
-        pptx_softedge_mode=stage_config.renderer.pptx_softedge_mode,
+        pptx_proxy=stage_config.renderer.pptx_proxy,
         pptx_alpha_scale=stage_config.renderer.pptx_alpha_scale,
-        pptx_gradient_mode=stage_config.renderer.pptx_gradient_mode,
         pptx_gradient_alpha_scale=stage_config.renderer.pptx_gradient_alpha_scale,
         pptx_sigma_scale=stage_config.renderer.pptx_sigma_scale,
     )
@@ -490,8 +489,7 @@ def optimize_stage_mlx(
         "renderer_tile_size": int(stage_config.renderer.tile_size),
         "renderer_batch_tile_count": int(stage_config.renderer.batch_tile_count),
         "renderer_compositing_space": str(stage_config.renderer.compositing_space),
-        "renderer_pptx_softedge_mode": bool(stage_config.renderer.pptx_softedge_mode),
-        "renderer_pptx_gradient_mode": bool(stage_config.renderer.pptx_gradient_mode),
+        "renderer_pptx_proxy": str(stage_config.renderer.pptx_proxy),
         "mlx_compile_enabled": True,
     }
     return MlxStageResult(

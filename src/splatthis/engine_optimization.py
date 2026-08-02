@@ -19,7 +19,12 @@ from .adaptive_compute import (
     evaluate_online_checkpoints,
 )
 from .engine_state import ConversionEngineState
-from .export_common import PPTX_SOFT_EDGE_ALPHA_SCALE, PPTX_SOFT_EDGE_K_SIGMA_SCALE
+from .export_common import (
+    PPTX_SOFT_EDGE_ALPHA_SCALE,
+    PPTX_SOFT_EDGE_K_SIGMA_SCALE,
+    PPTX_TARGET_PROXY_MODES,
+    SRGB_TRAINING_TARGETS,
+)
 from .mlx_losses import MlxLossConfig
 from .mlx_stage import MlxRendererConfig, MlxStageConfig, optimize_stage_mlx
 from .optimizer import SplatParams, build_optimizer
@@ -728,16 +733,15 @@ class ConversionOptimizationMixin(ConversionEngineState):
         # brighter-than-Gaussian soft-edge rendering.
         mlx_compositing_space = (
             "srgb"
-            if self.training_export_target in self._SRGB_TRAINING_TARGETS
+            if self.training_export_target in SRGB_TRAINING_TARGETS
             else self.compositing_space
         )
-        pptx_softedge_mode = self._use_pptx_proxy_training()
-        pptx_gradient_mode = self.training_export_target == "pptx-gradient"
+        pptx_proxy = PPTX_TARGET_PROXY_MODES.get(self.training_export_target, "none")
         # Mirror the torch training renderer: SVG/PPTX targets deploy via
         # source-over, so force alpha-over alongside the sRGB compositing.
         mlx_blend_mode = (
             "alpha-over"
-            if self.training_export_target in self._SRGB_TRAINING_TARGETS
+            if self.training_export_target in SRGB_TRAINING_TARGETS
             else self.blend_mode
         )
         stage_config = MlxStageConfig(
@@ -750,8 +754,7 @@ class ConversionOptimizationMixin(ConversionEngineState):
                 ),
                 max_active_splats_per_tile=max_active_splats_per_tile,
                 compositing_space=mlx_compositing_space,
-                pptx_softedge_mode=pptx_softedge_mode,
-                pptx_gradient_mode=pptx_gradient_mode,
+                pptx_proxy=pptx_proxy,
                 pptx_alpha_scale=float(
                     self.refinement_config.get(
                         "pptx_proxy_train_alpha_scale", PPTX_SOFT_EDGE_ALPHA_SCALE

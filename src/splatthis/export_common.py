@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import numpy.typing as npt
@@ -131,6 +131,52 @@ PPTX_SOFT_EDGE_ALPHA_SCALE = 0.25
 PPTX_SOFT_EDGE_RADIUS_FACTOR = 0.20
 PPTX_SOFT_EDGE_K_SIGMA_SCALE = 0.92
 PPTX_GRADIENT_ALPHA_SCALE = 0.40
+
+#: Training-export targets: every accepted spelling mapped to its canonical
+#: name. One table so the normalizer, the CLI's ``choices`` and the CLI's
+#: ``auto`` resolution cannot drift apart -- they previously did, accepting
+#: aliases the CLI never offered and offering a target the help never named.
+TRAINING_TARGET_ALIASES: Dict[str, str] = {
+    "": "pixel-runtime",
+    "pixel-runtime": "pixel-runtime",
+    "pixel": "pixel-runtime",
+    "image-data": "pixel-runtime",
+    "imagedata": "pixel-runtime",
+    "canvas": "pixel-runtime",  # Legacy name for the pre-0.3 ImageData runtime.
+    "renderer": "pixel-runtime",
+    "linear": "pixel-runtime",
+    "svg": "svg",
+    "svg-browser": "svg",
+    "browser-svg": "svg",
+    "browser-gradient": "svg",
+    "native-canvas": "svg",
+    "pptx": "pptx-softedge",
+    "pptx-soft": "pptx-softedge",
+    "pptx-softedge": "pptx-softedge",
+    "pptx-soft-edge": "pptx-softedge",
+    "powerpoint": "pptx-softedge",
+    "pptx-gradient": "pptx-gradient",
+}
+
+#: Canonical targets, for anything that needs to enumerate them.
+TRAINING_TARGETS: Tuple[str, ...] = tuple(sorted(set(TRAINING_TARGET_ALIASES.values())))
+
+#: Targets that deploy through a display-sRGB compositor, so training,
+#: validation and preview renders must all composite there.
+SRGB_TRAINING_TARGETS = frozenset({"svg", "pptx-softedge", "pptx-gradient"})
+
+#: PowerPoint proxy renderers a training run can select. "none" is the
+#: plain Gaussian; the others mirror the torch proxies in proxies.py.
+PPTX_PROXY_MODES: Tuple[str, ...] = ("none", "softedge", "gradient")
+
+#: Which proxy renderer each training target selects.
+PPTX_TARGET_PROXY_MODES: Dict[str, str] = {
+    "pptx-softedge": "softedge",
+    "pptx-gradient": "gradient",
+}
+
+#: Targets that swap a PowerPoint proxy renderer in during training.
+PPTX_PROXY_TRAINING_TARGETS = frozenset(PPTX_TARGET_PROXY_MODES)
 # DrawingML blur calibration: sigma_blur (px) = radius (px) / 3.25, empirical
 # erf-fit measurement on macOS desktop PowerPoint. See
 # svg2ooxml/docs/reference/research/blur-fidelity-results.md.

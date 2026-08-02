@@ -17,12 +17,15 @@ from .engine_state import ConversionEngineState
 from .export_common import (
     DEFAULT_PPTX_SPLAT_STYLE,
     PPTX_PAINTER_ORDER_BACK_TO_FRONT,
+    PPTX_PROXY_TRAINING_TARGETS,
     PPTX_SOFT_EDGE_ALPHA_SCALE,
     PPTX_SOFT_EDGE_K_SIGMA_SCALE,
+    SRGB_TRAINING_TARGETS,
     SVG_BROWSER_COMPAT_RECIPE,
     SVG_PAINTER_ORDER_BACK_TO_FRONT,
     SVG_PALETTE_QUANTIZED_RECIPE,
     SVG_SCRIPTED_MATRIX_RECIPE,
+    TRAINING_TARGET_ALIASES,
     _normalize_pptx_painter_order,
     _normalize_svg_export_recipe,
     _normalize_svg_gradient_quality,
@@ -37,9 +40,6 @@ from .renderer import L1SSIMLoss, create_renderer, resolve_renderer_backend
 from .splat import LAYER_DETAIL, LAYER_EDGE, SPLAT_LAYER_NAMES, GaussianSplat
 
 logger = logging.getLogger(__name__)
-
-#: Training targets that swap in a PowerPoint proxy renderer.
-_PPTX_PROXY_TRAINING_TARGETS = frozenset({"pptx-softedge", "pptx-gradient"})
 
 
 class ConversionConfigurationMixin(ConversionEngineState):
@@ -409,7 +409,7 @@ class ConversionConfigurationMixin(ConversionEngineState):
         validation/preview renders must composite there too or they misreport
         deployed fidelity.
         """
-        if self.training_export_target in self._SRGB_TRAINING_TARGETS:
+        if self.training_export_target in SRGB_TRAINING_TARGETS:
             return "srgb"
         return self.compositing_space
 
@@ -419,7 +419,7 @@ class ConversionConfigurationMixin(ConversionEngineState):
             self.time_budget is not None
             or self.region_weighting_enabled
             or self.layered_saliency
-            or self.training_export_target in _PPTX_PROXY_TRAINING_TARGETS
+            or self.training_export_target in PPTX_PROXY_TRAINING_TARGETS
             or self._use_mlx_spatial_weights()
             or int(max(0, self.refinement_config.get("svg_proxy_postfit_iters", 0))) > 0
             or int(max(0, self.refinement_config.get("pptx_proxy_postfit_iters", 0)))
@@ -740,40 +740,10 @@ class ConversionConfigurationMixin(ConversionEngineState):
     @staticmethod
     def _normalize_training_export_target(value: Any) -> str:
         normalized = str(value).strip().lower().replace("_", "-")
-        if normalized in {
-            "",
-            "pixel-runtime",
-            "pixel",
-            "image-data",
-            "imagedata",
-            "canvas",  # Legacy name for the pre-0.3 ImageData runtime.
-            "renderer",
-            "linear",
-        }:
-            return "pixel-runtime"
-        if normalized in {
-            "svg",
-            "svg-browser",
-            "browser-svg",
-            "browser-gradient",
-            "native-canvas",
-        }:
-            return "svg"
-        if normalized in {
-            "pptx",
-            "pptx-soft",
-            "pptx-softedge",
-            "pptx-soft-edge",
-            "powerpoint",
-        }:
-            return "pptx-softedge"
-        if normalized == "pptx-gradient":
-            return "pptx-gradient"
-        raise ValueError(f"Unsupported training export target: {value}")
-
-    #: Targets that deploy through a display-sRGB compositor, so training,
-    #: validation and preview renders must all composite there.
-    _SRGB_TRAINING_TARGETS = frozenset({"svg", "pptx-softedge", "pptx-gradient"})
+        try:
+            return TRAINING_TARGET_ALIASES[normalized]
+        except KeyError:
+            raise ValueError(f"Unsupported training export target: {value}") from None
 
     def _use_pptx_proxy_training(self) -> bool:
         return self.training_export_target == "pptx-softedge"
@@ -781,12 +751,12 @@ class ConversionConfigurationMixin(ConversionEngineState):
     def _create_training_renderer(self, width: int, height: int) -> torch.nn.Module:
         compositing_space = (
             "srgb"
-            if self.training_export_target in self._SRGB_TRAINING_TARGETS
+            if self.training_export_target in SRGB_TRAINING_TARGETS
             else self.compositing_space
         )
         blend_mode = self.blend_mode
         if (
-            self.training_export_target in self._SRGB_TRAINING_TARGETS
+            self.training_export_target in SRGB_TRAINING_TARGETS
             and blend_mode != "alpha-over"
         ):
             # The SVG/PPTX emitters model per-splat source-over opacity

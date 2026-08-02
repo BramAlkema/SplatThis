@@ -17,6 +17,7 @@ from .adaptive_compute import (
 )
 from .budgets import TIME_BUDGET_ALIASES, TIME_BUDGET_PRESETS
 from .converter import PNG2SVGConverter
+from .export_common import TRAINING_TARGET_ALIASES
 from .profiles import PROFILE_NAMES
 
 DEFAULT_MAX_SPLATS = 2000
@@ -392,15 +393,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--training-export-target",
         default="auto",
-        choices=[
-            "auto",
-            "pixel-runtime",
-            "browser-gradient",
-            "svg",
-            "pptx-gradient",
-            "canvas",
-            "pptx-softedge",
-        ],
+        # Derived from the one alias table, so a target can never be
+        # accepted by the normalizer while being unofferable here.
+        choices=["auto", *sorted(TRAINING_TARGET_ALIASES)],
+        metavar="TARGET",
         help="Renderer target used during optimization. 'auto' (default) picks "
         "based on --format: svg/css/canvas->browser-gradient and pixel-runtime "
         "->pixel-runtime. PPTX defaults to pixel-runtime training, which is "
@@ -604,16 +600,13 @@ def _run_conversion(args: argparse.Namespace) -> int:
     # PowerPoint's brighter-than-Gaussian rendering and produces washed-out
     # output in soffice/LibreOffice viewers; users targeting real PowerPoint
     # should pass --training-export-target pptx-softedge explicitly.
-    training_export_target = args.training_export_target
-    if training_export_target == "auto":
-        if args.fmt in {"svg", "css", "canvas"}:
-            training_export_target = "svg"
-        else:
-            training_export_target = "pixel-runtime"
-    elif training_export_target == "canvas":
-        training_export_target = "pixel-runtime"
-    elif training_export_target == "browser-gradient":
-        training_export_target = "svg"
+    if args.training_export_target == "auto":
+        training_export_target = (
+            "svg" if args.fmt in {"svg", "css", "canvas"} else "pixel-runtime"
+        )
+    else:
+        # Every other spelling is an alias the shared table already resolves.
+        training_export_target = TRAINING_TARGET_ALIASES[args.training_export_target]
     if training_export_target != "pixel-runtime":
         refinement_config["training_export_target"] = training_export_target
     if args.svg_proxy_postfit_iters > 0:
