@@ -1,26 +1,27 @@
 # Deployed-artifact fidelity by export format
 
-> **`corpus/results.jsonl` mixes schema versions — do not aggregate it whole.**
-> Of its 229 rows, only the 107 scored by Chrome carry `render_kind` and
-> `is_deployed_artifact`; the 54 `rsvg-convert`, 42 `proxy-srgb` and 26
-> `canvas-linear` rows predate those fields and were never re-scored, because
-> the runner is content-addressed and resumable. A statistic computed across
-> all rows therefore blends governing evidence with proxies while looking
-> uniform: a content-versus-fidelity correlation came out at r=+0.456 that way,
-> against +0.863 on governing Chromium rows alone.
+> **`corpus/results.jsonl` is an append-only ledger of mixed eras — aggregate
+> by `run_tag` and `schema_version`, never the whole file.** Pre-August rows
+> mix four renderers (the 54 `rsvg-convert`, 42 `proxy-srgb` and 26
+> `canvas-linear` rows predate the governing fields), and a statistic over
+> everything blends governing evidence with proxies while looking uniform: a
+> content-versus-fidelity correlation once came out at r=+0.456 that way,
+> against +0.863 on governing rows alone. Filter on
+> `is_deployed_artifact is True` and select an explicit `run_tag`.
 >
-> Every existing row is now explicitly labelled `schema_version: 1`, so the
-> mixed state is visible in the data rather than inferable from which keys
-> happen to be absent. Rows written from now on carry version 2, and resume
-> re-scores anything older.
->
-> **Regenerating it needs an attended session, not just compute.** Only 29 of
-> the 229 rows still have their artifact on disk — the SVG and PPTX outputs
-> were never committed, being roughly a megabyte each — so re-scoring in place
-> is impossible and the runs must be redone. That is about 21 images × 3
-> formats × seeds of training, plus a real-PowerPoint capture pass that takes
-> over the machine for each deck. Until then, filter on
-> `is_deployed_artifact is True` before drawing any conclusion from this file.
+> **The schema-v2 regeneration ran on 2026-08-02.** The SVG half is the 21
+> fresh governing rows tagged `v2-governing-aug2026`: seed-0 populations
+> retrained by the current code under the current defaults (including the
+> corrected gate incumbent), captured in native-size Playwright Chromium,
+> median LPIPS 0.2392 / SSIM 0.7509 — at the published expectations. The
+> PowerPoint half is `powerpoint_results.jsonl`, fully regenerated: every
+> deck re-emitted with the corrected-order default and captured from a real
+> PowerPoint slideshow (median LPIPS 0.3200 / SSIM 0.6279, reproducing the
+> order-study medians exactly). Artifacts and captures are on disk under
+> `corpus/runs/` again, with the July decks backed up as `*_july2026.*`.
+> Reproduce with `tools/corpus_benchmark.py --run --formats svg --seeds 0
+> --run-tag <tag>`, then the attended `tools/run_powerpoint_pass.py` followed
+> by `tools/corpus_benchmark.py --score-powerpoint`.
 
 > **Historical snapshot.** The 2026-07-31 governing-browser pass supersedes
 > this document's earlier claim that librsvg is a safe stand-in for Chrome.
