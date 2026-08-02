@@ -34,7 +34,7 @@ compositors that share no rendering code — vector, stylesheet, and DrawingML.
 | Source | SVG | Scriptless CSS | PowerPoint |
 |:---:|:---:|:---:|:---:|
 | <img src="https://bramalkema.github.io/SplatThis/demo/source.png" alt="Source photograph" width="210"> | <img src="https://bramalkema.github.io/SplatThis/demo/chameleon.svg" alt="Browser-rendered SVG" width="210"> | <img src="https://bramalkema.github.io/SplatThis/demo/chameleon-css.png" alt="Chromium capture of the scriptless CSS build" width="210"> | <img src="https://bramalkema.github.io/SplatThis/demo/chameleon-pptx.png" alt="Microsoft PowerPoint slideshow capture" width="210"> |
-| the input | **0.8665** SSIM<br>vector · 1.5 MB | **0.8748** SSIM<br>DOM + CSS · 0.8 MB | **0.7885** SSIM<br>editable shapes · 161 KB |
+| the input | **0.8665** SSIM<br>vector · 1.5 MB | **0.8748** SSIM<br>DOM + CSS · 0.8 MB | **0.8379** SSIM<br>editable shapes · 161 KB |
 | — | live vector | Chromium capture | PowerPoint capture |
 
 The SVG is the real thing: your browser is drawing 1,615 gradient ellipses, not
