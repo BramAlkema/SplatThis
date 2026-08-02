@@ -81,11 +81,13 @@ def hero_fragment(registry: Dict[str, Any]) -> str:
 
 def evidence_fragment() -> str:
     medians = TOOL._load_json(TOOL.SVG_CORPUS)["seed0_medians"]
+    v2 = TOOL._load_json(TOOL.SVG_CORPUS_V2)["seed0_medians"]
     rows = (
         ("Historical order", medians["legacy_order"]),
         ("Correct order, standard stops", medians["corrected_standard"]),
         ("Correct order, high stops", medians["corrected_high"]),
-        ("Per-image artifact gate", medians["artifact_gate_selection"]),
+        ("Per-image gate (July, legacy incumbent)", medians["artifact_gate_selection"]),
+        ("Per-image gate (0.2.6 corrected incumbent)", v2["artifact_gate_selection"]),
     )
     cells = "\n".join(
         f"    <tr><td>{label}</td><td>{m['ssim_srgb']:.4f}</td>"

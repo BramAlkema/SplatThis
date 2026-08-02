@@ -45,6 +45,7 @@ README = REPO / "README.md"
 FIDELITY = REPO / "src" / "splatthis" / "data" / "compositor-fidelity.json"
 PPTX_CORPUS = REPO / "data" / "pptx-order-compositor-corpus.json"
 SVG_CORPUS = REPO / "data" / "svg-compositor-corpus.json"
+SVG_CORPUS_V2 = REPO / "data" / "svg-compositor-corpus-v2.json"
 RESULTS = REPO / "result" / "corpus" / "results.jsonl"
 SVG_SIZES = REPO / "result" / "svg-quality" / "measurements.json"
 
@@ -184,6 +185,36 @@ def declarative_expectations() -> Dict[str, Any]:
             data["formats"][fmt]["expectation"]["compositor"]["ssim_srgb_median"],
             _median([measurements[image][quality][0] for image in measurements]),
         )
+
+    runtime = data["formats"]["pixel-runtime"]["expectation"]["deployed"]
+    runtime_rows = data["per_image"]["pixel-runtime"]
+    _require_corpus({p["image"] for p in runtime_rows}, "per_image[pixel-runtime]")
+    r_lpips = [p["deployed_lpips"] for p in runtime_rows]
+    r_ssim = [p["deployed_ssim_srgb"] for p in runtime_rows]
+    pin(
+        "pixel-runtime",
+        "deployed LPIPS median",
+        runtime["lpips_median"],
+        _median(r_lpips),
+    )
+    pin(
+        "pixel-runtime",
+        "deployed LPIPS p90",
+        runtime["lpips_p90"],
+        _percentile(r_lpips, 0.9),
+    )
+    pin(
+        "pixel-runtime",
+        "deployed SSIM median",
+        runtime["ssim_srgb_median"],
+        _median(r_ssim),
+    )
+    pin(
+        "pixel-runtime",
+        "deployed SSIM p10",
+        runtime["ssim_srgb_p10"],
+        _percentile(r_ssim, 0.1),
+    )
     return data
 
 
@@ -207,6 +238,7 @@ def build_block() -> str:
     pixels = pixel_runtime_rows()
     pptx = _load_json(PPTX_CORPUS)
     svg_gate = _load_json(SVG_CORPUS)["seed0_medians"]["artifact_gate_selection"]
+    gate_v2 = _load_json(SVG_CORPUS_V2)["seed0_medians"]["artifact_gate_selection"]
 
     def deployed(fmt: str) -> Dict[str, float]:
         return formats[fmt]["expectation"]["deployed"]
@@ -247,32 +279,34 @@ def build_block() -> str:
             f"| {d['ssim_srgb_median']:.4f} | {size} |"
         )
     out("")
-    gate_counts = svg_gate["selected_counts"]
+    v2_counts = gate_v2["selected_counts"]
     out(
         f"The rows above measure each emitter family unconditionally. A bare "
         f"default run (`max-fidelity` profile) additionally applies the SVG "
-        f"compositor gate, which chooses per image. In the July corpus study, "
-        f"run against the then-incumbent legacy order, it kept `high` "
-        f"gradients on {gate_counts['corrected-high']} images, legacy on "
-        f"{gate_counts['legacy-order']} and `standard` on "
-        f"{gate_counts['corrected-standard']} (gate median SSIM "
-        f"{svg_gate['ssim_srgb']:.4f} / LPIPS {svg_gate['lpips']:.4f}); the "
-        f"incumbent is now the default corrected-standard emitter, so the "
-        f"gate's floor is the default output and legacy must win an image "
-        f"outright."
+        f"compositor gate, which chooses per image against the default "
+        f"corrected-standard emitter as incumbent. Validated on the corpus "
+        f"after the 0.2.6 incumbent change: the gate kept `high` gradients "
+        f"on {v2_counts.get('corrected-high', 0)} images and the default "
+        f"`standard` on {v2_counts.get('corrected-standard', 0)}, never "
+        f"legacy, for gate medians of SSIM {gate_v2['ssim_srgb']:.4f} / "
+        f"LPIPS {gate_v2['lpips']:.4f} -- up from "
+        f"{svg_gate['ssim_srgb']:.4f} under the July legacy incumbent."
     )
     out("")
     out(registry["headline"])
     out("")
 
     out(
-        "**Fitted and deployed, per format.** Each format trains against its "
-        "own export target; this is best-effort per format, not one splat set "
-        "exported several ways. The pixel-runtime rows are the historical "
-        "governing ledger passes -- Chrome pixel-buffer captures of stored "
-        'artifacts; `expected_fidelity("pixel-runtime")` deliberately '
-        "publishes no deployed expectation because those artifacts were not "
-        "re-emitted by the current code:"
+        f"**Fitted and deployed, per format.** Each format trains against "
+        f"its own export target; this is best-effort per format, not one "
+        f"splat set exported several ways. The pixel-runtime rows are the "
+        f"historical governing ledger passes; an August 2026 re-emission of "
+        f"all 21 artifacts from current code reproduced the 2k medians "
+        f"exactly (LPIPS "
+        f"{formats['pixel-runtime']['expectation']['deployed']['lpips_median']:.4f}"
+        f" / SSIM "
+        f"{formats['pixel-runtime']['expectation']['deployed']['ssim_srgb_median']:.4f}"
+        f'), so the ledger and `expected_fidelity("pixel-runtime")` agree:'
     )
     out("")
     out(

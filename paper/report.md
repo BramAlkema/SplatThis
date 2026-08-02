@@ -334,7 +334,9 @@ Per content class, deployed median LPIPS on the corrected emitters:
 | transparency | 1 | 0.0863 | 0.0789 | 0.0823 |
 | graphic | 1 | 0.0155 | 0.0127 | 0.0122 |
 
-The default per-image artifact gate originally raced each candidate against a legacy-order incumbent; in the July study it kept `high` gradients on 17 of 21 images, legacy order on 4, and `standard` on 0, for gate medians of 0.7111 SSIM / 0.2439 LPIPS -- below either fixed corrected choice, because incumbency let legacy persist without winning. As of 0.2.6 the incumbent is the default corrected-standard emitter, bounding the gate's floor at the default output; the PPTX shape-order default of §6 flipped to corrected in the same release.
+The default per-image artifact gate originally raced each candidate against a legacy-order incumbent; in the July study it kept `high` gradients on 17 of 21 images, legacy order on 4, and `standard` on 0, for gate medians of 0.7111 SSIM / 0.2439 LPIPS -- below either fixed corrected choice, because incumbency let legacy persist without winning. As of v0.2.6 the incumbent is the default corrected-standard emitter, and the corpus re-validation confirms the structural argument: the gate now selects `high` on 15 images and `standard` on 6, never legacy, for gate medians of 0.7483 SSIM / 0.2439 LPIPS. The PPTX shape-order default of §6 flipped to corrected in the same release.
+
+The registry's last provenance caveat also closed: re-emitting all 21 pixel-runtime artifacts from current code and capturing them in governing Chrome reproduced the historical ledger's deployed medians exactly (0.2443 LPIPS / 0.7751 SSIM), retroactively validating the stored captures.
 
 <!-- current-emitters:end -->
 

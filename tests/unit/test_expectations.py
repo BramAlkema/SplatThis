@@ -69,10 +69,17 @@ def test_declarative_emitters_are_indistinguishable_end_to_end() -> None:
 
 
 def test_the_runtime_is_a_parity_model_not_a_compositor() -> None:
-    """It evaluates the splat formula rather than approximating it."""
+    """It evaluates the splat formula rather than approximating it.
+
+    The deployed figure exists since August 2026 -- re-emitted from current
+    code, captured in governing Chrome, and matching the historical ledger --
+    and, like every deployed figure, it is dominated by fitting error rather
+    than the effectively lossless emitter.
+    """
     runtime = expected_fidelity("pixel-runtime")
     assert runtime.compositor_lpips < 0.001
-    assert runtime.deployed_lpips is None, "not re-measured from current code yet"
+    assert runtime.deployed_lpips is not None
+    assert runtime.deployed_lpips > runtime.compositor_lpips * 100
 
 
 def test_seed_noise_floor_is_the_published_one() -> None:

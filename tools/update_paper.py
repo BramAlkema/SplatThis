@@ -85,6 +85,9 @@ def build_section() -> str:
     registry = TOOL.declarative_expectations()
     sizes_kb = TOOL.svg_size_medians_kb()
     svg_corpus = TOOL._load_json(TOOL.SVG_CORPUS)["seed0_medians"]
+    gate_v2 = TOOL._load_json(TOOL.SVG_CORPUS_V2)["seed0_medians"][
+        "artifact_gate_selection"
+    ]
     legacy = svg_corpus["legacy_order"]
     gate = svg_corpus["artifact_gate_selection"]
     classes = _content_classes()
@@ -191,6 +194,8 @@ def build_section() -> str:
     out("")
 
     counts = gate["selected_counts"]
+    v2_counts = gate_v2["selected_counts"]
+    runtime_deployed = registry["formats"]["pixel-runtime"]["expectation"]["deployed"]
     out(
         f"The default per-image artifact gate originally raced each candidate "
         f"against a legacy-order incumbent; in the July study it kept `high` "
@@ -199,10 +204,24 @@ def build_section() -> str:
         f"{counts['corrected-standard']}, for gate medians of "
         f"{gate['ssim_srgb']:.4f} SSIM / {gate['lpips']:.4f} LPIPS -- below "
         f"either fixed corrected choice, because incumbency let legacy "
-        f"persist without winning. As of 0.2.6 the incumbent is the default "
-        f"corrected-standard emitter, bounding the gate's floor at the "
-        f"default output; the PPTX shape-order default of §6 flipped to "
-        f"corrected in the same release."
+        f"persist without winning. As of v0.2.6 the incumbent is the default "
+        f"corrected-standard emitter, and the corpus re-validation confirms "
+        f"the structural argument: the gate now selects `high` on "
+        f"{v2_counts.get('corrected-high', 0)} images and `standard` on "
+        f"{v2_counts.get('corrected-standard', 0)}, never legacy, for gate "
+        f"medians of {gate_v2['ssim_srgb']:.4f} SSIM / "
+        f"{gate_v2['lpips']:.4f} LPIPS. The PPTX shape-order default of §6 "
+        f"flipped to corrected in the same release."
+    )
+    out("")
+    out(
+        f"The registry's last provenance caveat also closed: re-emitting all "
+        f"{TOOL.CORPUS_IMAGES} pixel-runtime artifacts from current code and "
+        f"capturing them in governing Chrome reproduced the historical "
+        f"ledger's deployed medians exactly "
+        f"({runtime_deployed['lpips_median']:.4f} LPIPS / "
+        f"{runtime_deployed['ssim_srgb_median']:.4f} SSIM), retroactively "
+        f"validating the stored captures."
     )
     out("")
     out(END)

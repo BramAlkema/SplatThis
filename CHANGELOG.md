@@ -25,6 +25,18 @@ All notable changes to SplatThis are documented here.
   0.2.5-era imports survive the rename (the field set still changed with the
   deployed/compositor split).
 
+- **Both audit decisions are now measured, not just argued.** Re-running
+  the gate study under the corrected-standard incumbent (same populations,
+  same policy, fresh Chromium captures) selected `high` on 15 images and the
+  default `standard` on 6 -- legacy never won an image outright -- lifting
+  gate medians from 0.7111 to 0.7483 SSIM (`svg-compositor-corpus-v2.json`,
+  `tools/validate_svg_gate_incumbent.py`). And the registry's last provenance
+  caveat closed: re-emitting all 21 pixel-runtime artifacts from current code
+  and capturing them in governing Chrome reproduced the historical ledger's
+  deployed medians exactly (0.2443 LPIPS / 0.7751 SSIM), so
+  `expected_fidelity("pixel-runtime")` now publishes deployed figures
+  (`tools/measure_pixel_runtime_deployed.py`).
+
 - **CSS now has its own calibrated repeat-render noise floor.** The
   calibration tool gained a `css` target that captures the committed
   corpus-gallery builds -- emitted by the shipped emitter from the exact
