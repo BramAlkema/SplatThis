@@ -74,3 +74,17 @@ constant-color with alpha ramps, so the compositing-space story does not by
 itself explain the remaining per-image differences between proxies. That
 residue -- stop quantization, rasterization, and fit interaction -- is the
 open question a future PPTX proxy should target.
+
+## Postscript 2: the residual is not the compositing space either
+
+Follow-up measurement (2026-08-02) puts these findings in proportion.
+Against the same real captures, the plain Gaussian model scores LPIPS
+0.0959 in linear and 0.1082 in sRGB, and the exact feathered ring-stack
+model scores 0.0843 — so choosing the right space, or the right primitive,
+moves deployed agreement by hundredths while the floor stays near 0.08.
+Misregistration (~0.002) and 8-bit per-step accumulation (~0.005) are
+excluded as major causes. Whatever remains is the dominant term in every
+PowerPoint fidelity number this project publishes, and no training-target
+or primitive change addresses it. Identifying it — most plausibly
+PowerPoint's shape rasterization, or a remaining capture-chain loss —
+should precede further PPTX proxy work.
