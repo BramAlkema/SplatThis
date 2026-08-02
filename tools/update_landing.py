@@ -197,6 +197,83 @@ def pptx_fragment() -> str:
     )
 
 
+def corpus_medians_fragment() -> str:
+    """Per-format deployed medians over the whole corpus, freshest ledgers.
+
+    SVG comes from the August 2026 schema-v2 full-pipeline rows, PowerPoint
+    from the regenerated real-PowerPoint pass, CSS and pixel-runtime from the
+    fidelity registry's deployed blocks.
+    """
+    import json as _json
+
+    v2 = [
+        row
+        for row in (
+            _json.loads(line)
+            for line in TOOL.RESULTS.read_text(encoding="utf-8").splitlines()
+            if line
+        )
+        if row.get("run_tag") == "v2-governing-aug2026"
+        and row.get("is_deployed_artifact") is True
+    ]
+    if len({row["image"] for row in v2}) != TOOL.CORPUS_IMAGES:
+        raise TOOL.LedgerError("v2 governing SVG rows do not cover the corpus")
+    ppt_path = TOOL.RESULTS.with_name("powerpoint_results.jsonl")
+    ppt = [
+        _json.loads(line)
+        for line in ppt_path.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    if len({row["image"] for row in ppt}) != TOOL.CORPUS_IMAGES:
+        raise TOOL.LedgerError("PowerPoint pass rows do not cover the corpus")
+    registry = TOOL.declarative_expectations()
+
+    def med(rows, key):
+        return TOOL._median([r[key] for r in rows])
+
+    def dep(fmt):
+        return registry["formats"][fmt]["expectation"]["deployed"]
+
+    rows = (
+        (
+            "SVG (full pipeline, Aug 2026 rerun)",
+            med(v2, "ssim_srgb"),
+            med(v2, "lpips"),
+            f"{med(v2, 'artifact_bytes') / 1024:,.0f} KB",
+        ),
+        (
+            "Scriptless CSS",
+            dep("css")["ssim_srgb_median"],
+            dep("css")["lpips_median"],
+            "&mdash;",
+        ),
+        (
+            "Pixel runtime",
+            dep("pixel-runtime")["ssim_srgb_median"],
+            dep("pixel-runtime")["lpips_median"],
+            "&mdash;",
+        ),
+        (
+            "PowerPoint (real slideshow captures)",
+            med(ppt, "ssim_srgb"),
+            med(ppt, "lpips"),
+            f"{med(ppt, 'pptx_bytes') / 1024:,.0f} KB",
+        ),
+    )
+    cells = "\n".join(
+        f"    <tr><td>{label}</td><td>{ssim:.4f}</td><td>{lpips:.4f}</td>"
+        f"<td>{size}</td></tr>"
+        for label, ssim, lpips, size in rows
+    )
+    return (
+        "<table>\n"
+        "  <thead><tr><th>Format</th><th>SSIM</th><th>LPIPS↓</th>"
+        "<th>Median size</th></tr></thead>\n"
+        f"  <tbody>\n{cells}\n  </tbody>\n"
+        "</table>"
+    )
+
+
 def _splice(text: str, name: str, replacement: str) -> str:
     begin = f"<!-- {name}:begin -- {MARKER_NOTE} -->"
     end = f"<!-- {name}:end -->"
@@ -213,6 +290,7 @@ def render() -> str:
     text = _splice(text, "landing-svg-hero", hero_fragment(registry))
     text = _splice(text, "landing-pptx", pptx_fragment())
     text = _splice(text, "landing-svg-evidence", evidence_fragment())
+    text = _splice(text, "landing-corpus-medians", corpus_medians_fragment())
     text = _splice(text, "landing-chameleon", chameleon_fragment(registry))
     return text
 
