@@ -36,11 +36,9 @@ class _PPTXSoftEdgeProxyRenderer(torch.nn.Module):
 
     def forward(self, splats_tensor: torch.Tensor) -> torch.Tensor:
         scaled_sigma = torch.clamp(splats_tensor[:, 2:4] * self.sigma_scale, min=1e-4)
-        raw_alpha = torch.clamp(splats_tensor[:, 9], 0.0, 1.0)
-        center_opacity = torch.clamp(
-            (1.0 - torch.exp(-raw_alpha)) * self.alpha_scale, 0.0, 1.0 - 1e-5
+        effective_alpha = pptx_effective_alpha(
+            splats_tensor[:, 9], splat_style="soft-edge", alpha_scale=self.alpha_scale
         )
-        effective_alpha = -torch.log1p(-center_opacity)
         fitted = torch.cat(
             [
                 splats_tensor[:, 0:2],
@@ -52,6 +50,37 @@ class _PPTXSoftEdgeProxyRenderer(torch.nn.Module):
             dim=-1,
         )
         return self.base_renderer(fitted)
+
+
+def pptx_effective_alpha(
+    raw_alpha: torch.Tensor,
+    *,
+    splat_style: str,
+    alpha_scale: float,
+) -> torch.Tensor:
+    """Map a splat's alpha to the value the plain Gaussian renderer needs.
+
+    The renderer computes ``1 - exp(-a * G(r))``, so ``a`` must be whatever
+    reproduces the primitive PowerPoint will actually draw:
+
+    ``gradient``
+        The emitter writes stops of ``1 - exp(-scale * alpha * G(r))``
+        (``pptx_export``), so ``a = alpha * scale``.
+    ``soft-edge``
+        PowerPoint renders soft edges brighter than a Gaussian; the centre
+        opacity is ``(1 - exp(-alpha)) * scale``, inverted back to an alpha.
+
+    Both laws agree as alpha approaches zero, which is why using one for the
+    other went unnoticed: the divergence reaches 27% only at alpha 1.0.
+    Shared so the training proxies and the post-fit stage cannot drift apart.
+    """
+    clamped = torch.clamp(raw_alpha, 0.0, 1.0)
+    if splat_style == "gradient":
+        return clamped * alpha_scale
+    center_opacity = torch.clamp(
+        (1.0 - torch.exp(-clamped)) * alpha_scale, 0.0, 1.0 - 1e-5
+    )
+    return -torch.log1p(-center_opacity)
 
 
 class _PPTXGradientProxyRenderer(torch.nn.Module):

@@ -25,6 +25,25 @@ All notable changes to SplatThis are documented here.
   0.2.5-era imports survive the rename (the field set still changed with the
   deployed/compositor split).
 
+- **The PPTX post-fit stage was making decks worse; fixed and measured.**
+  `--pptx-proxy-postfit-iters` refined colour and alpha against the
+  soft-edge alpha law even for `gradient` decks -- the right constant with
+  the wrong curve, under-modelling opacity by up to 27% at high alpha -- and
+  because the stage also picks its best iterate with that same model, it
+  reported a gain while degrading the artifact. Measured on chameleon with
+  60 iterations, real PowerPoint captures, only the law changed:
+
+      no post-fit          SSIM 0.8395  LPIPS 0.2075  dE 0.0568
+      post-fit, before     SSIM 0.8198  LPIPS 0.2253  dE 0.0449
+      post-fit, after      SSIM 0.8386  LPIPS 0.1935  dE 0.0322
+
+  The stage now improves the deployed deck by 0.014 LPIPS instead of
+  costing 0.018, and nearly halves colour error. Both laws live in one
+  shared `proxies.pptx_effective_alpha` used by the training proxies and the
+  post-fit alike, so they cannot drift again; a regression test pins each
+  against its emitter. Defect predates the current naming; opt-in, so no
+  released default changed.
+
 - **`--training-export-target pptx-gradient`: fit the splats for the deck
   PowerPoint actually draws.** The DrawingML gradient emitter writes stops of
   `1 - exp(-PPTX_GRADIENT_ALPHA_SCALE * alpha * G(r))` and PowerPoint

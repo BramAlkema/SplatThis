@@ -229,3 +229,50 @@ def test_pptx_gradient_stops_follow_the_shared_opacity_curve() -> None:
             f"alpha={alpha}: emitted stops diverge from the shared curve the "
             f"training proxy models"
         )
+
+
+def test_pptx_effective_alpha_matches_each_primitive_law() -> None:
+    """Each splat style must map alpha the way its emitter does.
+
+    The gradient deck writes ``1 - exp(-alpha * scale * G)``, so the plain
+    Gaussian renderer needs ``alpha * scale``. Applying the soft-edge law
+    there instead -- the right constant with the wrong curve -- under-models
+    opacity by up to 27% at high alpha, and the post-fit stage that used it
+    made real PowerPoint captures measurably worse than no post-fit at all.
+    """
+    import torch
+
+    from splatthis.export_common import (
+        PPTX_GRADIENT_ALPHA_SCALE,
+        PPTX_SOFT_EDGE_ALPHA_SCALE,
+    )
+    from splatthis.proxies import pptx_effective_alpha
+
+    alpha = torch.tensor([0.05, 0.2, 0.5, 0.9, 1.0])
+
+    gradient = pptx_effective_alpha(
+        alpha, splat_style="gradient", alpha_scale=PPTX_GRADIENT_ALPHA_SCALE
+    )
+    assert torch.allclose(gradient, alpha * PPTX_GRADIENT_ALPHA_SCALE)
+
+    soft = pptx_effective_alpha(
+        alpha, splat_style="soft-edge", alpha_scale=PPTX_SOFT_EDGE_ALPHA_SCALE
+    )
+    expected_centre = (1.0 - torch.exp(-alpha)) * PPTX_SOFT_EDGE_ALPHA_SCALE
+    assert torch.allclose(1.0 - torch.exp(-soft), expected_centre, atol=1e-6)
+
+    # The laws agree near zero and diverge with alpha -- the reason the
+    # mix-up survived. Pin that, so a future "simplification" to one law
+    # fails here instead of silently in a deck.
+    both_at_low_alpha = pptx_effective_alpha(
+        torch.tensor([0.01]), splat_style="gradient", alpha_scale=0.4
+    ) - pptx_effective_alpha(
+        torch.tensor([0.01]), splat_style="soft-edge", alpha_scale=0.4
+    )
+    assert abs(float(both_at_low_alpha)) < 1e-3
+    at_full = pptx_effective_alpha(
+        torch.tensor([1.0]), splat_style="gradient", alpha_scale=0.4
+    ) - pptx_effective_alpha(
+        torch.tensor([1.0]), splat_style="soft-edge", alpha_scale=0.4
+    )
+    assert float(at_full) > 0.1

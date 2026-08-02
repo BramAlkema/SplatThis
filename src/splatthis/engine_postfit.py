@@ -18,7 +18,7 @@ from .export_common import (
     SVG_BACKGROUND_ALPHA_CAP,
 )
 from .features import estimate_local_color
-from .proxies import _PPTXProxyLoss
+from .proxies import _PPTXProxyLoss, pptx_effective_alpha
 from .quality import compute_quality_metrics
 from .renderer import (
     L1SSIMLoss,
@@ -408,14 +408,18 @@ class ConversionPostfitMixin(ConversionEngineState):
         alpha_scale = float(np.clip(alpha_scale, 1e-4, 1.0))
         sigma_scale = float(np.clip(sigma_scale, 0.25, 3.0))
 
-        def pptx_effective_alpha(raw_alpha: torch.Tensor) -> torch.Tensor:
-            center_opacity = (
-                1.0 - torch.exp(-torch.clamp(raw_alpha, 0.0, 1.0))
-            ) * alpha_scale
-            center_opacity = torch.clamp(center_opacity, 0.0, 1.0 - 1e-5)
-            return -torch.log1p(-center_opacity)
+        def effective_alpha_for(raw_alpha: torch.Tensor) -> torch.Tensor:
+            # One shared law per primitive (proxies.pptx_effective_alpha).
+            # This previously applied the soft-edge law to gradient decks --
+            # the right constant with the wrong curve -- so the stage refined
+            # against a model of a deck PowerPoint would not draw.
+            return pptx_effective_alpha(
+                raw_alpha,
+                splat_style=self.pptx_splat_style,
+                alpha_scale=alpha_scale,
+            )
 
-        init_effective_alpha = pptx_effective_alpha(init_alpha)
+        init_effective_alpha = effective_alpha_for(init_alpha)
         best_loss = float("inf")
         best_color: Optional[torch.Tensor] = None
         best_alpha: Optional[torch.Tensor] = None
@@ -434,7 +438,7 @@ class ConversionPostfitMixin(ConversionEngineState):
             optimizer.zero_grad(set_to_none=True)
             color = torch.sigmoid(color_logits)
             raw_alpha = torch.sigmoid(alpha_logits).squeeze(-1)
-            effective_alpha = pptx_effective_alpha(raw_alpha)
+            effective_alpha = effective_alpha_for(raw_alpha)
 
             fitted = base.clone()
             fitted[:, 2:4] = torch.clamp(fitted[:, 2:4] * sigma_scale, min=1e-4)
