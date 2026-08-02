@@ -64,7 +64,8 @@ def hero_fragment(registry: Dict[str, Any]) -> str:
     if not HERO_SVG.is_file():
         raise TOOL.LedgerError(f"missing hero artifact: {HERO_SVG.relative_to(REPO)}")
     row = _chameleon(registry, "svg-high")
-    size_mb = HERO_SVG.stat().st_size / 1048576
+    # LF-normalized so a CRLF-converting checkout quotes the same size.
+    size_mb = len(HERO_SVG.read_bytes().replace(b"\r\n", b"\n")) / 1048576
     return (
         "  <figure>\n"
         '    <object data="demo/chameleon.svg" type="image/svg+xml" '

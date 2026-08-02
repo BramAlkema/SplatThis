@@ -1,1 +1,5 @@
 docs/demo/canvas.html text eol=lf
+# Gallery assets are served byte-for-byte on Pages and their sizes are
+# quoted in generated captions; never line-ending-convert them.
+docs/corpus/** -text
+docs/demo/** -text
