@@ -75,6 +75,16 @@ def _png_size(path: Path) -> Tuple[int, int]:
         return img.width, img.height
 
 
+def _lf_kb(path: Path) -> float:
+    """Size in KB with newlines normalized to LF.
+
+    Quoted sizes must not depend on the checkout: a CRLF-converting Windows
+    clone inflates a ten-thousand-line SVG by ten kilobytes, which made the
+    regenerated page disagree with the committed one in CI.
+    """
+    return len(path.read_bytes().replace(b"\r\n", b"\n")) / 1024
+
+
 def emit_assets(registry: Dict[str, Any]) -> None:
     """Materialize gallery assets from local repository state (not in CI)."""
     sys.path.insert(0, str(REPO / "src"))
@@ -196,8 +206,8 @@ def build_index(registry: Dict[str, Any]) -> str:
         width, height = _png_size(source)
         svg_row = per_image["svg"][image]
         css_row = per_image["css"][image]
-        svg_kb = svg.stat().st_size / 1024
-        css_kb = css.stat().st_size / 1024
+        svg_kb = _lf_kb(svg)
+        css_kb = _lf_kb(css)
         parts.append(
             f'<h2 class="img">{image} '
             f"<span>· {classes.get(image, 'unclassified')} · "
