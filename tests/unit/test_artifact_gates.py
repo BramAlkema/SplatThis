@@ -185,7 +185,9 @@ def test_versioned_release_calibration_is_loadable_and_complete():
     data = json.loads((root / "data" / "artifact-gates.json").read_text())
     calibration = ArtifactGateCalibration.from_dict(data)
 
-    assert set(calibration.targets) == {"pixel-runtime", "svg", "pptx"}
+    assert set(calibration.targets) == {"pixel-runtime", "svg", "css", "pptx"}
     assert all(target.complete for target in calibration.targets.values())
     assert calibration.targets["pptx"].artifact_count == 21
+    assert calibration.targets["css"].artifact_count == 21
     assert data["provenance"]["svg_renderer"].startswith("Playwright Chromium ")
+    assert data["provenance"]["css_renderer"].startswith("Playwright Chromium ")

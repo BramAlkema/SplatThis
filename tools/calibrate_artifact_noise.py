@@ -39,6 +39,7 @@ from splatthis.artifact_gates import (
 )
 from splatthis.browser_capture import (
     get_shared_svg_renderer,
+    render_css_html_in_browser_to_linear_rgb,
     render_svg_in_browser_to_linear_rgb,
 )
 from splatthis.fidelity.metrics import compute_fidelity_metrics
@@ -111,6 +112,11 @@ def _artifact_path(
     target: str,
     run: Optional[Mapping[str, Any]],
 ) -> Path:
+    if target == "css":
+        # CSS artifacts are the committed corpus-gallery builds, emitted by
+        # the shipped emitter from the same populations the fidelity
+        # registry measured (tools/build_corpus_gallery.py --emit).
+        return REPO / "docs" / "corpus" / "css" / f"{image}.html"
     recorded = run.get("output_path") if run is not None else None
     if isinstance(recorded, str) and recorded:
         return root / recorded
@@ -277,6 +283,67 @@ def _capture_svg(
                 renderer=renderer,
                 renderer_version=renderer_version,
                 capture_method="Playwright Chromium native-dimension PNG screenshot",
+                capture_path=capture_path,
+                render_time_ms=elapsed_ms,
+                metrics=_score(source_linear, rendered, renderer=renderer),
+            )
+        )
+    return records
+
+
+def _capture_css(
+    *,
+    image: str,
+    source: Path,
+    artifact: Path,
+    artifact_id: str,
+    output_dir: Path,
+    repeats: int,
+    force: bool,
+) -> list[dict[str, Any]]:
+    source_linear = np.asarray(load_png(str(source))[..., :3], dtype=np.float32)
+    height, width = source_linear.shape[:2]
+    records = []
+    renderer_version = get_shared_svg_renderer().browser_version
+    renderer = f"playwright-chromium/{renderer_version}"
+    renderer_cache_key = f"chromium-{renderer_version.replace('.', '-')}"
+    for repeat in range(repeats):
+        capture_path = (
+            output_dir
+            / "captures"
+            / "css"
+            / renderer_cache_key
+            / image
+            / f"{repeat:03d}.png"
+        )
+        started = time.perf_counter()
+        if force or not capture_path.exists():
+            rendered, actual_renderer = render_css_html_in_browser_to_linear_rgb(
+                str(artifact), width, height
+            )
+            if actual_renderer != renderer:
+                raise RuntimeError(
+                    f"CSS renderer changed during capture: {actual_renderer}"
+                )
+            _save_linear_png(capture_path, rendered)
+            rendered = _load_rendered_png(capture_path)
+        else:
+            rendered = _load_rendered_png(capture_path)
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        records.append(
+            _observation(
+                target="css",
+                image=image,
+                artifact=artifact,
+                artifact_id=artifact_id,
+                source=source,
+                repeat=repeat,
+                renderer=renderer,
+                renderer_version=renderer_version,
+                capture_method=(
+                    "Playwright Chromium native-dimension PNG screenshot "
+                    "of the scriptless CSS build"
+                ),
                 capture_path=capture_path,
                 render_time_ms=elapsed_ms,
                 metrics=_score(source_linear, rendered, renderer=renderer),
@@ -557,6 +624,8 @@ def _capture_one(
 ) -> list[dict[str, Any]]:
     if target == "svg":
         return _capture_svg(**common)
+    if target == "css":
+        return _capture_css(**common)
     if target == "pixel-runtime":
         return _capture_canvas(
             **common,

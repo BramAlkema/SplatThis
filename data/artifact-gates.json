@@ -1,75 +1,384 @@
 {
-  "schema": "splatthis.artifact-gates/1",
-  "required_repeats": 5,
-  "noise_multiplier": 2.0,
-  "provenance": {
-    "date": "2026-07-31",
-    "corpus_images": 21,
-    "full_run_observations": 315,
-    "additional_powerpoint_warmup_observations": 5,
-    "pixel_runtime_renderer": "Google Chrome canvas.toDataURL of the generated ImageData framebuffer",
-    "svg_renderer": "Playwright Chromium 140.0.7339.81",
-    "powerpoint_renderer": "Microsoft PowerPoint 16.89.1",
-    "platform": "macOS 26.5.2 arm64",
-    "note": "Algorithm policy thresholds remain stricter than these repeat-render floors."
-  },
-  "targets": {
-    "pixel-runtime": {
-      "target": "pixel-runtime",
-      "required_repeats": 5,
-      "artifact_count": 21,
-      "complete_artifact_count": 21,
-      "observation_count": 105,
-      "complete": true,
-      "metrics": {
-        "delta_e_ok_mean": {"metric": "delta_e_ok_mean", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "delta_e_ok_p95": {"metric": "delta_e_ok_p95", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "edge_chamfer": {"metric": "edge_chamfer", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "edge_gradient_l1": {"metric": "edge_gradient_l1", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "lpips": {"metric": "lpips", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "ms_ssim_luma": {"metric": "ms_ssim_luma", "higher_is_better": true, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "psnr_srgb": {"metric": "psnr_srgb", "higher_is_better": true, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "ssim_srgb": {"metric": "ssim_srgb", "higher_is_better": true, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "worst_roi_error": {"metric": "worst_roi_error", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0}
-      }
+ "schema": "splatthis.artifact-gates/1",
+ "required_repeats": 5,
+ "noise_multiplier": 2.0,
+ "provenance": {
+  "date": "2026-07-31",
+  "corpus_images": 21,
+  "full_run_observations": 315,
+  "additional_powerpoint_warmup_observations": 5,
+  "pixel_runtime_renderer": "Google Chrome canvas.toDataURL of the generated ImageData framebuffer",
+  "svg_renderer": "Playwright Chromium 140.0.7339.81",
+  "powerpoint_renderer": "Microsoft PowerPoint 16.89.1",
+  "platform": "macOS 26.5.2 arm64",
+  "note": "Algorithm policy thresholds remain stricter than these repeat-render floors.",
+  "css_renderer": "Playwright Chromium 140.0.7339.81",
+  "css_calibration": "2026-08-02: 21 corpus-gallery CSS builds (docs/corpus/css, emitted by the shipped emitter from the registry's measured populations), 5 repeats each, 105 observations; every metric span was zero. Native Canvas remains uncalibrated."
+ },
+ "targets": {
+  "pixel-runtime": {
+   "target": "pixel-runtime",
+   "required_repeats": 5,
+   "artifact_count": 21,
+   "complete_artifact_count": 21,
+   "observation_count": 105,
+   "complete": true,
+   "metrics": {
+    "delta_e_ok_mean": {
+     "metric": "delta_e_ok_mean",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
     },
-    "svg": {
-      "target": "svg",
-      "required_repeats": 5,
-      "artifact_count": 21,
-      "complete_artifact_count": 21,
-      "observation_count": 105,
-      "complete": true,
-      "metrics": {
-        "delta_e_ok_mean": {"metric": "delta_e_ok_mean", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "delta_e_ok_p95": {"metric": "delta_e_ok_p95", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "edge_chamfer": {"metric": "edge_chamfer", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "edge_gradient_l1": {"metric": "edge_gradient_l1", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "lpips": {"metric": "lpips", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "ms_ssim_luma": {"metric": "ms_ssim_luma", "higher_is_better": true, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "psnr_srgb": {"metric": "psnr_srgb", "higher_is_better": true, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "ssim_srgb": {"metric": "ssim_srgb", "higher_is_better": true, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "worst_roi_error": {"metric": "worst_roi_error", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0}
-      }
+    "delta_e_ok_p95": {
+     "metric": "delta_e_ok_p95",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
     },
-    "pptx": {
-      "target": "pptx",
-      "required_repeats": 5,
-      "artifact_count": 21,
-      "complete_artifact_count": 21,
-      "observation_count": 110,
-      "complete": true,
-      "metrics": {
-        "delta_e_ok_mean": {"metric": "delta_e_ok_mean", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 1.341104507446289e-7, "recommended_min_delta": 1.341104507446289e-7},
-        "delta_e_ok_p95": {"metric": "delta_e_ok_p95", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "edge_chamfer": {"metric": "edge_chamfer", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0},
-        "edge_gradient_l1": {"metric": "edge_gradient_l1", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 4.33996319770813e-7, "recommended_min_delta": 4.33996319770813e-7},
-        "lpips": {"metric": "lpips", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 2.682209014892578e-7, "recommended_min_delta": 2.682209014892578e-7},
-        "ms_ssim_luma": {"metric": "ms_ssim_luma", "higher_is_better": true, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 5.738815294087374e-7, "recommended_min_delta": 5.738815294087374e-7},
-        "psnr_srgb": {"metric": "psnr_srgb", "higher_is_better": true, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 8.362560055985568e-6, "recommended_min_delta": 8.362560055985568e-6},
-        "ssim_srgb": {"metric": "ssim_srgb", "higher_is_better": true, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 7.172702300994871e-7, "recommended_min_delta": 7.172702300994871e-7},
-        "worst_roi_error": {"metric": "worst_roi_error", "higher_is_better": false, "artifact_count": 21, "median_span": 0.0, "p95_span": 0.0, "max_span": 0.0, "recommended_min_delta": 0.0}
-      }
+    "edge_chamfer": {
+     "metric": "edge_chamfer",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "edge_gradient_l1": {
+     "metric": "edge_gradient_l1",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "lpips": {
+     "metric": "lpips",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "ms_ssim_luma": {
+     "metric": "ms_ssim_luma",
+     "higher_is_better": true,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "psnr_srgb": {
+     "metric": "psnr_srgb",
+     "higher_is_better": true,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "ssim_srgb": {
+     "metric": "ssim_srgb",
+     "higher_is_better": true,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "worst_roi_error": {
+     "metric": "worst_roi_error",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
     }
+   }
+  },
+  "svg": {
+   "target": "svg",
+   "required_repeats": 5,
+   "artifact_count": 21,
+   "complete_artifact_count": 21,
+   "observation_count": 105,
+   "complete": true,
+   "metrics": {
+    "delta_e_ok_mean": {
+     "metric": "delta_e_ok_mean",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "delta_e_ok_p95": {
+     "metric": "delta_e_ok_p95",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "edge_chamfer": {
+     "metric": "edge_chamfer",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "edge_gradient_l1": {
+     "metric": "edge_gradient_l1",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "lpips": {
+     "metric": "lpips",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "ms_ssim_luma": {
+     "metric": "ms_ssim_luma",
+     "higher_is_better": true,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "psnr_srgb": {
+     "metric": "psnr_srgb",
+     "higher_is_better": true,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "ssim_srgb": {
+     "metric": "ssim_srgb",
+     "higher_is_better": true,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "worst_roi_error": {
+     "metric": "worst_roi_error",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    }
+   }
+  },
+  "pptx": {
+   "target": "pptx",
+   "required_repeats": 5,
+   "artifact_count": 21,
+   "complete_artifact_count": 21,
+   "observation_count": 110,
+   "complete": true,
+   "metrics": {
+    "delta_e_ok_mean": {
+     "metric": "delta_e_ok_mean",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 1.341104507446289e-07,
+     "recommended_min_delta": 1.341104507446289e-07
+    },
+    "delta_e_ok_p95": {
+     "metric": "delta_e_ok_p95",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "edge_chamfer": {
+     "metric": "edge_chamfer",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "edge_gradient_l1": {
+     "metric": "edge_gradient_l1",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 4.33996319770813e-07,
+     "recommended_min_delta": 4.33996319770813e-07
+    },
+    "lpips": {
+     "metric": "lpips",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 2.682209014892578e-07,
+     "recommended_min_delta": 2.682209014892578e-07
+    },
+    "ms_ssim_luma": {
+     "metric": "ms_ssim_luma",
+     "higher_is_better": true,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 5.738815294087374e-07,
+     "recommended_min_delta": 5.738815294087374e-07
+    },
+    "psnr_srgb": {
+     "metric": "psnr_srgb",
+     "higher_is_better": true,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 8.362560055985568e-06,
+     "recommended_min_delta": 8.362560055985568e-06
+    },
+    "ssim_srgb": {
+     "metric": "ssim_srgb",
+     "higher_is_better": true,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 7.172702300994871e-07,
+     "recommended_min_delta": 7.172702300994871e-07
+    },
+    "worst_roi_error": {
+     "metric": "worst_roi_error",
+     "higher_is_better": false,
+     "artifact_count": 21,
+     "median_span": 0.0,
+     "p95_span": 0.0,
+     "max_span": 0.0,
+     "recommended_min_delta": 0.0
+    }
+   }
+  },
+  "css": {
+   "artifact_count": 21,
+   "complete": true,
+   "complete_artifact_count": 21,
+   "metrics": {
+    "delta_e_ok_mean": {
+     "artifact_count": 21,
+     "higher_is_better": false,
+     "max_span": 0.0,
+     "median_span": 0.0,
+     "metric": "delta_e_ok_mean",
+     "p95_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "delta_e_ok_p95": {
+     "artifact_count": 21,
+     "higher_is_better": false,
+     "max_span": 0.0,
+     "median_span": 0.0,
+     "metric": "delta_e_ok_p95",
+     "p95_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "edge_chamfer": {
+     "artifact_count": 21,
+     "higher_is_better": false,
+     "max_span": 0.0,
+     "median_span": 0.0,
+     "metric": "edge_chamfer",
+     "p95_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "edge_gradient_l1": {
+     "artifact_count": 21,
+     "higher_is_better": false,
+     "max_span": 0.0,
+     "median_span": 0.0,
+     "metric": "edge_gradient_l1",
+     "p95_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "lpips": {
+     "artifact_count": 21,
+     "higher_is_better": false,
+     "max_span": 0.0,
+     "median_span": 0.0,
+     "metric": "lpips",
+     "p95_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "ms_ssim_luma": {
+     "artifact_count": 21,
+     "higher_is_better": true,
+     "max_span": 0.0,
+     "median_span": 0.0,
+     "metric": "ms_ssim_luma",
+     "p95_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "psnr_srgb": {
+     "artifact_count": 21,
+     "higher_is_better": true,
+     "max_span": 0.0,
+     "median_span": 0.0,
+     "metric": "psnr_srgb",
+     "p95_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "ssim_srgb": {
+     "artifact_count": 21,
+     "higher_is_better": true,
+     "max_span": 0.0,
+     "median_span": 0.0,
+     "metric": "ssim_srgb",
+     "p95_span": 0.0,
+     "recommended_min_delta": 0.0
+    },
+    "worst_roi_error": {
+     "artifact_count": 21,
+     "higher_is_better": false,
+     "max_span": 0.0,
+     "median_span": 0.0,
+     "metric": "worst_roi_error",
+     "p95_span": 0.0,
+     "recommended_min_delta": 0.0
+    }
+   },
+   "observation_count": 105,
+   "required_repeats": 5,
+   "target": "css"
   }
+ }
 }

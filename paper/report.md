@@ -402,8 +402,10 @@ Reported because they cost real time and are absent from the literature.
 - Real-PowerPoint captures cover the full corpus for §5.3 and the
   paint-order study, but at one capture repeat; PowerPoint is not scriptable
   enough for repeat-render noise calibration at corpus scale.
-- The CSS emitter has no calibrated repeat-render noise floor of its own; its
-  indistinguishability claims borrow the SVG/pixel-runtime floor of §5.2.
+- The CSS emitter's repeat-render noise was calibrated after the first
+  release of this report: 21 corpus builds at five repeats each measured a
+  span of exactly zero on every metric, matching SVG and the pixel runtime.
+  Native Canvas remains the one browser target without its own floor.
 - 384 px maximum edge; behaviour at print resolution is unmeasured.
 - No human study. Perceptual claims rest on LPIPS.
 - One machine, one hardware generation for all timings.
