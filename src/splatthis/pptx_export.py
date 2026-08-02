@@ -24,7 +24,7 @@ from .export_common import (
     PPTX_BLUR_CORE_K_SIGMA,
     PPTX_BLUR_RAD_PER_SIGMA,
     PPTX_GRADIENT_ALPHA_SCALE,
-    PPTX_PAINTER_ORDER_LEGACY,
+    PPTX_PAINTER_ORDER_BACK_TO_FRONT,
     PPTX_SOFT_EDGE_ALPHA_SCALE,
     PPTX_SOFT_EDGE_K_SIGMA_SCALE,
     PPTX_SOFT_EDGE_RADIUS_FACTOR,
@@ -55,7 +55,7 @@ def save_drawingml(
     sort_mode: str = DEFAULT_EXPORT_ORDER,
     background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
-    painter_order: str = PPTX_PAINTER_ORDER_LEGACY,
+    painter_order: str = PPTX_PAINTER_ORDER_BACK_TO_FRONT,
 ) -> None:
     """
     Save splats as PresentationML slide XML with DrawingML ellipse shapes.
@@ -95,7 +95,7 @@ def generate_drawingml_slide_content(
     k_sigma: float = 2.5,
     background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
-    painter_order: str = PPTX_PAINTER_ORDER_LEGACY,
+    painter_order: str = PPTX_PAINTER_ORDER_BACK_TO_FRONT,
 ) -> str:
     """Generate PresentationML slide XML containing DrawingML ellipse shapes."""
     normalized_splat_style = _normalize_pptx_splat_style(splat_style)
@@ -659,7 +659,7 @@ def save_pptx_with_splats(
     sort_by_area: bool = False,
     background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
-    painter_order: str = PPTX_PAINTER_ORDER_LEGACY,
+    painter_order: str = PPTX_PAINTER_ORDER_BACK_TO_FRONT,
 ) -> None:
     """
     Save a self-contained PPTX containing native DrawingML splat shapes.

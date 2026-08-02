@@ -251,12 +251,15 @@ def build_block() -> str:
     out(
         f"The rows above measure each emitter family unconditionally. A bare "
         f"default run (`max-fidelity` profile) additionally applies the SVG "
-        f"compositor gate, which chooses per image: on this corpus it kept "
-        f"`high` gradients on {gate_counts['corrected-high']} images, legacy "
-        f"order on {gate_counts['legacy-order']} and `standard` on "
-        f"{gate_counts['corrected-standard']}, for a gate-selection median "
-        f"SSIM of {svg_gate['ssim_srgb']:.4f} / LPIPS "
-        f"{svg_gate['lpips']:.4f}."
+        f"compositor gate, which chooses per image. In the July corpus study, "
+        f"run against the then-incumbent legacy order, it kept `high` "
+        f"gradients on {gate_counts['corrected-high']} images, legacy on "
+        f"{gate_counts['legacy-order']} and `standard` on "
+        f"{gate_counts['corrected-standard']} (gate median SSIM "
+        f"{svg_gate['ssim_srgb']:.4f} / LPIPS {svg_gate['lpips']:.4f}); the "
+        f"incumbent is now the default corrected-standard emitter, so the "
+        f"gate's floor is the default output and legacy must win an image "
+        f"outright."
     )
     out("")
     out(registry["headline"])
@@ -289,8 +292,8 @@ def build_block() -> str:
         )
     pptx_splats = _median([p["splats"] for p in pptx["per_image"]])
     for label, key in (
-        ("PowerPoint (`legacy` order, default)", "legacy_order"),
-        ("PowerPoint (`--pptx-painter-order back-to-front`)", "corrected_order"),
+        ("PowerPoint (back-to-front order, default)", "corrected_order"),
+        ("PowerPoint (`--pptx-painter-order legacy`)", "legacy_order"),
     ):
         med = pptx["medians"][key]
         out(
@@ -303,8 +306,9 @@ def build_block() -> str:
     out(
         f"The strict PowerPoint artifact gate, choosing per image, kept the "
         f"corrected order on {counts['corrected-order']} of "
-        f"{CORPUS_IMAGES} images and legacy on {counts['legacy-order']}; the "
-        f"CLI exposes both and defaults to legacy."
+        f"{CORPUS_IMAGES} images and legacy on {counts['legacy-order']}; "
+        f"corrected is the default as of 0.2.6, and legacy remains available "
+        f"for the rare regressing image."
     )
     out("")
 

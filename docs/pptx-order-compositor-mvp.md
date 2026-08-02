@@ -1,7 +1,9 @@
 # PowerPoint painter-order MVP
 
 **Status:** full 21-image corpus complete; explicit production emission and
-external artifact selection implemented; legacy remains the default
+external artifact selection implemented. Superseded on the default question:
+corrected back-to-front order became the CLI and library default in 0.2.6;
+`--pptx-painter-order legacy` reproduces the historical stack.
 
 The mathematical renderer consumes splats front-to-back. DrawingML uses a
 painter stack in which later shapes sit above earlier shapes, so the equivalent

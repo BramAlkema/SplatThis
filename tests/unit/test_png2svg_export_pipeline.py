@@ -382,7 +382,9 @@ def test_converter_exports_pptx_and_comparison_artifacts(tmp_path: Path):
     assert "export_quality" in manifest
     assert manifest["config"]["pptx_export_mode"] == "drawingml-splats"
     assert manifest["config"]["pptx_splat_style"] == "gradient"
-    assert manifest["config"]["pptx_painter_order"] == "legacy"
+    # Corrected order is the default since the real-PowerPoint corpus
+    # selected it (median LPIPS 0.320 vs 0.375).
+    assert manifest["config"]["pptx_painter_order"] == "back-to-front"
     assert manifest["config"]["layered_saliency"] is True
     assert manifest["layered_saliency"]["enabled"] is True
     assert manifest["artifact_evaluation"] == {
