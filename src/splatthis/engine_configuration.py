@@ -16,7 +16,7 @@ from .budgets import TIME_BUDGET_ALIASES, TIME_BUDGET_PRESETS
 from .engine_state import ConversionEngineState
 from .export_common import (
     DEFAULT_PPTX_SPLAT_STYLE,
-    PPTX_PAINTER_ORDER_LEGACY,
+    PPTX_PAINTER_ORDER_BACK_TO_FRONT,
     PPTX_SOFT_EDGE_ALPHA_SCALE,
     PPTX_SOFT_EDGE_K_SIGMA_SCALE,
     SVG_BROWSER_COMPAT_RECIPE,
@@ -65,7 +65,7 @@ class ConversionConfigurationMixin(ConversionEngineState):
         apple_silicon_splat_cap: Optional[int] = 2000,
         layered_saliency: bool = False,
         pptx_splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
-        pptx_painter_order: str = PPTX_PAINTER_ORDER_LEGACY,
+        pptx_painter_order: str = PPTX_PAINTER_ORDER_BACK_TO_FRONT,
     ):
         self.requested_max_splats = int(max_splats)
         self.max_splats = int(max_splats)

@@ -74,10 +74,16 @@ class ConversionArtifactMixin(ConversionEngineState):
     ) -> Tuple[str, Dict[str, Any]]:
         """Accept or revert SVG order/stop candidates using real Chromium.
 
-        The historical forward DOM order is the incumbent for monotonicity,
-        not the semantic ideal. Correct back-to-front standard and high-stop
+        The incumbent is what the default emitter ships today: corrected
+        back-to-front order with standard stops. High-stop and legacy-order
         candidates may replace it only when the full guarded metric vector,
-        compressed size, and browser latency pass the artifact gate.
+        compressed size, and browser latency pass the artifact gate. Legacy
+        used to be the incumbent for monotonicity with the pre-correction
+        era; on the July 2026 corpus that biased the gate below either fixed
+        corrected choice (gate median SSIM 0.7111 against 0.7404/0.7483,
+        with legacy retained on four images purely by incumbency). Legacy
+        stays in the race for the images where corrected order genuinely
+        regresses -- it now has to win, not merely persist.
         """
 
         import gzip
@@ -90,8 +96,8 @@ class ConversionArtifactMixin(ConversionEngineState):
         from .svg_recipe_gate import SvgRecipeGatePolicy, select_recipe_candidate
 
         candidate_specs = [
-            ("legacy-standard", "standard", "legacy"),
             ("corrected-standard", "standard", "back-to-front"),
+            ("legacy-standard", "standard", "legacy"),
         ]
         if self.svg_export_recipe in {
             "standard",

@@ -244,9 +244,9 @@ a slide:
 splatthis input.png --format pptx -o output.pptx \
   --pptx-splat-style gradient
 
-# Explicit corrected painter-order candidate; legacy remains the default.
-splatthis input.png --format pptx -o output-corrected.pptx \
-  --pptx-painter-order back-to-front
+# Historical shape order, for reproducing pre-0.2.6 decks.
+splatthis input.png --format pptx -o output-legacy.pptx \
+  --pptx-painter-order legacy
 
 # Deliberately target real PowerPoint's soft-edge compositor.
 splatthis input.png --format pptx -o output-softedge.pptx \
@@ -262,8 +262,10 @@ claims use real PowerPoint slideshow captures.
 A same-population, 21-image PowerPoint corpus test found that corrected
 back-to-front shape order improved median SSIM by 0.02662 and median LPIPS by
 0.03346, but Hubble regressed. The strict artifact policy selected corrected
-order for 14 images and retained legacy for seven. The CLI therefore exposes
-both orders while retaining legacy as the default. The resumable external
+order for 14 images and retained legacy for seven. Corrected back-to-front
+order is the default as of 0.2.6, since it matches the renderer's
+transmittance model and wins the corpus median; `--pptx-painter-order legacy`
+reproduces the historical stack for the rare regressing image. The resumable external
 PowerPoint runner writes the accepted candidate atomically as `selected.pptx`;
 ordinary headless conversion never launches PowerPoint. See the
 [PowerPoint painter-order MVP](https://github.com/BramAlkema/SplatThis/blob/main/docs/pptx-order-compositor-mvp.md).
@@ -325,7 +327,7 @@ Numbers in this block are computed from the committed ledgers by `tools/update_r
 | SVG (`--svg-gradient-quality high`) | 0.2439 | 0.4532 | 0.7483 | 1,331 KB |
 | Scriptless CSS | 0.2429 | 0.4586 | 0.7517 | not measured |
 
-The rows above measure each emitter family unconditionally. A bare default run (`max-fidelity` profile) additionally applies the SVG compositor gate, which chooses per image: on this corpus it kept `high` gradients on 17 images, legacy order on 4 and `standard` on 0, for a gate-selection median SSIM of 0.7111 / LPIPS 0.2439.
+The rows above measure each emitter family unconditionally. A bare default run (`max-fidelity` profile) additionally applies the SVG compositor gate, which chooses per image. In the July corpus study, run against the then-incumbent legacy order, it kept `high` gradients on 17 images, legacy on 4 and `standard` on 0 (gate median SSIM 0.7111 / LPIPS 0.2439); the incumbent is now the default corrected-standard emitter, so the gate's floor is the default output and legacy must win an image outright.
 
 Against the original, the declarative emitters are indistinguishable: median LPIPS 0.2433 / 0.2439 / 0.2429 for svg / svg-high / css, a spread of 0.001, and an SSIM spread of 0.011 that sits below the 0.029 seed noise floor. Emitter choice is not where deployed quality comes from; the fit is. Compositor-only figures make the emitters look far more different than they are, and must not be quoted as quality.
 
@@ -335,10 +337,10 @@ Against the original, the declarative emitters are indistinguishable: median LPI
 |---|---:|---:|---:|---:|---:|---:|
 | Pixel runtime HTML | 2k | 1,395 | 0.7751 | 0.2443 | 226 KB | 3.6 min |
 | Pixel runtime HTML | effective 4k | 2,382 | 0.8406 | 0.1612 | 391 KB | 9.9 min |
-| PowerPoint (`legacy` order, default) | 2k | 1,374 | 0.6019 | 0.3750 | 127 KB | not recorded |
-| PowerPoint (`--pptx-painter-order back-to-front`) | 2k | 1,374 | 0.6279 | 0.3200 | 127 KB | not recorded |
+| PowerPoint (back-to-front order, default) | 2k | 1,374 | 0.6279 | 0.3200 | 127 KB | not recorded |
+| PowerPoint (`--pptx-painter-order legacy`) | 2k | 1,374 | 0.6019 | 0.3750 | 127 KB | not recorded |
 
-The strict PowerPoint artifact gate, choosing per image, kept the corrected order on 14 of 21 images and legacy on 7; the CLI exposes both and defaults to legacy.
+The strict PowerPoint artifact gate, choosing per image, kept the corrected order on 14 of 21 images and legacy on 7; corrected is the default as of 0.2.6, and legacy remains available for the rare regressing image.
 
 21 of 21 images improved from 2k to effective 4k in both SSIM and LPIPS. The effective-4k runtime rendered in a median 117 ms in Chrome. None reached 0.99 SSIM (best 0.9837).
 

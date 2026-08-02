@@ -380,12 +380,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--pptx-painter-order",
-        default="legacy",
-        choices=["legacy", "back-to-front"],
-        help="Native DrawingML shape order. 'legacy' remains the safe default; "
-        "'back-to-front' uses corrected painter semantics demonstrated by the "
-        "real-PowerPoint corpus MVP. Use the external artifact gate before "
-        "promoting it per image.",
+        default="back-to-front",
+        choices=["back-to-front", "legacy"],
+        help="Native DrawingML shape order. 'back-to-front' matches the "
+        "renderer's transmittance model and won the 21-image real-PowerPoint "
+        "corpus (median LPIPS 0.320 vs 0.375, 19 improvements / 1 "
+        "regression; data/pptx-order-compositor-corpus.json). 'legacy' keeps "
+        "the historical stack for the rare image where corrected order "
+        "regresses; the external artifact gate can choose per image.",
     )
     parser.add_argument(
         "--training-export-target",

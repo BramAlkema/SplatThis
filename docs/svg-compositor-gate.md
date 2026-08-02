@@ -35,9 +35,16 @@ legacy` exists only for reproducibility and compatibility checks.
 The `max-fidelity` profile enables an artifact gate. It emits three bounded
 candidates from the final unchanged splat population:
 
-1. historical forward-order SVG with standard stops;
-2. corrected back-to-front SVG with standard stops;
+1. corrected back-to-front SVG with standard stops (the incumbent);
+2. historical forward-order SVG with standard stops;
 3. corrected back-to-front SVG with high stops.
+
+The incumbent is what the default emitter ships. It was originally the
+historical forward order, for monotonicity with the pre-correction era; on
+the July 2026 corpus that biased the gate below either fixed corrected
+choice (gate median 0.7111 SSIM against 0.7404/0.7483), because four images
+kept legacy purely by incumbency. Legacy remains a candidate and now has to
+win an image outright.
 
 Chromium captures every candidate at native dimensions. The gate freezes
 worst-error ROIs from the incumbent and compares SSIM, MS-SSIM, LPIPS, OKLab
@@ -62,9 +69,12 @@ with 56.8% median gzip growth and 4.3% median capture-time growth.
 Neither change was universally monotonic: standard order regressed Gravel and
 Hubble by more than 0.002 SSIM, while high stops regressed two Colorwheel
 seeds. This is why max-fidelity selects per artifact instead of making high
-stops universal. On the 21 seed-0 populations, the simulated gate selected
-corrected-high 17 times and retained legacy order four times. Its median moved
-from 0.5973 to 0.7111 SSIM and from 0.4023 to 0.2439 LPIPS.
+stops universal. On the 21 seed-0 populations, the simulated gate — run under the
+original legacy incumbent — selected corrected-high 17 times and retained
+legacy order four times. Its median moved from 0.5973 to 0.7111 SSIM and from
+0.4023 to 0.2439 LPIPS; the four legacy retentions are what motivated moving
+the incumbent to corrected-standard, which bounds the gate's floor at the
+default emitter's 0.7404/0.2433.
 
 The versioned summary is in
 [`data/svg-compositor-corpus.json`](../data/svg-compositor-corpus.json). The

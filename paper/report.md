@@ -334,7 +334,7 @@ Per content class, deployed median LPIPS on the corrected emitters:
 | transparency | 1 | 0.0863 | 0.0789 | 0.0823 |
 | graphic | 1 | 0.0155 | 0.0127 | 0.0122 |
 
-The default per-image artifact gate, racing each candidate against a legacy-order incumbent, kept `high` gradients on 17 of 21 images, legacy order on 4, and `standard` on 0, for gate medians of 0.7111 SSIM / 0.2439 LPIPS. The fixed corrected-high choice beats the gate at the median -- an incumbent bias recorded, like the PPTX default of §6, as an open decision.
+The default per-image artifact gate originally raced each candidate against a legacy-order incumbent; in the July study it kept `high` gradients on 17 of 21 images, legacy order on 4, and `standard` on 0, for gate medians of 0.7111 SSIM / 0.2439 LPIPS -- below either fixed corrected choice, because incumbency let legacy persist without winning. As of 0.2.6 the incumbent is the default corrected-standard emitter, bounding the gate's floor at the default output; the PPTX shape-order default of §6 flipped to corrected in the same release.
 
 <!-- current-emitters:end -->
 
@@ -369,9 +369,10 @@ DrawingML shape order too. On the same 21 populations, corrected order
 improves the median (LPIPS 0.3200 vs 0.3750, real-PowerPoint captures;
 `data/pptx-order-compositor-corpus.json`) but regresses individual images,
 so a strict per-image artifact gate kept corrected order on 14 of 21 and
-legacy on 7. The CLI exposes both orders and currently retains legacy as the
-default — a conservative choice the median evidence argues against, recorded
-here as an open decision rather than resolved silently.
+legacy on 7. Corrected order is the default as of v0.2.6, since it matches
+the renderer's transmittance model and wins the corpus median; the legacy
+stack remains available for the rare regressing image, and the external gate
+can still choose per image.
 
 ## 7. Negative results
 

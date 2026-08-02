@@ -133,3 +133,9 @@ def compositor_fidelity(output_format: str = "svg") -> Fidelity:
     supplying its own splats.
     """
     return expected_fidelity(output_format)
+
+
+#: Deprecated alias for :class:`Fidelity`, kept so 0.2.5-era imports survive
+#: the rename. The dataclass fields changed with the deployed/compositor
+#: split, so downstream attribute access may still need updating.
+CompositorFidelity = Fidelity

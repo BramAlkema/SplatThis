@@ -4,6 +4,27 @@ All notable changes to SplatThis are documented here.
 
 ## 0.2.6 - 2026-08-02
 
+### Changed
+
+- **Defaults now match the corpus evidence.** Two defaults the August audit
+  flagged as measured losers are flipped, and one API break is repaired:
+
+  PPTX emits corrected back-to-front shape order by default -- it matches the
+  renderer's transmittance model and won the 21-image real-PowerPoint corpus
+  (median LPIPS 0.320 vs 0.375, 19 improvements / 1 regression).
+  `--pptx-painter-order legacy` reproduces the historical stack.
+
+  The SVG compositor gate's incumbent is now the default corrected-standard
+  emitter instead of the legacy order. Under the old incumbent the gate
+  medianed 0.7111 SSIM against 0.7404/0.7483 for either fixed corrected
+  choice, because four corpus images kept legacy purely by incumbency; legacy
+  stays in the race but now has to win an image outright, so the gate's
+  floor is the default emitter's output.
+
+  `CompositorFidelity` is restored as a deprecated alias of `Fidelity`, so
+  0.2.5-era imports survive the rename (the field set still changed with the
+  deployed/compositor split).
+
 ### Fixed
 
 - **The shipped CSS exporter now produces what the README showcases.** The demo

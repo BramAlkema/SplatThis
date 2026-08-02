@@ -137,8 +137,8 @@ def chameleon_fragment(registry: Dict[str, Any]) -> str:
     if cham is None:
         raise TOOL.LedgerError("no chameleon row in the PPTX order corpus")
     for label, key in (
-        ("PowerPoint, corrected order", "corrected_order"),
-        ("PowerPoint, legacy order (default)", "legacy_order"),
+        ("PowerPoint, back-to-front order (default)", "corrected_order"),
+        ("PowerPoint, legacy order", "legacy_order"),
     ):
         deployed_rows.append(
             (label, cham[key]["ssim_srgb"], cham[key]["lpips"], "own fit")
@@ -188,8 +188,8 @@ def pptx_fragment() -> str:
         '    <img src="demo/chameleon-pptx.png" '
         'alt="Real Microsoft PowerPoint slideshow capture of the deck">\n'
         f"    <figcaption><strong>PowerPoint</strong> · "
-        f"{row['splats']:,} native DrawingML shapes · SSIM "
-        f"{legacy['ssim_srgb']:.4f} · LPIPS {legacy['lpips']:.4f} · "
+        f"{row['splats']:,} native DrawingML shapes · legacy-order build · "
+        f"SSIM {legacy['ssim_srgb']:.4f} · LPIPS {legacy['lpips']:.4f} · "
         f"{size_kb:.0f} KB deck</figcaption>\n"
         "  </figure>"
     )

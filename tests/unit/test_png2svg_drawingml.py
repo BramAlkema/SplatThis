@@ -5,6 +5,7 @@ from pathlib import Path
 from splatthis.io import (
     EMU_PER_PX,
     PPTX_PAINTER_ORDER_BACK_TO_FRONT,
+    PPTX_PAINTER_ORDER_LEGACY,
     generate_drawingml_slide_content,
     px_to_emu,
     save_drawingml,
@@ -125,13 +126,15 @@ def test_drawingml_painter_order_reverses_shape_emission() -> None:
         center=[30.0, 30.0], sigma=5.0, color=[0.0, 0.0, 1.0], alpha=0.7
     )
 
-    legacy = generate_drawingml_slide_content([red, blue], width=64, height=64)
-    corrected = generate_drawingml_slide_content(
+    legacy = generate_drawingml_slide_content(
         [red, blue],
         width=64,
         height=64,
-        painter_order=PPTX_PAINTER_ORDER_BACK_TO_FRONT,
+        painter_order=PPTX_PAINTER_ORDER_LEGACY,
     )
+    # The corrected order is the default since the 21-image real-PowerPoint
+    # corpus selected it (median LPIPS 0.320 vs 0.375).
+    corrected = generate_drawingml_slide_content([red, blue], width=64, height=64)
 
     assert legacy.index('val="FF0000"') < legacy.index('val="0000FF"')
     assert corrected.index('val="0000FF"') < corrected.index('val="FF0000"')

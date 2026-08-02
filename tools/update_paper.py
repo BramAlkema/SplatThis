@@ -192,14 +192,17 @@ def build_section() -> str:
 
     counts = gate["selected_counts"]
     out(
-        f"The default per-image artifact gate, racing each candidate against "
-        f"a legacy-order incumbent, kept `high` gradients on "
-        f"{counts['corrected-high']} of {TOOL.CORPUS_IMAGES} images, legacy "
-        f"order on {counts['legacy-order']}, and `standard` on "
+        f"The default per-image artifact gate originally raced each candidate "
+        f"against a legacy-order incumbent; in the July study it kept `high` "
+        f"gradients on {counts['corrected-high']} of {TOOL.CORPUS_IMAGES} "
+        f"images, legacy order on {counts['legacy-order']}, and `standard` on "
         f"{counts['corrected-standard']}, for gate medians of "
-        f"{gate['ssim_srgb']:.4f} SSIM / {gate['lpips']:.4f} LPIPS. The fixed "
-        f"corrected-high choice beats the gate at the median -- an incumbent "
-        f"bias recorded, like the PPTX default of §6, as an open decision."
+        f"{gate['ssim_srgb']:.4f} SSIM / {gate['lpips']:.4f} LPIPS -- below "
+        f"either fixed corrected choice, because incumbency let legacy "
+        f"persist without winning. As of 0.2.6 the incumbent is the default "
+        f"corrected-standard emitter, bounding the gate's floor at the "
+        f"default output; the PPTX shape-order default of §6 flipped to "
+        f"corrected in the same release."
     )
     out("")
     out(END)
