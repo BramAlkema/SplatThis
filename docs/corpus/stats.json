@@ -1,0 +1,107 @@
+{
+ "astronaut": {
+  "pptx_splats": 1621,
+  "runtime_splats": 1619,
+  "svg_splats": 1595
+ },
+ "brick": {
+  "pptx_splats": 1456,
+  "runtime_splats": 1449,
+  "svg_splats": 1458
+ },
+ "camera": {
+  "pptx_splats": 1224,
+  "runtime_splats": 1192,
+  "svg_splats": 1184
+ },
+ "cell": {
+  "pptx_splats": 1374,
+  "runtime_splats": 1457,
+  "svg_splats": 1389
+ },
+ "chameleon": {
+  "pptx_splats": 1674,
+  "runtime_splats": 1682,
+  "svg_splats": 1615
+ },
+ "checkerboard": {
+  "pptx_splats": 1391,
+  "runtime_splats": 1395,
+  "svg_splats": 1345
+ },
+ "chelsea": {
+  "pptx_splats": 1686,
+  "runtime_splats": 1674,
+  "svg_splats": 1616
+ },
+ "coffee": {
+  "pptx_splats": 1449,
+  "runtime_splats": 1429,
+  "svg_splats": 1389
+ },
+ "coins": {
+  "pptx_splats": 1171,
+  "runtime_splats": 1157,
+  "svg_splats": 1182
+ },
+ "colorwheel": {
+  "pptx_splats": 1354,
+  "runtime_splats": 1389,
+  "svg_splats": 1706
+ },
+ "grass": {
+  "pptx_splats": 1341,
+  "runtime_splats": 1346,
+  "svg_splats": 1290
+ },
+ "gravel": {
+  "pptx_splats": 1273,
+  "runtime_splats": 1260,
+  "svg_splats": 1475
+ },
+ "hubble_deep_field": {
+  "pptx_splats": 1177,
+  "runtime_splats": 1189,
+  "svg_splats": 959
+ },
+ "immunohistochemistry": {
+  "pptx_splats": 1652,
+  "runtime_splats": 1651,
+  "svg_splats": 1714
+ },
+ "logo": {
+  "pptx_splats": 1452,
+  "runtime_splats": 1454,
+  "svg_splats": 1445
+ },
+ "moon": {
+  "pptx_splats": 1276,
+  "runtime_splats": 1276,
+  "svg_splats": 1239
+ },
+ "page": {
+  "pptx_splats": 994,
+  "runtime_splats": 1009,
+  "svg_splats": 973
+ },
+ "retina": {
+  "pptx_splats": 1523,
+  "runtime_splats": 1516,
+  "svg_splats": 1533
+ },
+ "rocket": {
+  "pptx_splats": 1348,
+  "runtime_splats": 1356,
+  "svg_splats": 1325
+ },
+ "stereo_motorcycle": {
+  "pptx_splats": 1434,
+  "runtime_splats": 1419,
+  "svg_splats": 1338
+ },
+ "text": {
+  "pptx_splats": 942,
+  "runtime_splats": 954,
+  "svg_splats": 962
+ }
+}
