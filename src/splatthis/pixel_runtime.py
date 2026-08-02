@@ -262,9 +262,9 @@ def generate_parallax_pixel_runtime_html(
         "    font-size: 12px; margin: 8px 0; }\n"
         "</style></head>\n"
         "<body>\n"
-        '<div id="status">rendering...</div>\n'
         f'<div id="stack" data-compositor="pixel-runtime-parallax" '
         f'data-layers="{len(layer_records)}"></div>\n'
+        '<div id="status">rendering...</div>\n'
         "<script>\n" + js + "\n</script>\n"
         "</body></html>\n"
     )
@@ -497,9 +497,9 @@ def generate_pixel_runtime_html(
         "  #status{color:#7fd17f;font-family:ui-monospace,monospace;font-size:12px;margin:8px 0}\n"
         "</style></head>\n"
         "<body>\n"
-        '<div id="status">rendering...</div>\n'
         f'<canvas id="c" data-compositor="pixel-runtime" data-execution="pending" '
         f'width="{int(width)}" height="{int(height)}"></canvas>\n'
+        '<div id="status">rendering...</div>\n'
         "<script>\n" + js + "\n</script>\n"
         "</body></html>\n"
     )
@@ -981,8 +981,9 @@ void main() {
         "-apple-system,sans-serif}body{display:flex;flex-direction:column;"
         "align-items:center;padding:16px}#c{border:1px solid #333;max-width:100%}"
         "#status{color:#7fd17f;font:12px ui-monospace,monospace;margin:8px}</style>"
-        '</head><body><div id="status">rendering pixel runtime...</div>'
+        "</head><body>"
         f'<canvas id="c" data-compositor="pixel-runtime" '
         f'data-execution="pending" width="{int(width)}" height="{int(height)}"></canvas>'
+        '<div id="status">rendering pixel runtime...</div>'
         f"<script>{js}</script></body></html>\n"
     )
