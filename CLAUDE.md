@@ -20,7 +20,7 @@ retired). CLI entry point: `splatthis` (= `splatthis.cli:main`).
 | `optimizer.py` | Torch `SplatParams` + per-group Adam LRs |
 | `renderer.py` | Torch reference renderers (tiled + batched), `L1SSIMLoss`, numpy validator |
 | `mlx_*.py` | MLX backend (default on Apple Silicon): renderer, losses, fused-Adam stage |
-| `io.py` | Emission: SVG recipes, PPTX/DrawingML, native Canvas/CSS HTML, explicit ImageData pixel runtime, quality metrics |
+| `io.py` | Backward-compatible export facade over `svg_export.py`, `pptx_export.py`, `browser_export.py`, `pixel_runtime.py`, `artifact_io.py` |
 | `splat.py` | `GaussianSplat`, layer bands, render-order keys |
 
 Splats flow between stages as `List[GaussianSplat]` ⇄ `[N, 11]` tensors
@@ -48,7 +48,7 @@ black src/splatthis/ tests/unit/
 splatthis docs/demo/source.png -o out.svg --seed 42 --artifacts-dir artifacts/
 # Key flags: --profile (default max-fidelity), --splats, --stages, --time-budget,
 # --optimizer-backend {mlx,torch}, --format {svg,pptx,canvas,css,pixel-runtime},
-# --svg-recipe, --training-export-target {auto,pixel-runtime,browser-gradient,svg,pptx-softedge}
+# --svg-recipe, --training-export-target {auto,pixel-runtime,browser-gradient,svg,pptx-softedge} (canvas = legacy alias)
 ```
 MLX is the default optimizer backend (falls back to torch with a warning when
 mlx is missing). Torch is the cross-platform reference; keep the two in parity —
