@@ -2,6 +2,25 @@
 
 All notable changes to SplatThis are documented here.
 
+## 0.2.6 - 2026-08-02
+
+### Added
+
+- `compositor_fidelity("css")`, completing the browser targets. Measured by
+  emitting CSS from the existing corpus splat populations -- no retraining, the
+  populations were already on disk -- and capturing each in governing Chromium.
+
+      svg             median 0.7540   p10 0.6524
+      css             median 0.7488   p10 0.6510
+      pixel-runtime   median 0.9993   p10 0.9989
+
+  The result is that **emitter family separates, individual format does not**.
+  SVG and CSS both approximate a Gaussian with a radial gradient and land within
+  five thousandths of each other; the pixel runtime evaluates the splat formula
+  instead and is effectively lossless. A consumer choosing between SVG and CSS
+  is choosing on embedding constraints, not fidelity. Choosing the runtime over
+  either is worth about a quarter of SSIM.
+
 ## 0.2.5 - 2026-08-02
 
 ### Added

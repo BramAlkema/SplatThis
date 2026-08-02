@@ -35,6 +35,23 @@ def test_published_band_is_internally_consistent(fmt: str) -> None:
     assert band.summary
 
 
+def test_gradient_emitters_agree_and_the_runtime_does_not() -> None:
+    """Emitter *family* is what separates, not individual format.
+
+    SVG and CSS both approximate a Gaussian with a radial gradient, and land
+    within a few thousandths of each other. The pixel runtime evaluates the
+    formula instead and is effectively lossless. A consumer choosing between
+    SVG and CSS is choosing on embedding constraints, not fidelity; choosing
+    the runtime over either is worth about a quarter of SSIM.
+    """
+    svg = compositor_fidelity("svg")
+    css = compositor_fidelity("css")
+    runtime = compositor_fidelity("pixel-runtime")
+
+    assert abs(svg.median - css.median) < 0.02, "gradient emitters should agree"
+    assert runtime.median - max(svg.median, css.median) > 0.2
+
+
 def test_emitters_differ_by_far_more_than_their_own_spread() -> None:
     """The choice of emitter dominates, and that is the actionable result.
 

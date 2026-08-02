@@ -35,7 +35,7 @@ from typing import Any, Dict, Tuple
 _DATA = Path(__file__).resolve().parent / "data" / "compositor-fidelity.json"
 
 #: Formats this measurement covers. Others raise rather than guess.
-SUPPORTED_FORMATS: Tuple[str, ...] = ("svg", "pixel-runtime")
+SUPPORTED_FORMATS: Tuple[str, ...] = ("svg", "css", "pixel-runtime")
 
 
 @dataclass(frozen=True)
