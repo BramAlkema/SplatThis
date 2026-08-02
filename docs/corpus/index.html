@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SplatThis — corpus gallery, rendered live</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #0e0e10; color: #eaeaea; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 1180px; margin: 0 auto; padding: 48px 24px 80px; }
+  h1 { font-size: 30px; margin: 0 0 8px; letter-spacing: -0.02em; }
+  p { line-height: 1.55; color: #d5d5dd; max-width: 72ch; }
+  a { color: #6fa8ff; }
+  .note { color: #9c9ca5; font-size: 13px; }
+  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 26px 0; }
+  .row figure { background: #1a1a1d; border-radius: 8px; padding: 10px; margin: 0; border: 1px solid #2a2a2e; }
+  .row img { width: 100%; height: auto; display: block; border-radius: 4px; }
+  .row figcaption { color: #9c9ca5; font-size: 12px; margin-top: 8px; font-family: ui-monospace, monospace; }
+  .row figcaption strong { color: #eaeaea; }
+  h2.img { font-size: 17px; margin: 40px 0 0; font-family: ui-monospace, monospace; }
+  h2.img span { color: #9c9ca5; font-weight: 400; font-size: 13px; }
+  .fitframe { position: relative; overflow: hidden; border-radius: 4px; }
+  .fitframe iframe { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; }
+</style>
+</head>
+<body>
+<main>
+<h1>The whole corpus, rendered live</h1>
+<p>All 21 governing-corpus images side by side: the source, the
+corrected-exporter SVG as a real vector your browser is drawing, and the
+scriptless CSS build as real DOM elements composited from a stylesheet.
+Nothing here is a screenshot — GitHub Pages applies no sanitizer, so the
+deployed artifacts themselves render. PowerPoint is the one target that
+cannot appear live; its example lives on the
+<a href="../">project page</a> as a real slideshow capture.</p>
+<p class="note">Rows are ordered best-to-worst by deployed SVG LPIPS. Scores
+are seed-0 measurements of these exact artifacts against the source in
+governing Chromium, quoted from the versioned ledgers; the page is generated
+by <code>tools/build_corpus_gallery.py</code> and goes stale loudly in CI.</p>
+
+<h2 class="img">colorwheel <span>· graphic · 371×370</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/colorwheel.png" loading="lazy" alt="colorwheel source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/colorwheel.svg" loading="lazy" alt="colorwheel as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.0155 · SSIM 0.9463 · 946 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="371" data-h="370" style="aspect-ratio:371/370">
+      <iframe src="css/colorwheel.html" width="371" height="370" loading="lazy" title="colorwheel as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.0122 · SSIM 0.9554 · 890 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">logo <span>· transparency · 384×384</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/logo.png" loading="lazy" alt="logo source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/logo.svg" loading="lazy" alt="logo as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.0863 · SSIM 0.8885 · 813 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="384" data-h="384" style="aspect-ratio:384/384">
+      <iframe src="css/logo.html" width="384" height="384" loading="lazy" title="logo as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.0823 · SSIM 0.8969 · 753 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">text <span>· text-like · 384×147</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/text.png" loading="lazy" alt="text source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/text.svg" loading="lazy" alt="text as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.1287 · SSIM 0.8214 · 522 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="384" data-h="147" style="aspect-ratio:384/147">
+      <iframe src="css/text.html" width="384" height="147" loading="lazy" title="text as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.1337 · SSIM 0.8201 · 501 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">brick <span>· texture · 384×384</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/brick.png" loading="lazy" alt="brick source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/brick.svg" loading="lazy" alt="brick as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.1470 · SSIM 0.8278 · 789 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="384" data-h="384" style="aspect-ratio:384/384">
+      <iframe src="css/brick.html" width="384" height="384" loading="lazy" title="brick as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.1388 · SSIM 0.8445 · 759 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">chameleon <span>· reference · 364×384</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/chameleon.png" loading="lazy" alt="chameleon source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/chameleon.svg" loading="lazy" alt="chameleon as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.1672 · SSIM 0.8494 · 885 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="364" data-h="384" style="aspect-ratio:364/384">
+      <iframe src="css/chameleon.html" width="364" height="384" loading="lazy" title="chameleon as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.1456 · SSIM 0.8748 · 842 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">checkerboard <span>· hard-edges · 200×200</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/checkerboard.png" loading="lazy" alt="checkerboard source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/checkerboard.svg" loading="lazy" alt="checkerboard as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.1733 · SSIM 0.6064 · 815 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="200" data-h="200" style="aspect-ratio:200/200">
+      <iframe src="css/checkerboard.html" width="200" height="200" loading="lazy" title="checkerboard as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.1614 · SSIM 0.6120 · 700 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">rocket <span>· landscape · 384×256</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/rocket.png" loading="lazy" alt="rocket source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/rocket.svg" loading="lazy" alt="rocket as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.2136 · SSIM 0.7960 · 691 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="384" data-h="256" style="aspect-ratio:384/256">
+      <iframe src="css/rocket.html" width="384" height="256" loading="lazy" title="rocket as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.1856 · SSIM 0.8335 · 690 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">coffee <span>· natural · 384×256</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/coffee.png" loading="lazy" alt="coffee source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/coffee.svg" loading="lazy" alt="coffee as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.2349 · SSIM 0.6963 · 765 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="384" data-h="256" style="aspect-ratio:384/256">
+      <iframe src="css/coffee.html" width="384" height="256" loading="lazy" title="coffee as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.2386 · SSIM 0.7077 · 724 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">moon <span>· smooth-gradient · 384×384</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/moon.png" loading="lazy" alt="moon source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/moon.svg" loading="lazy" alt="moon as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.2404 · SSIM 0.8831 · 638 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="384" data-h="384" style="aspect-ratio:384/384">
+      <iframe src="css/moon.html" width="384" height="384" loading="lazy" title="moon as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.2114 · SSIM 0.9166 · 645 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">astronaut <span>· portrait · 384×384</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/astronaut.png" loading="lazy" alt="astronaut source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/astronaut.svg" loading="lazy" alt="astronaut as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.2422 · SSIM 0.6896 · 915 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="384" data-h="384" style="aspect-ratio:384/384">
+      <iframe src="css/astronaut.html" width="384" height="384" loading="lazy" title="astronaut as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.2351 · SSIM 0.7016 · 831 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">coins <span>· grayscale · 384×303</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/coins.png" loading="lazy" alt="coins source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/coins.svg" loading="lazy" alt="coins as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.2433 · SSIM 0.6935 · 677 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="384" data-h="303" style="aspect-ratio:384/303">
+      <iframe src="css/coins.html" width="384" height="303" loading="lazy" title="coins as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.2429 · SSIM 0.7059 · 616 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">chelsea <span>· fur · 384×255</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/chelsea.png" loading="lazy" alt="chelsea source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/chelsea.svg" loading="lazy" alt="chelsea as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.2459 · SSIM 0.7805 · 871 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="384" data-h="255" style="aspect-ratio:384/255">
+      <iframe src="css/chelsea.html" width="384" height="255" loading="lazy" title="chelsea as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.2520 · SSIM 0.8052 · 842 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">cell <span>· grayscale · 320×384</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/cell.png" loading="lazy" alt="cell source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/cell.svg" loading="lazy" alt="cell as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.2990 · SSIM 0.8852 · 697 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="320" data-h="384" style="aspect-ratio:320/384">
+      <iframe src="css/cell.html" width="320" height="384" loading="lazy" title="cell as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.2568 · SSIM 0.9389 · 724 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">stereo_motorcycle <span>· natural · 384×259</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/stereo_motorcycle.png" loading="lazy" alt="stereo_motorcycle source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/stereo_motorcycle.svg" loading="lazy" alt="stereo_motorcycle as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.3090 · SSIM 0.6644 · 756 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="384" data-h="259" style="aspect-ratio:384/259">
+      <iframe src="css/stereo_motorcycle.html" width="384" height="259" loading="lazy" title="stereo_motorcycle as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.3149 · SSIM 0.6735 · 697 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">camera <span>· grayscale · 384×384</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/camera.png" loading="lazy" alt="camera source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/camera.svg" loading="lazy" alt="camera as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.3278 · SSIM 0.7404 · 670 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="384" data-h="384" style="aspect-ratio:384/384">
+      <iframe src="css/camera.html" width="384" height="384" loading="lazy" title="camera as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.3143 · SSIM 0.7517 · 617 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">retina <span>· smooth-gradient · 384×384</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/retina.png" loading="lazy" alt="retina source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/retina.svg" loading="lazy" alt="retina as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.3704 · SSIM 0.7881 · 849 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="384" data-h="384" style="aspect-ratio:384/384">
+      <iframe src="css/retina.html" width="384" height="384" loading="lazy" title="retina as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.3651 · SSIM 0.8051 · 799 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">immunohistochemistry <span>· texture · 384×384</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/immunohistochemistry.png" loading="lazy" alt="immunohistochemistry source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/immunohistochemistry.svg" loading="lazy" alt="immunohistochemistry as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.4078 · SSIM 0.6192 · 947 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="384" data-h="384" style="aspect-ratio:384/384">
+      <iframe src="css/immunohistochemistry.html" width="384" height="384" loading="lazy" title="immunohistochemistry as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.4226 · SSIM 0.6329 · 893 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">hubble_deep_field <span>· dark-sparse · 384×335</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/hubble_deep_field.png" loading="lazy" alt="hubble_deep_field source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/hubble_deep_field.svg" loading="lazy" alt="hubble_deep_field as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.4402 · SSIM 0.5639 · 532 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="384" data-h="335" style="aspect-ratio:384/335">
+      <iframe src="css/hubble_deep_field.html" width="384" height="335" loading="lazy" title="hubble_deep_field as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.4271 · SSIM 0.5696 · 499 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">page <span>· text-like · 384×191</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/page.png" loading="lazy" alt="page source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/page.svg" loading="lazy" alt="page as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.4619 · SSIM 0.6523 · 554 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="384" data-h="191" style="aspect-ratio:384/191">
+      <iframe src="css/page.html" width="384" height="191" loading="lazy" title="page as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.4586 · SSIM 0.6530 · 506 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">grass <span>· texture · 384×384</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/grass.png" loading="lazy" alt="grass source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/grass.svg" loading="lazy" alt="grass as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.5114 · SSIM 0.4267 · 742 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="384" data-h="384" style="aspect-ratio:384/384">
+      <iframe src="css/grass.html" width="384" height="384" loading="lazy" title="grass as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.5222 · SSIM 0.4258 · 672 KB · live DOM</figcaption>
+  </figure>
+</div>
+<h2 class="img">gravel <span>· texture · 384×384</span></h2>
+<div class="row">
+  <figure>
+    <img src="src/gravel.png" loading="lazy" alt="gravel source image">
+    <figcaption><strong>Source</strong></figcaption>
+  </figure>
+  <figure>
+    <img src="svg/gravel.svg" loading="lazy" alt="gravel as corrected-exporter SVG">
+    <figcaption><strong>SVG</strong> · LPIPS 0.5403 · SSIM 0.3938 · 841 KB · live vector</figcaption>
+  </figure>
+  <figure>
+    <div class="fitframe" data-w="384" data-h="384" style="aspect-ratio:384/384">
+      <iframe src="css/gravel.html" width="384" height="384" loading="lazy" title="gravel as scriptless CSS splats"></iframe>
+    </div>
+    <figcaption><strong>Scriptless CSS</strong> · LPIPS 0.5470 · SSIM 0.4131 · 769 KB · live DOM</figcaption>
+  </figure>
+</div>
+
+<p class="note"><a href="../">← SplatThis project page</a> ·
+<a href="../paper/">technical report</a></p>
+</main>
+<script>
+  const fitFrames = () => {
+    document.querySelectorAll(".fitframe").forEach((box) => {
+      const frame = box.querySelector("iframe");
+      if (frame) frame.style.transform = `scale(${box.clientWidth / box.dataset.w})`;
+    });
+  };
+  addEventListener("resize", fitFrames);
+  addEventListener("load", fitFrames);
+  fitFrames();
+</script>
+</body>
+</html>
