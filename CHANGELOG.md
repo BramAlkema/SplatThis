@@ -25,6 +25,13 @@ All notable changes to SplatThis are documented here.
   0.2.5-era imports survive the rename (the field set still changed with the
   deployed/compositor split).
 
+- **The demo deck ships the corrected order it now defaults to.** The
+  showcase `chameleon.pptx` and its real-PowerPoint capture were a
+  legacy-order build predating the default flip; both are replaced with the
+  order study's corrected-order artifacts for the same 1,674-splat
+  population (SSIM 0.7931 -> 0.8379, LPIPS 0.2621 -> 0.2085 on the same
+  real-PowerPoint protocol).
+
 - **Both audit decisions are now measured, not just argued.** Re-running
   the gate study under the corrected-standard incumbent (same populations,
   same policy, fresh Chromium captures) selected `high` on 15 images and the

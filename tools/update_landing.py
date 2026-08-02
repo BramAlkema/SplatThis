@@ -183,16 +183,16 @@ def pptx_fragment() -> str:
         if not asset.is_file():
             raise TOOL.LedgerError(f"missing demo asset: {asset.relative_to(REPO)}")
     row = _pptx_chameleon(TOOL._load_json(TOOL.PPTX_CORPUS))
-    legacy = row["legacy_order"]
+    corrected = row["corrected_order"]
     size_kb = PPTX_DECK.stat().st_size / 1024
     return (
         "  <figure>\n"
         '    <img src="demo/chameleon-pptx.png" '
         'alt="Real Microsoft PowerPoint slideshow capture of the deck">\n'
         f"    <figcaption><strong>PowerPoint</strong> · "
-        f"{row['splats']:,} native DrawingML shapes · legacy-order build · "
-        f"SSIM {legacy['ssim_srgb']:.4f} · LPIPS {legacy['lpips']:.4f} · "
-        f"{size_kb:.0f} KB deck</figcaption>\n"
+        f"{row['splats']:,} native DrawingML shapes · back-to-front build "
+        f"(default) · SSIM {corrected['ssim_srgb']:.4f} · LPIPS "
+        f"{corrected['lpips']:.4f} · {size_kb:.0f} KB deck</figcaption>\n"
         "  </figure>"
     )
 
