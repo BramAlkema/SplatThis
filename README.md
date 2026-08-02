@@ -421,9 +421,10 @@ Each run starts from an immutable configuration snapshot, produces one
 artifact backend. See [Architecture](https://github.com/BramAlkema/SplatThis/blob/main/docs/ARCHITECTURE.md) for the module
 boundaries and extension rules.
 
-Pixel-runtime and SVG repeat-render noise is currently zero in the calibrated
-corpus captures. Native Canvas and CSS still need their own full-corpus noise
-calibration. The versioned target floors and PowerPoint capture provenance live
+Pixel-runtime, SVG, and CSS repeat-render noise is zero in the calibrated
+corpus captures (21 artifacts × 5 repeats per target). Native Canvas still
+needs its own full-corpus noise calibration. The versioned target floors and
+capture provenance live
 in [`data/artifact-gates.json`](https://github.com/BramAlkema/SplatThis/blob/main/data/artifact-gates.json).
 
 ## Main flags

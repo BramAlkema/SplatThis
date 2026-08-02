@@ -25,6 +25,16 @@ All notable changes to SplatThis are documented here.
   0.2.5-era imports survive the rename (the field set still changed with the
   deployed/compositor split).
 
+- **CSS now has its own calibrated repeat-render noise floor.** The
+  calibration tool gained a `css` target that captures the committed
+  corpus-gallery builds -- emitted by the shipped emitter from the exact
+  populations the fidelity registry measured -- in governing Chromium. All 21
+  artifacts at five repeats each measured a span of exactly zero on every
+  metric, matching SVG and the pixel runtime, so CSS no longer borrows the
+  seed-noise floor for its indistinguishability claims.
+  `data/artifact-gates.json` carries the section and provenance; native
+  Canvas is now the only browser target without its own floor.
+
 ### Fixed
 
 - **The shipped CSS exporter now produces what the README showcases.** The demo
