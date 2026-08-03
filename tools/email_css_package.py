@@ -88,8 +88,27 @@ def build_email_html(scene: str, width: int, height: int, backdrop: str) -> str:
         "<!doctype html>\n"
         '<html><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        # Without these Apple Mail applies its own partial inversion to any
+        # message that has not declared a scheme, and a picture built out of
+        # background colours is entirely made of the thing it inverts.
+        # Declaring support says "these colours are deliberate", which is
+        # true: the splats are a fit, not a theme.
+        '<meta name="color-scheme" content="light dark">'
+        '<meta name="supported-color-schemes" content="light dark">'
+        "<style>:root{color-scheme:light dark;"
+        "supported-color-schemes:light dark}"
+        # Only the page chrome follows the scheme. The scene keeps its fitted
+        # backdrop in both, because it is the picture: a splat population is
+        # measured against one background and re-tinting it would make the
+        # message a different image from the one that was fitted.
+        "@media (prefers-color-scheme:dark){"
+        ".page{background:#1c1c1e!important}"
+        ".caption{color:#9a9aa4!important}}</style>"
         "<title>Gaussian splats, drawn by your mail client</title></head>\n"
-        '<body style="margin:0;padding:24px 0;background:#f4f4f6">\n'
+        # Off-white rather than #ffffff on purpose: pure white and pure black
+        # are the values clients invert most aggressively, whatever the
+        # declared scheme.
+        '<body class="page" style="margin:0;padding:24px 0;background:#f4f4f6">\n'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         'border="0" style="border-collapse:collapse"><tr>'
         '<td align="center" style="padding:0">\n'
@@ -112,7 +131,8 @@ def build_email_html(scene: str, width: int, height: int, backdrop: str) -> str:
         f"{scene}\n"
         "<!--<![endif]-->\n"
         "</td></tr>\n"
-        '<tr><td style="padding:12px 2px 0;font-family:-apple-system,'
+        '<tr><td class="caption" style="padding:12px 2px 0;'
+        "font-family:-apple-system,"
         "BlinkMacSystemFont,Segoe UI,Arial,sans-serif;font-size:12px;"
         'line-height:1.5;color:#5b5b66">'
         "Every shape above is a DOM element with a CSS radial gradient. "
