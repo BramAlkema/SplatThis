@@ -27,13 +27,13 @@ os.environ.setdefault("RING_COUNT", "8")
 os.environ.setdefault("RING_LAYOUT", "quantile")
 os.environ.setdefault("RING_BLUR", "1.0")
 
-import pptx_ring_training_mvp as trainer
-import torch
+import pptx_ring_training_mvp as trainer  # noqa: E402
+import torch  # noqa: E402
 
-from splatthis.fidelity.metrics import compute_fidelity_metrics
-from splatthis.io import load_png
-from splatthis.renderer import render_splats_numpy
-from splatthis.storage import load_splats_json
+from splatthis.fidelity.metrics import compute_fidelity_metrics  # noqa: E402
+from splatthis.io import load_png  # noqa: E402
+from splatthis.renderer import render_splats_numpy  # noqa: E402
+from splatthis.storage import load_splats_json  # noqa: E402
 
 IMAGE = "chameleon"
 K = 8

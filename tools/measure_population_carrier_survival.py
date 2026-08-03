@@ -37,11 +37,11 @@ from PIL import Image  # noqa: E402
 
 from splatthis.population_embed import (  # noqa: E402
     PNG_POPULATION_KEY,
+    decode_population,
     embed_population_in_pixels,
     png_population_chunk,
     population_from_pixels,
 )
-from splatthis.population_embed import decode_population  # noqa: E402
 from splatthis.storage import load_splats_json  # noqa: E402
 
 SOURCES = REPO / "result" / "corpus" / "images"
