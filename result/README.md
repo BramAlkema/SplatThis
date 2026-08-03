@@ -86,10 +86,12 @@ Precision 1 only wins on the wire (66 K vs 75 K gzipped); that 9 KB costs
 ## Caveat
 
 `README.md`'s quality table reports the opposite ordering (SVG ≈ 0.32 LPIPS,
-PPTX ≈ 0.40). That table comes from a much longer run
-(`--stages 1000,500,250`); these numbers are the default profile. Both can be
-true — heavy training may favour SVG. Do not treat either as superseding the
-other without matching the configurations.
+PPTX ≈ 0.40). That table came from what was then a much longer run
+(`--stages 1000,500,250`); these numbers were the default profile of the
+time. **That schedule has since become the `max-fidelity` default**, so the
+distinction this paragraph draws no longer exists — do not read it as a
+live caveat. Schedule length still matters well past that default; see
+`docs/schedule-length.md`.
 
 This is also a best-effort-per-format comparison, not one splat set exported
 two ways: each format trains against its own export target, which is what a
