@@ -26,6 +26,10 @@ from .splat import LAYER_BASE, LAYER_MASS, GaussianSplat
 #: alpha-over accumulation depends on, more costs bytes for no measured gain.
 CSS_EXACT_GRADIENT_STOPS = 9
 
+#: Stop count for the email-safe variant. Fewer stops is the smaller half of
+#: the size win; the larger half is dropping the mask entirely.
+CSS_EMAIL_GRADIENT_STOPS = 6
+
 
 def generate_css_splat_html(
     splats: List[GaussianSplat],
@@ -36,6 +40,7 @@ def generate_css_splat_html(
     parallax_strength: float = 0.0,
     hover_grid_size: int = 10,
     k_sigma: float = 2.5,
+    email_safe: bool = False,
 ) -> str:
     """Emit a scriptless HTML compositor made from CSS gradient splats.
 
@@ -111,26 +116,64 @@ def generate_css_splat_html(
         # makes the browser interpolate colour and opacity together, which
         # darkens the skirt of every splat; masking separates them.
         colour = np.clip(np.asarray(splat.color[:3], dtype=np.float32), 0.0, 1.0)
-        fill = (
-            f"color(srgb-linear {float(colour[0]):.6f} "
-            f"{float(colour[1]):.6f} {float(colour[2]):.6f})"
-        )
+        if email_safe:
+            # color(srgb-linear ...) is CSS Color 4 and mail clients do not
+            # have it, so the same colour is converted to display sRGB and
+            # written as legacy rgb().
+            srgb = linear_to_srgb(colour)
+            channels = tuple(int(round(float(c) * 255.0)) for c in srgb)
+            fill = f"rgb({channels[0]},{channels[1]},{channels[2]})"
+        else:
+            fill = (
+                f"color(srgb-linear {float(colour[0]):.6f} "
+                f"{float(colour[1]):.6f} {float(colour[2]):.6f})"
+            )
 
         # Nine evenly spaced samples of the exact Gaussian opacity curve. The
         # adaptive placement used previously spends its stop budget where the
         # curve bends most, which is correct for minimising fitted error but
         # loses the tail that alpha-over compositing accumulates over hundreds
         # of overlapping splats.
-        offsets = np.linspace(0.0, 1.0, CSS_EXACT_GRADIENT_STOPS)
+        stop_count = (
+            CSS_EMAIL_GRADIENT_STOPS if email_safe else CSS_EXACT_GRADIENT_STOPS
+        )
+        offsets = np.linspace(0.0, 1.0, stop_count)
         opacities = _gaussian_opacity_curve(
             offsets, float(np.clip(splat.alpha, 0.0, 1.0)), gradient_footprint
         )
+
+        cx, cy = (float(splat.mu[0]), float(splat.mu[1]))
+        if email_safe:
+            # No mask: the colour is painted through the gradient's own stops.
+            # That is the thing the standard recipe deliberately avoids, so it
+            # is a measured quality cost, not a free substitution. Every stop
+            # carries the same rgb and varies only alpha, which is what keeps
+            # the interpolation from running toward black.
+            stops = ",".join(
+                f"rgba({channels[0]},{channels[1]},{channels[2]},"
+                f"{float(opacity):.3f}) {float(offset) * 100.0:.0f}%"
+                for offset, opacity in zip(offsets, opacities)
+            )
+            # Every declaration the standard recipe puts in the shared <style>
+            # block is inlined here, because Gmail's app strips <style> for
+            # non-Gmail accounts and the splats would otherwise lose their
+            # ellipse shape and their positioning context.
+            style = (
+                "position:absolute;border-radius:50%;"
+                f"left:{cx:.0f}px;top:{cy:.0f}px;"
+                f"width:{2.0 * rx:.0f}px;height:{2.0 * ry:.0f}px;"
+                f"transform:translate(-50%,-50%) rotate({rotation:.0f}deg);"
+                # Size stated explicitly, as in the standard recipe. Omitting
+                # it defaults to farthest-corner, which is sqrt(2) larger and
+                # would show up as a recipe win that is really a size change.
+                f"background:radial-gradient(ellipse 50% 50% at center,{stops})"
+            )
+            return f'<i style="{style}"></i>'
+
         mask_stops = ",".join(
             f"rgba(0,0,0,{float(opacity):.4f}) {float(offset) * 100.0:.2f}%"
             for offset, opacity in zip(offsets, opacities)
         )
-
-        cx, cy = (float(splat.mu[0]), float(splat.mu[1]))
         style = (
             f"left:{cx:.2f}px;top:{cy:.2f}px;"
             f"width:{2.0 * rx:.2f}px;height:{2.0 * ry:.2f}px;"
@@ -216,6 +259,26 @@ def generate_css_splat_html(
 
     safe_title = escape_html(title)
     grid_value = hover_grid_size if parallax_strength > 0.0 else 0
+    if email_safe:
+        # The scene rules move onto the element itself for the same reason the
+        # splat rules did: without a positioned ancestor every absolutely
+        # positioned splat would lay out against the viewport instead, and the
+        # backdrop colour would vanish. The <style> block is dropped rather
+        # than kept as a fallback, since nothing outside it is now needed.
+        scene_style = (
+            f"position:relative;width:{width}px;height:{height}px;"
+            f"overflow:hidden;background:{background_css}"
+        )
+        return (
+            "<!doctype html>\n"
+            f'<html><head><meta charset="utf-8"><title>{safe_title}</title>'
+            "</head>\n"
+            f'<body style="margin:0"><div id="scene" '
+            f'data-compositor="css-splats-email" '
+            f'data-splat-count="{len(ordered_splats)}" style="{scene_style}">'
+            + "".join(planes["midground"])
+            + "</div></body></html>\n"
+        )
     return (
         "<!doctype html>\n"
         f'<html><head><meta charset="utf-8"><title>{safe_title}</title>'

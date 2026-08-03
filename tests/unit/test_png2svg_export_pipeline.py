@@ -1582,3 +1582,57 @@ def test_pixel_carrier_reports_absence_rather_than_guessing(tmp_path):
     _carrier_image(128, 128).save(plain)
     with pytest.raises(ValueError, match="no embedded splatthis population"):
         population_from_png(str(plain))
+
+
+def test_email_safe_css_variant_stands_alone_and_fits_the_budget():
+    """The email variant must survive a stripped <style> block.
+
+    Gmail's app removes <style> for non-Gmail accounts, so anything the
+    standard recipe keeps in the shared stylesheet -- the ellipse shape, the
+    positioning context, the backdrop -- has to be inline or the build
+    collapses in exactly the client it exists for.
+    """
+    import numpy as np
+
+    from splatthis.browser_export import (
+        CSS_EMAIL_GRADIENT_STOPS,
+        generate_css_splat_html,
+    )
+    from splatthis.splat import create_isotropic_splat
+
+    splats = [
+        create_isotropic_splat(
+            center=[10.0 + i, 12.0 + (i % 7)],
+            sigma=3.0,
+            color=[0.4, 0.2, 0.6],
+            alpha=0.55,
+        )
+        for i in range(40)
+    ]
+    background = np.asarray([0.5, 0.2, 0.1], dtype=np.float32)
+    html = generate_css_splat_html(
+        splats,
+        width=120,
+        height=100,
+        background_linear_rgb=background,
+        email_safe=True,
+    )
+
+    assert "<style" not in html, "a stripped <style> block must cost nothing"
+    for absent in ("mask-image", "color(srgb-linear", 'class="splat"'):
+        assert absent not in html, f"{absent} is not available in mail clients"
+
+    # Every declaration the stylesheet used to provide, now per element.
+    assert html.count("position:absolute") >= len(splats)
+    assert html.count("border-radius:50%") >= len(splats)
+    # The scene keeps its positioning context and backdrop inline.
+    assert "position:relative" in html and "background:rgb(" in html
+    # Gradient size stated explicitly; the default is farthest-corner, which
+    # is sqrt(2) larger and silently changes every splat's footprint.
+    assert html.count("radial-gradient(ellipse 50% 50% at center") == len(splats)
+    assert html.count("rgba(") == len(splats) * CSS_EMAIL_GRADIENT_STOPS
+
+    standard = generate_css_splat_html(
+        splats, width=120, height=100, background_linear_rgb=background
+    )
+    assert len(html) < len(standard), "the email variant must be the smaller one"
