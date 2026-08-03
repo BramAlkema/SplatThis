@@ -69,13 +69,18 @@ jobs:
       #   462  after engine_state.py.
       #   187  after parameterizing 308 bare `np.ndarray` annotations (CI count;
       #        a local venv with extra stubs installed may differ).
+      #   166  after widening the population helpers from List to Sequence and
+      #        declaring proxies.py's registered buffers. Both were one root
+      #        cause reported at many call sites: nn.Module.__getattr__ is
+      #        typed as returning Module, so every buffer read as a Module.
       #
-      # What is left is not mechanical: 51 arg-type, 35 no-untyped-call, 28
-      # assignment, and a tail of operator/union-attr/no-any-return. Lower the
-      # baseline whenever the run reports a smaller number.
+      # What is left is not mechanical: arg-type, no-untyped-call, assignment,
+      # and a tail of operator/union-attr/no-any-return. Lower the baseline
+      # whenever the run reports a smaller number.
       shell: bash
       env:
-        MYPY_BASELINE: "187"
+        # macOS reports 164; the gate takes the matrix maximum, not the best.
+        MYPY_BASELINE: "166"
       run: |
         set -o pipefail
         output=$(mypy src/ 2>&1) || true
