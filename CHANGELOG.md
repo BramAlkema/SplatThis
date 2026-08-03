@@ -6,6 +6,26 @@ All notable changes to SplatThis are documented here.
 
 ### Changed
 
+- **`--embed-population`: the SVG carries the splats it was fitted from.**
+  A deployed artifact is the *result* of a fit, and the population that
+  produced it normally lives in a sidecar that never travels with the file.
+  The flag adds an SVG `<metadata>` envelope holding the splats as a gzipped
+  float32 array -- 59 KB for a 1,595-splat population, about 4% of a typical
+  artifact, against 456 KB if the same data were canonical JSON. Drawn markup
+  is byte-identical on every recipe; renderers ignore the element.
+
+  The envelope is self-describing rather than a dump of our classes: it names
+  its fields, dtype, layout, units and colour space, so decoding takes
+  base64, gzip and nothing from this project. That is the point -- the
+  population is this project's own answer at a stated splat budget, published
+  so another fitter can load the same artifact, try to beat it, and be
+  checked against it. It also makes the file re-targetable to PPTX, CSS or
+  the pixel runtime without the source image, and warm-startable, which
+  matters because 97-99% of a repeat run's wall clock is the optimizer loop.
+
+  Off by default: it ships a derivative of the source image inside a file
+  people share, which is a disclosure the user should choose.
+
 - **Defaults now match the corpus evidence.** Two defaults the August audit
   flagged as measured losers are flipped, and one API break is repaired:
 
