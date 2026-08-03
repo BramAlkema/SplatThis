@@ -17,7 +17,7 @@ output is named and evaluated for what it actually does.
 |---|---|---|---|
 | Pixel runtime HTML | WebGL2 evaluates the splat formula; exact Worker/main-thread CPU fallbacks | Selected Chrome canvas pixel buffer | Highest fidelity; accelerated procedural bitmap output |
 | Canvas HTML | One Canvas 2D radial-gradient primitive per splat | Native-size Playwright Chromium capture | Fast browser-native splats and optional parallax |
-| CSS HTML | Scriptless DOM ellipses with CSS radial gradients | Native-size Playwright Chromium capture | No-script embedding and CSS-only hover parallax |
+| CSS HTML | Scriptless DOM ellipses with CSS radial gradients | Native-size Playwright Chromium capture | No-script embedding, CSS-only hover parallax, and [email](#in-an-email) |
 | SVG | Real gradients, blur primitives, or compact scripted splats | Native-size Playwright Chromium capture | Browser delivery and vector editability |
 | PowerPoint | Native DrawingML shapes; no embedded preview PNG | Microsoft PowerPoint slideshow capture | Editable slides |
 
