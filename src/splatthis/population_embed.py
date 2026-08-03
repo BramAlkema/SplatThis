@@ -65,6 +65,12 @@ SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 #: rewrites the package simply drops it rather than corrupting anything.
 PPTX_POPULATION_PART = "splatthis/population.json"
 
+#: PNG text-chunk keyword. PNG carries arbitrary text in tEXt/zTXt
+#: chunks, which every decoder is required to skip over, so a preview or
+#: capture can carry the fit that produced it without becoming a
+#: different image.
+PNG_POPULATION_KEY = "splatthis:population"
+
 
 def encode_population(splats: List[GaussianSplat]) -> str:
     """Return a self-describing JSON envelope for ``splats``.
@@ -167,8 +173,11 @@ def load_population(path: str) -> List[GaussianSplat]:
 
     from .storage import load_splats_json
 
-    if str(path).lower().endswith(".pptx"):
+    lowered = str(path).lower()
+    if lowered.endswith(".pptx"):
         return population_from_pptx(path)
+    if lowered.endswith(".png"):
+        return population_from_png(path)
     text = _Path(path).read_text(encoding="utf-8", errors="ignore")
     if "<splatthis:population" in text:
         return population_from_svg(text)
@@ -199,3 +208,34 @@ def population_from_pptx(path: str) -> List[GaussianSplat]:
                 f"with --embed-population"
             )
         return decode_population(package.read(PPTX_POPULATION_PART).decode("utf-8"))
+
+
+def png_population_chunk(splats: List[GaussianSplat]) -> Any:
+    """Return a ``PngInfo`` carrying ``splats``, for ``Image.save(pnginfo=...)``.
+
+    The payload goes in a compressed text chunk. PNG readers that do not know
+    the keyword are required to ignore it, so the decoded pixels are
+    unchanged -- a preview stays a preview, and gains the ability to say what
+    it was rendered from.
+    """
+    from PIL import PngImagePlugin
+
+    info = PngImagePlugin.PngInfo()
+    # zTXt: the envelope is already gzip+base64, but the chunk-level deflate
+    # still pays for itself on the base64 alphabet.
+    info.add_text(PNG_POPULATION_KEY, encode_population(splats), zip=True)
+    return info
+
+
+def population_from_png(path: str) -> List[GaussianSplat]:
+    """Extract an embedded population from a PNG's text chunks."""
+    from PIL import Image
+
+    with Image.open(path) as image:
+        envelope = (image.text or {}).get(PNG_POPULATION_KEY)
+    if not envelope:
+        raise ValueError(
+            f"no embedded splatthis population in {path}; the PNG carries no "
+            f"{PNG_POPULATION_KEY!r} text chunk"
+        )
+    return decode_population(envelope)

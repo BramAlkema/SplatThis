@@ -160,8 +160,14 @@ def save_linear_rgb_png(
     rendered_linear_rgb: npt.NDArray[Any],
     output_path: str,
     scale: float = 1.0,
+    embed_splats: Optional[List[GaussianSplat]] = None,
 ) -> str:
-    """Write an HxWx3 linear-RGB framebuffer as an atomic display-sRGB PNG."""
+    """Write an HxWx3 linear-RGB framebuffer as an atomic display-sRGB PNG.
+
+    ``embed_splats`` adds the population to a compressed PNG text chunk, so a
+    shared render can say what it was fitted from. Decoders that do not know
+    the keyword must skip the chunk, so the pixels are unchanged.
+    """
 
     rendered = np.asarray(rendered_linear_rgb, dtype=np.float32)
     if rendered.ndim != 3 or rendered.shape[2] != 3:
@@ -175,8 +181,13 @@ def save_linear_rgb_png(
     image = Image.fromarray((rendered_srgb * 255.0).astype(np.uint8), mode="RGB")
     if render_width != width or render_height != height:
         image = image.resize((render_width, render_height), Image.Resampling.LANCZOS)
+    save_kwargs = {}
+    if embed_splats:
+        from .population_embed import png_population_chunk
+
+        save_kwargs["pnginfo"] = png_population_chunk(embed_splats)
     with atomic_output_path(output_path) as temporary:
-        image.save(temporary, format="PNG")
+        image.save(temporary, format="PNG", **save_kwargs)
     return output_path
 
 

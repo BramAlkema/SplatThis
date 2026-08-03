@@ -27,8 +27,8 @@ splatthis input.png -o better.svg --format svg \
   --init-from out.svg --stages 500,250,125
 ```
 
-`--init-from` accepts an embedded-population SVG, an embedded-population
-`.pptx`, or the canonical `*.raw.json` that `--save-json` and `--artifacts-dir`
+`--init-from` accepts an embedded-population SVG, `.pptx` or `.png`, or
+the canonical `*.raw.json` that `--save-json` and `--artifacts-dir`
 already write.
 
 ## Python API
@@ -40,6 +40,9 @@ from splatthis import (
     load_population,        # path (.svg | .pptx | .json) -> List[GaussianSplat]
     population_from_svg,    # SVG markup -> List[GaussianSplat]
     population_from_pptx,   # .pptx path -> List[GaussianSplat]
+    population_from_png,    # .png path -> List[GaussianSplat]
+    png_population_chunk,   # -> PngInfo for Image.save(pnginfo=...)
+    pptx_population_part,   # -> (part_name, text) for the packager
     POPULATION_FIELDS,      # column order of the encoded array
     POPULATION_SCHEMA,      # "splatthis.population/1"
 )
@@ -54,6 +57,13 @@ ignore it, so the drawn markup is byte-identical with and without embedding
 (asserted across all four SVG recipes). A comment would have been the obvious
 alternative and is the wrong tool: `svgo`, which `--svg-optimize` runs, strips
 comments, and a comment cannot contain `--`.
+
+**PNG** — a compressed `zTXt` text chunk keyed `splatthis:population`.
+PNG decoders are required to skip chunks they do not recognise, so the
+decoded pixels are byte-identical. This is the carrier that makes a
+*render* self-describing: a preview or a shared screenshot can state the
+fit it came from. When `--embed-population` is set, the pipeline's
+preview PNG carries it automatically.
 
 **PPTX** — an unreferenced package part at `splatthis/population.json`. OOXML
 packages are ZIPs, so this needs no XML surgery. PowerPoint ignores parts
@@ -101,6 +111,12 @@ Storing floats as floats rather than JSON numbers is what makes this cheap:
 | minified JSON | 316 KB |
 | **gzipped float32** | **59 KB** |
 
+Per carrier, for a 1,595-splat population: about **4%** of a typical SVG,
+**19%** of a 236 KB PNG preview, and a much larger share of a 120-160 KB
+deck. Size is one reason all three are off by default; the other is that
+the population is a derivative of the source image travelling inside a
+file people share.
+
 That is about **4% of a typical SVG** and a much larger fraction of a small
 deck — PPTX artifacts are around 120–160 KB, so embedding is a far bigger
 relative cost there. Both are off by default, and not only for size: the
@@ -120,3 +136,10 @@ people share. That is a disclosure the user should choose.
   settle it. (Re-targets pin automatically; refits do not, since growing the
   population is usually the point.)
 - A PowerPoint Save As drops the embedded part.
+- Any tool that strips PNG ancillary chunks (many optimisers do) drops
+  the population from a preview.
+- The PPTX part must be declared in `[Content_Types].xml`. It is, but the
+  first version was not, and PowerPoint offered to repair the deck --
+  while `openxml-audit` reported zero findings and the AppleScript
+  capture harness returned success with a rendered image. Neither check
+  detects this class of fault; a human opening the file did.

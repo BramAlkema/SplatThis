@@ -1333,3 +1333,68 @@ def test_load_population_accepts_both_artifact_kinds(tmp_path) -> None:
     plain.write_text(generate_svg_content(splats, 48, 48), encoding="utf-8")
     with pytest.raises(ValueError, match="no embedded splatthis population"):
         load_population(str(plain))
+
+
+def test_population_survives_every_carrier_without_changing_the_artifact(
+    tmp_path,
+) -> None:
+    """SVG, PPTX and PNG must all carry a population inertly.
+
+    Each format hides the payload somewhere its readers are required to
+    ignore -- an SVG <metadata> element, an unreferenced OOXML package part,
+    a PNG text chunk. The point of the feature is that the artifact is
+    unchanged as an artifact, so that is what gets asserted.
+    """
+    import numpy as np
+    from PIL import Image
+
+    from splatthis.population_embed import (
+        load_population,
+        png_population_chunk,
+        pptx_population_part,
+    )
+    from splatthis.pptx_export import (
+        generate_drawingml_slide_content,
+        save_pptx_with_drawingml_content,
+    )
+    from splatthis.splat import create_isotropic_splat
+
+    splats = [
+        create_isotropic_splat(
+            center=[6.0 + i, 7.0 + i], sigma=1.1, color=[0.5, 0.3, 0.2], alpha=0.5
+        )
+        for i in range(9)
+    ]
+
+    # PNG: pixels must be byte-identical with and without the chunk.
+    pixels = np.zeros((16, 16, 3), dtype=np.uint8)
+    pixels[4:12, 4:12] = (200, 120, 60)
+    plain_png = tmp_path / "plain.png"
+    embedded_png = tmp_path / "embedded.png"
+    Image.fromarray(pixels).save(plain_png)
+    Image.fromarray(pixels).save(embedded_png, pnginfo=png_population_chunk(splats))
+    assert np.array_equal(
+        np.asarray(Image.open(plain_png)), np.asarray(Image.open(embedded_png))
+    )
+    assert len(load_population(str(embedded_png))) == len(splats)
+
+    # PPTX: the part must be declared in [Content_Types].xml, or PowerPoint
+    # treats the package as damaged and offers to repair it.
+    import zipfile
+
+    slide = generate_drawingml_slide_content(splats, width=32, height=32)
+    deck = tmp_path / "embedded.pptx"
+    save_pptx_with_drawingml_content(
+        slide_xml=slide,
+        width=32,
+        height=32,
+        output_path=str(deck),
+        splat_count=len(splats),
+        embedded_population=pptx_population_part(splats),
+    )
+    with zipfile.ZipFile(deck) as package:
+        content_types = package.read("[Content_Types].xml").decode("utf-8")
+    assert (
+        "splatthis/population.json" in content_types
+    ), "undeclared package part: PowerPoint will offer to repair this deck"
+    assert len(load_population(str(deck))) == len(splats)

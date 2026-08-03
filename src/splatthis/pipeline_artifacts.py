@@ -199,7 +199,11 @@ def _write_diagnostics(
         preview_path = str(source.with_name(f"{source.stem}_splat_proxy.png"))
     if preview_path:
         started = time.perf_counter()
-        save_linear_rgb_png(evaluation.preview_linear, preview_path)
+        save_linear_rgb_png(
+            evaluation.preview_linear,
+            preview_path,
+            embed_splats=(scene.splats if converter.svg_embed_population else None),
+        )
         context.timings["splat_proxy_png"] = float(time.perf_counter() - started)
     if context.request.side_by_side_html:
         started = time.perf_counter()

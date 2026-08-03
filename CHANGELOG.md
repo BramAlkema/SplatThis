@@ -26,6 +26,15 @@ All notable changes to SplatThis are documented here.
   Off by default: it ships a derivative of the source image inside a file
   people share, which is a disclosure the user should choose.
 
+- **Populations also travel in PNG.** A compressed `zTXt` chunk keyed
+  `splatthis:population` carries the fit inside a render: +45 KB on a 236 KB
+  preview, and the decoded pixels are byte-identical, since PNG decoders must
+  skip chunks they do not know. This is the carrier that makes a *render*
+  self-describing -- a shared preview can state what produced it -- and the
+  pipeline's preview PNG carries it automatically when `--embed-population`
+  is set. `--init-from` and `load_population` accept `.png` alongside `.svg`,
+  `.pptx` and raw JSON.
+
 - **`--init-from`: read a population back.** Embedding is only worth
   anything if something can consume it, so the loader accepts either
   artifact this project writes -- an embedded-population SVG or a raw
