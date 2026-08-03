@@ -1468,6 +1468,45 @@ def test_population_survives_the_pixel_carrier_round_trip(tmp_path):
     )
 
 
+def test_explicit_depth_four_can_still_be_read_back():
+    """The write ladder stops at 2; the read ladder must not.
+
+    `bits_per_channel=4` is a documented escape hatch for images too small
+    to carry the payload otherwise. If recovery only tried the depths that
+    embedding picks automatically, that path would write files nothing
+    ships can open.
+    """
+    pytest.importorskip("stego_lsb")
+    from splatthis.population_embed import (
+        STEG_BIT_DEPTHS,
+        STEG_READ_DEPTHS,
+        embed_population_in_pixels,
+        population_from_pixels,
+    )
+
+    assert set(STEG_BIT_DEPTHS) < set(STEG_READ_DEPTHS), (
+        "recovery must try at least every depth embedding can write, "
+        "including the explicit-only ones"
+    )
+
+    import math
+
+    from splatthis.population_embed import encode_population
+
+    splats = _steg_splats()
+    # Sized so 2 bits genuinely fall short and 4 genuinely suffice: at side
+    # ~= sqrt(payload) the capacities are 0.75x and 1.5x the payload. Being
+    # too small for the automatic ladder is the only reason to reach for
+    # depth 4 at all, so the test has to actually be in that regime.
+    side = int(math.sqrt(len(encode_population(splats).encode("utf-8"))))
+    image = _carrier_image(side, side)
+    with pytest.raises(ValueError, match="cannot carry"):
+        embed_population_in_pixels(image, splats)
+
+    carrier = embed_population_in_pixels(image, splats, bits_per_channel=4)
+    assert len(population_from_pixels(carrier)) == len(splats)
+
+
 def test_pixel_carrier_does_not_mutate_the_caller_image():
     """stego-lsb writes through putdata(); this project scores those images.
 

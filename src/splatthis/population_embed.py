@@ -266,6 +266,14 @@ def population_from_png(path: str) -> List[GaussianSplat]:
 #: stays reachable by passing ``bits_per_channel=4`` explicitly.
 STEG_BIT_DEPTHS = (1, 2)
 
+#: What recovery tries, which is deliberately *wider* than what embedding
+#: chooses. The asymmetry is the whole point: refusing to write depth 4
+#: automatically protects the picture, but refusing to read it would strand
+#: any file written with an explicit ``bits_per_channel=4`` -- a documented
+#: write path with no reader. Being conservative about damage and liberal
+#: about recovery are not the same policy, so they do not share a constant.
+STEG_READ_DEPTHS = (1, 2, 4)
+
 
 def _require_stego_lsb() -> Any:
     try:
@@ -341,11 +349,12 @@ def embed_population_in_pixels(
 def population_from_pixels(image: Any) -> List[GaussianSplat]:
     """Recover a population hidden by :func:`embed_population_in_pixels`.
 
-    The depth is not recorded in the image; each candidate is tried and the
-    one whose payload parses as a population envelope wins. Reading at the
-    wrong depth yields a length prefix the library rejects as exceeding the
-    image, or bytes that fail the envelope's own schema check -- so a
-    mangled population cannot be returned silently.
+    The depth is not recorded in the image; every depth in
+    :data:`STEG_READ_DEPTHS` is tried and the one whose payload parses as a
+    population envelope wins. Reading at the wrong depth yields a length
+    prefix the library rejects as exceeding the image, or bytes that fail
+    the envelope's own schema check -- so a mangled population cannot be
+    returned silently.
 
     Accepts any mode convertible to RGB: a carrier that some tool has since
     promoted to RGBA still holds its bits in the colour channels.
@@ -353,7 +362,7 @@ def population_from_pixels(image: Any) -> List[GaussianSplat]:
     steg = _require_stego_lsb()
     if image.mode != "RGB":
         image = image.convert("RGB")
-    for depth in STEG_BIT_DEPTHS:
+    for depth in STEG_READ_DEPTHS:
         try:
             payload = steg.recover_message_from_image(image, depth)
             return decode_population(payload.decode("utf-8"))

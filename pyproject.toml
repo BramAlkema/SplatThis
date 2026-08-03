@@ -50,13 +50,18 @@ dev = [
     "flake8==7.3.0",
     "build>=1.2.0",
     "twine>=5.0.0",
+    # Without this in dev, CI installs '.[dev,capture]' and every in-pixel
+    # carrier test importorskips -- the carrier justifying the feature would
+    # never actually run there.
+    "stego-lsb>=1.4",
     # Renders paper/report.md to the GitHub Pages paper (tools/update_paper.py);
     # tests/unit/test_paper_page.py needs it in CI.
     "markdown>=3.6"
 ]
 test = [
     "pytest>=7.0.0",
-    "pytest-cov>=4.0.0"
+    "pytest-cov>=4.0.0",
+    "stego-lsb>=1.4"
 ]
 # Governing native Canvas, CSS, pixel-runtime, and SVG capture. The tools launch
 # an installed Chrome executable, so this installs the Python automation client

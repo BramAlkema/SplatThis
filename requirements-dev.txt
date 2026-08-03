@@ -4,6 +4,8 @@
 # and re-run `black src/ tests/` + `isort src/ tests/`.
 pytest>=7.0.0
 pytest-cov>=4.0.0
+# In-pixel population carrier tests.
+stego-lsb>=1.4
 black==25.11.0
 mypy==1.18.2
 flake8==7.3.0
