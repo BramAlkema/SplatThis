@@ -63,8 +63,8 @@ def _restore_population(*, source: str, optimized: str) -> bool:
 
     Returns True when ``optimized`` was rewritten. The population lives in
     ``<metadata>``, which svgo's default preset removes; the element is
-    inert markup, so re-inserting it before ``</svg>`` restores the file
-    without touching anything svgo did to the drawing.
+    inert markup, so re-inserting it just before the root's closing tag
+    restores the file without touching anything svgo did to the drawing.
     """
     import re
 
@@ -79,7 +79,12 @@ def _restore_population(*, source: str, optimized: str) -> bool:
     if "splatthis:population" in result:
         return False
 
-    closing = result.rfind("</svg>")
+    # Closing tag derived from the document's own root rather than written
+    # out here: vector markup belongs in the packaged templates.
+    import xml.etree.ElementTree as ET
+
+    root_tag = ET.parse(optimized).getroot().tag.rsplit("}", 1)[-1]
+    closing = result.rfind(f"</{root_tag}>")
     if closing < 0:
         return False
     restored = result[:closing] + match.group(0).strip() + result[closing:]
