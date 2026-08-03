@@ -44,7 +44,7 @@ dev = [
     # Formatters PINNED so CI and local devs agree on the rules.
     # This pin is kept in lockstep with CI and requirements-dev.txt; bump both
     # together when moving to a newer black.
-    "black==25.11.0",
+    "black==26.3.1",
     "isort==5.13.2",
     "mypy==1.18.2",
     "flake8==7.3.0",
