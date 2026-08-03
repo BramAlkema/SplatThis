@@ -186,16 +186,13 @@ def _capture_page_png(
 ) -> tuple[bytes, float]:
     started = time.perf_counter()
     page.goto(svg_uri, wait_until="load", timeout=timeout_ms)
-    page.evaluate(
-        """async () => {
+    page.evaluate("""async () => {
             if (document.fonts) await document.fonts.ready;
             await new Promise(resolve => requestAnimationFrame(
                 () => requestAnimationFrame(resolve)));
-        }"""
-    )
+        }""")
     if validate_geometry:
-        geometry = page.evaluate(
-            """() => {
+        geometry = page.evaluate("""() => {
                 const root = document.documentElement;
                 const rect = root.getBoundingClientRect();
                 return {
@@ -208,8 +205,7 @@ def _capture_page_png(
                     viewportWidth: window.innerWidth,
                     viewportHeight: window.innerHeight,
                 };
-            }"""
-        )
+            }""")
         _validate_capture_geometry(geometry, width=width, height=height)
     payload = page.screenshot(
         type="png",
@@ -298,8 +294,7 @@ def _capture_pixel_runtime_page_png(
         }""",
         timeout=timeout_ms,
     )
-    result = page.evaluate(
-        """() => {
+    result = page.evaluate("""() => {
             const elements = document.querySelectorAll('#c');
             const canvas = elements.length === 1 ? elements[0] : null;
             const root = document.documentElement.dataset;
@@ -312,8 +307,7 @@ def _capture_pixel_runtime_page_png(
                 error: root.splatthisRenderError || null,
                 png: canvas ? canvas.toDataURL('image/png').split(',', 2)[1] : null,
             };
-        }"""
-    )
+        }""")
     if result.get("error"):
         raise RuntimeError(f"pixel runtime failed: {result['error']}")
     expected = {

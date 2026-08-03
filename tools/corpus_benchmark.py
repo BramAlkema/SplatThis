@@ -544,23 +544,20 @@ def _generate_legacy_proxy_html(root: Path, output: Path) -> None:
     for name, entry in meta.items():
         source_path = root / entry["path"]
         source_uri = _data_uri(source_path)
-        panels = [
-            f"""
+        panels = [f"""
             <figure>
               <div class="image-wrap">
                 <img loading="lazy" src="{source_uri}" alt="{html.escape(name)} source">
               </div>
               <figcaption><strong>Source</strong><span>{entry["bytes"] / 1024:.0f} KB</span></figcaption>
-            </figure>"""
-        ]
+            </figure>"""]
 
         for fmt, label in (("svg", "SVG"), ("pptx", "PPTX proxy")):
             record = primary.get((name, fmt))
             preview = root / "runs" / f"{name}_{fmt}_s0_splat_proxy.png"
             if record and preview.exists():
                 preview_uri = _data_uri(preview)
-                panels.append(
-                    f"""
+                panels.append(f"""
                     <figure>
                       <div class="image-wrap">
                         <img loading="lazy" src="{preview_uri}" alt="{html.escape(name)} {label} render">
@@ -569,16 +566,13 @@ def _generate_legacy_proxy_html(root: Path, output: Path) -> None:
                         <strong>{label}</strong>
                         <span>LPIPS {record["lpips"]:.4f} · SSIM {record["ssim_srgb"]:.4f}</span>
                       </figcaption>
-                    </figure>"""
-                )
+                    </figure>""")
             else:
-                panels.append(
-                    f"""
+                panels.append(f"""
                     <figure class="missing">
                       <div class="image-wrap"><span>No {label} run</span></div>
                       <figcaption><strong>{label}</strong><span>—</span></figcaption>
-                    </figure>"""
-                )
+                    </figure>""")
 
         svg = primary.get((name, "svg"))
         baseline = baselines.get(name)
@@ -595,8 +589,7 @@ def _generate_legacy_proxy_html(root: Path, output: Path) -> None:
                 f'<span>matched JPEG LPIPS {baseline["jpeg"]["lpips"]:.4f}</span>'
             )
 
-        cards.append(
-            f"""
+        cards.append(f"""
             <article class="card" data-name="{html.escape(name.lower())}"
                      data-class="{html.escape(entry["content_class"])}"
                      data-lpips="{svg_lpips}">
@@ -609,8 +602,7 @@ def _generate_legacy_proxy_html(root: Path, output: Path) -> None:
               </header>
               <div class="panels">{"".join(panels)}</div>
               <footer>{metrics}</footer>
-            </article>"""
-        )
+            </article>""")
 
     svg_runs = [r for r in scored if r["format"] == "svg" and r["seed"] == 0]
     pptx_runs = [r for r in scored if r["format"] == "pptx" and r["seed"] == 0]
@@ -1128,8 +1120,7 @@ def generate_canvas_corpus_html(root: Path, output: Path) -> None:
             if history_rows
             else ""
         )
-        cards_parts.append(
-            f"""
+        cards_parts.append(f"""
         <article class="card" data-name="{html.escape(model["name"])}"
                  data-model-index="{index}"
                  data-class="{html.escape(model["content_class"])}">
@@ -1167,8 +1158,7 @@ def generate_canvas_corpus_html(root: Path, output: Path) -> None:
           </div>
           {stats_table}
           {history_table}
-        </article>"""
-        )
+        </article>""")
     cards = "".join(cards_parts)
     classes = "".join(
         f'<option value="{html.escape(value)}">{html.escape(value)}</option>'
