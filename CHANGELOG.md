@@ -35,6 +35,41 @@ All notable changes to SplatThis are documented here.
   is set. `--init-from` and `load_population` accept `.png` alongside `.svg`,
   `.pptx` and raw JSON.
 
+- **`--embed-population-in-pixels`: a copy the strippers cannot reach.**
+  The chunk above turned out to be far more fragile than "PNG decoders must
+  skip it" suggests. Measured by running the actual tools against one file
+  carrying both (`tools/measure_population_carrier_survival.py`): `oxipng
+  --strip safe`, `exiftool -all=` and a plain re-save through PIL each
+  destroy it. Not only deliberate sanitising -- anything that opens the file
+  and writes it back, which most pipelines do somewhere.
+
+  So this hides a second copy in the low bits of the pixels, which are not
+  metadata and cannot be stripped without changing the picture. The two are
+  complements rather than alternatives, and both are written: a resize
+  destroys low bits while leaving the chunk intact, exactly inverting the
+  failure. `population_from_png()` reads whichever survived. Nothing
+  survives a lossy re-encode, and none of this is a security property --
+  the payload is hidden from a stripper, not from an adversary.
+
+  It costs picture quality, so it is opt-in and needs `--embed-population`
+  plus the `splatthis[steg]` extra. Scored the usual way: 0.001-0.004 LPIPS
+  on photographs. `cell` is the exception at 0.0856 -- no banding or
+  structure at 4x zoom, just uniform grain, but it is a nearly flat dark
+  field, so ±3/255 is a large *relative* perturbation and the metric is
+  right to charge for it. The larger bill is file size, because LSB noise is
+  incompressible: 1.03x on a busy photograph, 2.74x on a smooth one.
+
+  The depth ladder stops at 2 bits by design. A 200x200 checkerboard only
+  takes the payload at 4, costing 0.19 SSIM and 0.047 ΔE, so escalating
+  automatically would turn "this does not fit" into "your picture was
+  quietly mangled"; it raises and names the chunk carrier instead.
+
+  Bit packing is delegated to `stego-lsb` (MIT, Pillow-only) rather than
+  hand-rolled, since an off-by-one there corrupts payloads silently.
+
+- **`--preview-png PATH`.** The preview render was reachable from the Python
+  API only, which left the flag above with nothing to write into.
+
 - **`--init-from`: read a population back.** Embedding is only worth
   anything if something can consume it, so the loader accepts either
   artifact this project writes -- an embedded-population SVG or a raw
