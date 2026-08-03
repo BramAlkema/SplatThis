@@ -288,6 +288,73 @@ This changes presentation, not the underlying 2D reconstruction. PowerPoint
 hover/grid parallax remains an MVP design rather than a released exporter
 feature.
 
+## Artifacts that carry their own fit
+
+A deployed artifact is the *result* of a fit; the population that produced it
+normally lives in a sidecar that never travels with the file.
+`--embed-population` puts it inside, and `--init-from` reads it back:
+
+```bash
+# The SVG now contains the 1,615 Gaussians it was drawn from.
+splatthis input.png -o out.svg --embed-population
+
+# Re-target it to a deck without the source image, or warm-start a refit.
+splatthis input.png -o deck.pptx --format pptx --init-from out.svg --stages 1
+```
+
+A 1,595-splat population is 59 KB as a gzipped float32 array, against 456 KB
+as canonical JSON — roughly 4% of a typical SVG. It rides in an SVG
+`<metadata>` element, an unreferenced OOXML package part, or a PNG `zTXt`
+chunk, and the envelope is deliberately self-describing: decoding it takes
+base64, gzip and nothing from this project. That is the point. The population
+is this project's own answer at a stated splat budget, published so another
+fitter can load the same artifact, beat it, and be checked against it.
+
+### The warm-start PNG that survives being stripped
+
+Metadata is *removable*, and far more easily than expected. `--embed-population-in-pixels`
+therefore hides a second copy in the low bits of the preview PNG's pixels,
+using LSB steganography ([`stego-lsb`](https://github.com/ragibson/Steganography), MIT):
+
+```bash
+splatthis input.png -o out.svg --embed-population \
+  --embed-population-in-pixels --preview-png warmstart.png
+```
+
+Measured by running each tool against one PNG carrying both carriers
+(`tools/measure_population_carrier_survival.py`):
+
+| what it went through | `zTXt` chunk | in-pixels |
+|---|---|---|
+| `oxipng -o4 --strip safe` | **lost** | survives |
+| `exiftool -all=` | **lost** | survives |
+| re-saved through PIL | **lost** | survives |
+| ImageMagick re-encode | survives | survives |
+| ImageMagick `-resize 50%` | survives | **lost** |
+| JPEG q95 round-trip | **lost** | **lost** |
+
+The chunk dies not only to deliberate stripping but to *any* tool that opens
+the file and writes it back. The two carriers fail on opposite inputs —
+geometry changes destroy low bits, metadata handling destroys chunks — so
+both are written and `population_from_png()` reads whichever survived.
+Nothing survives a lossy re-encode, and none of this is a security property:
+the payload is hidden from a stripper, not from an adversary.
+
+The cost is real, which is why it is opt-in and needs the `splatthis[steg]`
+extra. On photographs the perturbation is 0.001–0.004 LPIPS and invisible at
+4x zoom; on smooth, low-contrast images it is a large *relative* change and
+scores accordingly. The larger bill is file size, since LSB noise is
+incompressible. The depth ladder stops at 2 bits: a payload that only fits at
+4 costs 0.19 SSIM, so it raises rather than quietly damaging the picture.
+
+One caveat worth stating plainly: a PNG *inside* a PPTX or an SVG data URI
+comes back byte-identical — verified, including through `svgo --multipass` —
+because there it is content, not metadata. In a container the plain chunk is
+enough. The pixel carrier earns its keep when the PNG travels on its own.
+
+See [docs/embedded-populations.md](https://github.com/BramAlkema/SplatThis/blob/main/docs/embedded-populations.md)
+for the envelope schema, the full API, and a third-party decode recipe.
+
 ## What quality to expect
 
 **Fidelity is predicted by content, not by format.** Across the 21-image
@@ -448,6 +515,10 @@ in [`data/artifact-gates.json`](https://github.com/BramAlkema/SplatThis/blob/mai
 | `--canvas-parallax-strength PX` | Enable native Canvas plane parallax |
 | `--pixel-runtime-parallax-strength PX` | Enable ImageData-runtime plane parallax |
 | `--css-parallax-strength PX` | Enable scriptless CSS hover parallax |
+| `--embed-population` | Carry the fitted Gaussians inside the SVG, deck, or preview PNG |
+| `--embed-population-in-pixels` | Also hide them in the preview PNG's low bits, where strippers cannot reach |
+| `--init-from ARTIFACT` | Re-target or warm-start from an embedded population |
+| `--preview-png PATH` | Write the fitted splats as a preview render |
 | `--artifacts-dir DIR` | Retain the manifest and intermediate checkpoints |
 
 Run `splatthis --help` for the full research and backend surface.
