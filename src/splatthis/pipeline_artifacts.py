@@ -203,6 +203,7 @@ def _write_diagnostics(
             evaluation.preview_linear,
             preview_path,
             embed_splats=(scene.splats if converter.svg_embed_population else None),
+            embed_in_pixels=converter.png_embed_population_in_pixels,
         )
         context.timings["splat_proxy_png"] = float(time.perf_counter() - started)
     if context.request.side_by_side_html:

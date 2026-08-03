@@ -161,12 +161,21 @@ def save_linear_rgb_png(
     output_path: str,
     scale: float = 1.0,
     embed_splats: Optional[List[GaussianSplat]] = None,
+    embed_in_pixels: bool = False,
 ) -> str:
     """Write an HxWx3 linear-RGB framebuffer as an atomic display-sRGB PNG.
 
     ``embed_splats`` adds the population to a compressed PNG text chunk, so a
     shared render can say what it was fitted from. Decoders that do not know
     the keyword must skip the chunk, so the pixels are unchanged.
+
+    ``embed_in_pixels`` additionally hides the population in the low bits of
+    the image. The two carriers are complements, not alternatives, and both
+    are written when both are asked for: stripping metadata (``oxipng``,
+    ``exiftool``, any tool that re-saves) kills the chunk and leaves the
+    pixels, while resizing kills the pixels and leaves the chunk. This costs
+    picture quality -- little on photographic content, more on smooth
+    low-entropy images -- so it stays opt-in.
     """
 
     rendered = np.asarray(rendered_linear_rgb, dtype=np.float32)
@@ -183,9 +192,12 @@ def save_linear_rgb_png(
         image = image.resize((render_width, render_height), Image.Resampling.LANCZOS)
     save_kwargs = {}
     if embed_splats:
-        from .population_embed import png_population_chunk
+        from .population_embed import embed_population_in_pixels, png_population_chunk
 
         save_kwargs["pnginfo"] = png_population_chunk(embed_splats)
+        if embed_in_pixels:
+            # After any resize above: resampling destroys the low bits.
+            image = embed_population_in_pixels(image, embed_splats)
     with atomic_output_path(output_path) as temporary:
         image.save(temporary, format="PNG", **save_kwargs)
     return output_path

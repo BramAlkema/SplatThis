@@ -65,6 +65,14 @@ test = [
 capture = [
     "playwright>=1.55"
 ]
+# In-pixel population embedding (--embed-population-in-pixels). Optional
+# because it is opt-in and costs picture quality: the PNG text chunk is the
+# default carrier. MIT-licensed and pure-Python over Pillow, which is already
+# a hard dependency. Only the LSB bit-packing is delegated -- getting that
+# off by one corrupts payloads silently.
+steg = [
+    "stego-lsb>=1.4"
+]
 # Apple-Silicon-native optimizer backend (the CLI default when available;
 # PNG2SVGConverter falls back to torch with a warning when mlx is missing).
 mlx = [

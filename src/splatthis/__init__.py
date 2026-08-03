@@ -24,11 +24,16 @@ from .pixel_runtime import (
 from .population_embed import (
     POPULATION_FIELDS,
     POPULATION_SCHEMA,
+    STEG_BIT_DEPTHS,
     decode_population,
+    embed_population_in_pixels,
     encode_population,
     load_population,
+    population_from_pixels,
+    population_from_png,
     population_from_pptx,
     population_from_svg,
+    steg_capacity_bytes,
 )
 from .pptx_export import save_pptx_with_splat_png, save_pptx_with_splats
 from .reporting import save_side_by_side_html
@@ -51,6 +56,11 @@ __all__ = [
     "load_population",
     "population_from_svg",
     "population_from_pptx",
+    "population_from_png",
+    "embed_population_in_pixels",
+    "population_from_pixels",
+    "steg_capacity_bytes",
+    "STEG_BIT_DEPTHS",
     "POPULATION_FIELDS",
     "POPULATION_SCHEMA",
     "compositor_fidelity",

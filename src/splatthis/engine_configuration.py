@@ -212,6 +212,9 @@ class ConversionConfigurationMixin(ConversionEngineState):
         self.svg_embed_population = bool(
             self.refinement_config.get("svg_embed_population", False)
         )
+        self.png_embed_population_in_pixels = bool(
+            self.refinement_config.get("png_embed_population_in_pixels", False)
+        )
         self.svg_gradient_quality = _normalize_svg_gradient_quality(
             self.refinement_config.get("svg_gradient_quality", "standard")
         )

@@ -1398,3 +1398,148 @@ def test_population_survives_every_carrier_without_changing_the_artifact(
         "splatthis/population.json" in content_types
     ), "undeclared package part: PowerPoint will offer to repair this deck"
     assert len(load_population(str(deck))) == len(splats)
+
+
+def _steg_splats(count: int = 40):
+    from splatthis.splat import create_isotropic_splat
+
+    return [
+        create_isotropic_splat(
+            center=[1.0 + i * 0.25, 2.0 + i * 0.5],
+            sigma=1.3,
+            color=[0.4, 0.6, 0.2],
+            alpha=0.7,
+        )
+        for i in range(count)
+    ]
+
+
+def _carrier_image(width: int, height: int):
+    """A textured RGB image; a flat one hides the payload's cost in PNG size."""
+    import numpy as np
+    from PIL import Image
+
+    rng = np.random.default_rng(7)
+    pixels = rng.integers(40, 210, size=(height, width, 3), dtype=np.uint8)
+    return Image.fromarray(pixels, mode="RGB")
+
+
+def test_population_survives_the_pixel_carrier_round_trip(tmp_path):
+    """The in-pixel carrier round-trips through a real PNG file.
+
+    The depth is not stored anywhere, so this covers both rungs of the
+    ladder: a large image takes the payload at 1 bit, a smaller one needs 2,
+    and recovery has to find each without being told which.
+    """
+    pytest.importorskip("stego_lsb")
+    import math
+
+    from PIL import Image
+
+    from splatthis.population_embed import (
+        STEG_BIT_DEPTHS,
+        embed_population_in_pixels,
+        encode_population,
+        population_from_pixels,
+        steg_capacity_bytes,
+    )
+
+    splats = _steg_splats()
+    payload = len(encode_population(splats).encode("utf-8"))
+    # Sized from the real payload rather than guessed: one image comfortably
+    # takes it at 1 bit, the other is deliberately just too small to.
+    roomy = int(math.sqrt(payload * 8 / 3)) * 2
+    tight = int(math.sqrt(payload * 8 / 3) * 0.85)
+
+    seen_depths = set()
+    for side in (roomy, tight):
+        image = _carrier_image(side, side)
+        seen_depths.add(
+            next(d for d in STEG_BIT_DEPTHS if steg_capacity_bytes(image, d) >= payload)
+        )
+        path = tmp_path / f"carrier-{side}.png"
+        embed_population_in_pixels(image, splats).save(path)
+        with Image.open(path) as reread:
+            assert len(population_from_pixels(reread)) == len(splats)
+
+    assert seen_depths == set(STEG_BIT_DEPTHS), (
+        f"both rungs of the depth ladder must be exercised, only hit "
+        f"{sorted(seen_depths)}"
+    )
+
+
+def test_pixel_carrier_does_not_mutate_the_caller_image():
+    """stego-lsb writes through putdata(); this project scores those images.
+
+    An in-place rewrite of a loaded source would shift every measurement
+    taken from it later in the same process.
+    """
+    pytest.importorskip("stego_lsb")
+    import numpy as np
+
+    from splatthis.population_embed import embed_population_in_pixels
+
+    image = _carrier_image(256, 256)
+    before = np.asarray(image).copy()
+    carrier = embed_population_in_pixels(image, _steg_splats())
+
+    assert np.array_equal(np.asarray(image), before), "caller's image was mutated"
+    assert not np.array_equal(np.asarray(carrier), before)
+    assert int(np.abs(np.asarray(carrier, int) - before.astype(int)).max()) <= 3
+
+
+def test_pixel_carrier_refuses_bad_modes_and_overflow():
+    """Failing loudly beats degrading the picture without saying so."""
+    pytest.importorskip("stego_lsb")
+    from splatthis.population_embed import embed_population_in_pixels
+
+    splats = _steg_splats()
+    for mode in ("RGBA", "L", "P"):
+        with pytest.raises(ValueError, match="needs an RGB image"):
+            embed_population_in_pixels(_carrier_image(64, 64).convert(mode), splats)
+
+    # Too small at every rung of the ladder: an error, never a silent
+    # escalation to a depth that visibly damages the image.
+    with pytest.raises(ValueError, match="cannot carry"):
+        embed_population_in_pixels(_carrier_image(16, 16), _steg_splats(400))
+
+
+def test_png_reader_falls_back_to_pixels_when_the_chunk_is_stripped(tmp_path):
+    """The reason the pixel carrier exists, asserted directly.
+
+    Re-saving through PIL drops the text chunk, which is what optimisers and
+    metadata strippers do. The population has to survive that.
+    """
+    pytest.importorskip("stego_lsb")
+    from PIL import Image
+
+    from splatthis.population_embed import (
+        PNG_POPULATION_KEY,
+        embed_population_in_pixels,
+        png_population_chunk,
+        population_from_png,
+    )
+
+    splats = _steg_splats()
+    both = tmp_path / "both.png"
+    embed_population_in_pixels(_carrier_image(256, 256), splats).save(
+        both, pnginfo=png_population_chunk(splats)
+    )
+    assert len(population_from_png(str(both))) == len(splats)
+
+    stripped = tmp_path / "stripped.png"
+    with Image.open(both) as opened:
+        opened.save(stripped)
+    with Image.open(stripped) as check:
+        assert PNG_POPULATION_KEY not in (check.text or {}), "chunk should be gone"
+    assert len(population_from_png(str(stripped))) == len(splats)
+
+
+def test_pixel_carrier_reports_absence_rather_than_guessing(tmp_path):
+    pytest.importorskip("stego_lsb")
+    from splatthis.population_embed import population_from_png
+
+    plain = tmp_path / "plain.png"
+    _carrier_image(128, 128).save(plain)
+    with pytest.raises(ValueError, match="no embedded splatthis population"):
+        population_from_png(str(plain))

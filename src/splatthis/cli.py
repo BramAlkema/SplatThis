@@ -577,6 +577,24 @@ def build_parser() -> argparse.ArgumentParser:
         "artifact.",
     )
     parser.add_argument(
+        "--preview-png",
+        metavar="PATH",
+        help="Also write the fitted splats as a preview PNG. This is the "
+        "file --embed-population and --embed-population-in-pixels write "
+        "their population into.",
+    )
+    parser.add_argument(
+        "--embed-population-in-pixels",
+        action="store_true",
+        help="Additionally hide the population in the low bits of the "
+        "preview PNG's pixels, alongside the text chunk. The chunk is "
+        "metadata and is removed by anything that strips or re-saves "
+        "(oxipng, exiftool, most optimisers); pixels are not. The two "
+        "carriers survive opposite attacks, so both are written. Costs "
+        "picture quality and PNG size, and needs --embed-population and "
+        "the optional 'stego-lsb' extra.",
+    )
+    parser.add_argument(
         "--save-json",
         action="store_true",
         help=(
@@ -627,6 +645,24 @@ def _run_conversion(args: argparse.Namespace) -> int:
             )
     if args.embed_population:
         refinement_config["svg_embed_population"] = True
+    if args.embed_population_in_pixels:
+        if not args.embed_population:
+            print(
+                "error: --embed-population-in-pixels needs --embed-population; "
+                "the pixel carrier rides alongside the text chunk rather than "
+                "replacing it",
+                file=sys.stderr,
+            )
+            return 2
+        if not args.preview_png:
+            print(
+                "error: --embed-population-in-pixels has nothing to write "
+                "into; pass --preview-png PATH (the pixel carrier lives in "
+                "the preview render, not in the SVG or deck)",
+                file=sys.stderr,
+            )
+            return 2
+        refinement_config["png_embed_population_in_pixels"] = True
     if args.svg_optimize:
         refinement_config["svg_optimize"] = True
         refinement_config["svg_optimize_precision"] = int(args.svg_optimize_precision)
@@ -741,6 +777,7 @@ def _run_conversion(args: argparse.Namespace) -> int:
         output_format=args.fmt,
         seed=args.seed,
         artifacts_dir=args.artifacts_dir,
+        preview_png_path=args.preview_png,
         save_json=args.save_json,
         verbose=args.verbose,
     )

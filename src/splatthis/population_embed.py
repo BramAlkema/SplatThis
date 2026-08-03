@@ -32,7 +32,7 @@ from __future__ import annotations
 import base64
 import gzip
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -228,14 +228,139 @@ def png_population_chunk(splats: List[GaussianSplat]) -> Any:
 
 
 def population_from_png(path: str) -> List[GaussianSplat]:
-    """Extract an embedded population from a PNG's text chunks."""
+    """Extract an embedded population from a PNG.
+
+    Reads the text chunk when it is there and falls back to the low bits of
+    the pixels when it is not -- which is exactly the case the pixel carrier
+    exists for, since stripping the chunk is what optimisers do. Callers do
+    not need to know which carrier a given file still has.
+    """
     from PIL import Image
 
     with Image.open(path) as image:
         envelope = (image.text or {}).get(PNG_POPULATION_KEY)
-    if not envelope:
+        if envelope:
+            return decode_population(envelope)
+        try:
+            return population_from_pixels(image)
+        except ImportError:
+            hidden = " (install the 'stego-lsb' extra to also check pixels)"
+        except ValueError:
+            hidden = ""
+    raise ValueError(
+        f"no embedded splatthis population in {path}; the PNG carries no "
+        f"{PNG_POPULATION_KEY!r} text chunk and nothing hidden in its "
+        f"pixels{hidden}"
+    )
+
+
+#: Bit depths tried when hiding or recovering, smallest first: a large image
+#: pays one bit per channel, a smaller one pays two. Recovery walks the same
+#: ladder, so the depth needs no header.
+#:
+#: Deliberately stops at 2. Depth 4 does fit more -- a 200x200 checkerboard
+#: only takes the payload at 4 -- but it costs 0.19 SSIM and 0.047 delta-E,
+#: which is visible damage. Escalating there automatically would turn "this
+#: does not fit" into "the picture was quietly mangled", so the ladder ends
+#: and the caller gets an error naming the chunk carrier instead. Depth 4
+#: stays reachable by passing ``bits_per_channel=4`` explicitly.
+STEG_BIT_DEPTHS = (1, 2)
+
+
+def _require_stego_lsb() -> Any:
+    try:
+        from stego_lsb import LSBSteg
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise ImportError(
+            "in-pixel embedding needs the optional 'stego-lsb' package: "
+            "pip install 'splatthis[steg]'"
+        ) from exc
+    return LSBSteg
+
+
+def steg_capacity_bytes(image: Any, bits_per_channel: int = 1) -> int:
+    """Payload bytes this PIL image can carry at the given depth.
+
+    Net of the length prefix ``stego-lsb`` writes ahead of the payload, so
+    this is what a caller can actually hand to
+    :func:`embed_population_in_pixels`, not the raw bit budget.
+    """
+    steg = _require_stego_lsb()
+    channels = len(image.getbands())
+    total = steg.max_bits_to_hide(image, bits_per_channel, channels) // 8
+    return max(
+        0, total - steg.bytes_in_max_file_size(image, bits_per_channel, channels)
+    )
+
+
+def embed_population_in_pixels(
+    image: Any,
+    splats: List[GaussianSplat],
+    bits_per_channel: Optional[int] = None,
+) -> Any:
+    """Hide a population in the low bits of an RGB PIL image.
+
+    The chunk carriers are all *removable*, and measurably so: against a PNG
+    holding both, ``oxipng --strip safe``, ``exiftool -all=`` and even a plain
+    re-save through PIL each drop the text chunk while the pixels come
+    through intact. Pixels are not metadata to be stripped -- they are the
+    image -- which is the property the chunk cannot offer.
+
+    The converse also holds, so the two carriers are complements rather than
+    alternatives: a resize destroys the low bits and preserves the chunk.
+    Neither survives a lossy re-encode. ``docs/embedded-populations.md``
+    carries the full matrix.
+
+    Requires an ``RGB`` image, and returns a new one -- ``stego-lsb`` writes
+    through ``putdata()`` on whatever it is handed. Other modes are refused
+    rather than converted: ``RGBA`` would hide bits in the alpha channel,
+    where any later composite destroys them, and ``L``/``P`` crash inside the
+    library. Bit packing is delegated to ``stego-lsb`` (MIT) rather than
+    hand-rolled, since an off-by-one there corrupts payloads silently.
+    """
+    steg = _require_stego_lsb()
+    if image.mode != "RGB":
         raise ValueError(
-            f"no embedded splatthis population in {path}; the PNG carries no "
-            f"{PNG_POPULATION_KEY!r} text chunk"
+            f"in-pixel embedding needs an RGB image, got {image.mode!r}; "
+            f"call image.convert('RGB') first (note that this discards any "
+            f"alpha channel, which is why it is not done for you)"
         )
-    return decode_population(envelope)
+    payload = encode_population(splats).encode("utf-8")
+    depths = STEG_BIT_DEPTHS if bits_per_channel is None else (int(bits_per_channel),)
+    for depth in depths:
+        if steg_capacity_bytes(image, depth) >= len(payload):
+            return steg.hide_message_in_image(image.copy(), payload, depth)
+    raise ValueError(
+        f"a {image.size[0]}x{image.size[1]} image cannot carry {len(payload)} "
+        f"bytes at {'/'.join(str(d) for d in depths)} bit(s) per channel "
+        f"(capacity {steg_capacity_bytes(image, depths[-1])} bytes); use the "
+        f"PNG text chunk carrier, which has no capacity limit, or pass "
+        f"bits_per_channel=4 and accept the visible damage"
+    )
+
+
+def population_from_pixels(image: Any) -> List[GaussianSplat]:
+    """Recover a population hidden by :func:`embed_population_in_pixels`.
+
+    The depth is not recorded in the image; each candidate is tried and the
+    one whose payload parses as a population envelope wins. Reading at the
+    wrong depth yields a length prefix the library rejects as exceeding the
+    image, or bytes that fail the envelope's own schema check -- so a
+    mangled population cannot be returned silently.
+
+    Accepts any mode convertible to RGB: a carrier that some tool has since
+    promoted to RGBA still holds its bits in the colour channels.
+    """
+    steg = _require_stego_lsb()
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+    for depth in STEG_BIT_DEPTHS:
+        try:
+            payload = steg.recover_message_from_image(image, depth)
+            return decode_population(payload.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, OSError, KeyError):
+            # Exactly the ways a wrong depth fails: an over-long length
+            # prefix, non-UTF-8 bytes, a corrupt gzip member, or an envelope
+            # missing a key. Anything else is a real bug and should surface.
+            continue
+    raise ValueError("no splatthis population hidden in these pixels")
