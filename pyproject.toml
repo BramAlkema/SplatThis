@@ -122,7 +122,11 @@ disallow_incomplete_defs = true
 [[tool.mypy.overrides]]
 module = [
     "skimage.*",
-    "cv2.*"
+    "cv2.*",
+    # Ships no py.typed marker. Only the LSB bit-packing crosses this
+    # boundary, and population_embed re-checks every recovered payload
+    # against the envelope schema before returning it.
+    "stego_lsb.*"
 ]
 ignore_missing_imports = true
 

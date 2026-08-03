@@ -287,10 +287,9 @@ def steg_capacity_bytes(image: Any, bits_per_channel: int = 1) -> int:
     """
     steg = _require_stego_lsb()
     channels = len(image.getbands())
-    total = steg.max_bits_to_hide(image, bits_per_channel, channels) // 8
-    return max(
-        0, total - steg.bytes_in_max_file_size(image, bits_per_channel, channels)
-    )
+    total = int(steg.max_bits_to_hide(image, bits_per_channel, channels)) // 8
+    prefix = int(steg.bytes_in_max_file_size(image, bits_per_channel, channels))
+    return max(0, total - prefix)
 
 
 def embed_population_in_pixels(
