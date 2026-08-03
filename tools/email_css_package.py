@@ -76,7 +76,13 @@ def _background_css(population: Path) -> str:
     return "#{:02x}{:02x}{:02x}".format(*(int(round(float(c) * 255)) for c in srgb))
 
 
-def build_email_html(scene: str, width: int, height: int, backdrop: str) -> str:
+def build_email_html(
+    scene: str,
+    width: int,
+    height: int,
+    backdrop: str,
+    declare_scheme: bool = True,
+) -> str:
     """Wrap the scene in email-grade markup with an Outlook fallback.
 
     The conditional comments are the standard pair: Word-based Outlook reads
@@ -93,10 +99,15 @@ def build_email_html(scene: str, width: int, height: int, backdrop: str) -> str:
         # background colours is entirely made of the thing it inverts.
         # Declaring support says "these colours are deliberate", which is
         # true: the splats are a fit, not a theme.
-        '<meta name="color-scheme" content="light dark">'
-        '<meta name="supported-color-schemes" content="light dark">'
-        "<style>:root{color-scheme:light dark;"
-        "supported-color-schemes:light dark}"
+        + (
+            '<meta name="color-scheme" content="light dark">'
+            '<meta name="supported-color-schemes" content="light dark">'
+            "<style>:root{color-scheme:light dark;"
+            "supported-color-schemes:light dark}"
+            if declare_scheme
+            else "<style>"
+        )
+        +
         # Only the page chrome follows the scheme. The scene keeps its fitted
         # backdrop in both, because it is the picture: a splat population is
         # measured against one background and re-tinting it would make the
@@ -161,6 +172,16 @@ def main() -> int:
     parser.add_argument("--sender", default="splatthis@localhost")
     parser.add_argument(
         "--subject", default="Gaussian splats, drawn by your mail client"
+    )
+    parser.add_argument(
+        "--ab",
+        action="store_true",
+        help=(
+            "write both variants, with and without the colour-scheme "
+            "declaration, under distinct subjects. Opening a .eml imports it, "
+            "so an unchanged subject makes the new message indistinguishable "
+            "from the copy already in the mailbox"
+        ),
     )
     parser.add_argument("--out", default=str(WORK / "splats.eml"))
     parser.add_argument(

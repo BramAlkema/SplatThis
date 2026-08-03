@@ -1584,13 +1584,14 @@ def test_pixel_carrier_reports_absence_rather_than_guessing(tmp_path):
         population_from_png(str(plain))
 
 
-def test_email_safe_css_variant_stands_alone_and_fits_the_budget():
-    """The email variant must survive a stripped <style> block.
+def test_email_safe_css_variant_uses_only_what_gmail_keeps():
+    """Gmail's sanitiser removes position, left, top and transform.
 
-    Gmail's app removes <style> for non-Gmail accounts, so anything the
-    standard recipe keeps in the shared stylesheet -- the ellipse shape, the
-    positioning context, the backdrop -- has to be inline or the build
-    collapses in exactly the client it exists for.
+    Measured against a real Gmail render: with position gone, an inline
+    element also loses width and height, which is why an earlier version
+    arrived as a bare backdrop with all 285 splats collapsed to nothing.
+    The variant therefore lays out block elements with margins, which Gmail
+    keeps, and treats rotation as optional rather than structural.
     """
     import numpy as np
 
@@ -1618,15 +1619,15 @@ def test_email_safe_css_variant_stands_alone_and_fits_the_budget():
         email_safe=True,
     )
 
-    assert "<style" not in html, "a stripped <style> block must cost nothing"
-    for absent in ("mask-image", "color(srgb-linear", 'class="splat"'):
-        assert absent not in html, f"{absent} is not available in mail clients"
+    # Nothing may depend on a declaration Gmail strips, or on a stylesheet.
+    for absent in ("<style", "position:", "left:", "top:", "mask-image", "<i "):
+        assert absent not in html, f"{absent} does not survive Gmail"
 
-    # Every declaration the stylesheet used to provide, now per element.
-    assert html.count("position:absolute") >= len(splats)
-    assert html.count("border-radius:50%") >= len(splats)
-    # The scene keeps its positioning context and backdrop inline.
-    assert "position:relative" in html and "background:rgb(" in html
+    # Block elements, so width and height apply without a display declaration.
+    assert html.count("<div style=") == len(splats)
+    assert html.count("border-radius:50%") == len(splats)
+    assert html.count(";margin:") == len(splats)  # body has margin:0 too
+    assert "background:rgb(" in html  # scene backdrop, inline
     # Gradient size stated explicitly; the default is farthest-corner, which
     # is sqrt(2) larger and silently changes every splat's footprint.
     assert html.count("radial-gradient(ellipse 50% 50% at center") == len(splats)
@@ -1636,3 +1637,50 @@ def test_email_safe_css_variant_stands_alone_and_fits_the_budget():
         splats, width=120, height=100, background_linear_rgb=background
     )
     assert len(html) < len(standard), "the email variant must be the smaller one"
+
+
+def test_email_safe_margins_place_splats_without_accumulating_error():
+    """Each margin is relative to the previous element's bottom edge.
+
+    Rounding therefore compounds down the chain instead of staying under
+    half a pixel per splat, so the emitter tracks the rounded position. This
+    checks the chain still lands where the splats actually are.
+    """
+    import re
+
+    import numpy as np
+
+    from splatthis.browser_export import generate_css_splat_html
+    from splatthis.splat import create_isotropic_splat
+
+    splats = [
+        create_isotropic_splat(
+            center=[20.0, 20.0 + 30.0 * i], sigma=2.0, color=[0.5, 0.5, 0.5], alpha=0.6
+        )
+        for i in range(6)
+    ]
+    html = generate_css_splat_html(
+        splats,
+        width=64,
+        height=220,
+        background_linear_rgb=np.asarray([0.1, 0.1, 0.1], dtype=np.float32),
+        email_safe=True,
+    )
+
+    boxes = re.findall(
+        r"width:(\d+)px;height:(\d+)px;margin:(-?\d+)px 0 0 (-?\d+)px", html
+    )
+    assert len(boxes) == len(splats)
+
+    # Emission order is compositing order, not input order, so the centres
+    # are compared as a sorted set rather than pairwise.
+    flow_bottom = 0
+    centres = []
+    for _w, height, margin_top, _left in boxes:
+        top = flow_bottom + int(margin_top)
+        centres.append(top + int(height) / 2.0)
+        flow_bottom = top + int(height)
+
+    expected = sorted(float(splat.mu[1]) for splat in splats)
+    for got, want in zip(sorted(centres), expected):
+        assert abs(got - want) <= 1.0, f"splat centre drifted to {got} from {want}"

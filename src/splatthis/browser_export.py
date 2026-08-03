@@ -97,6 +97,12 @@ def generate_css_splat_html(
             return "midground"
         return "foreground"
 
+    # Running bottom edge of the last email-safe block, so the next one's
+    # margin-top can be expressed as a delta. Gmail strips position/left/top,
+    # but it keeps margins, and sibling margins collapse against a zero
+    # margin-bottom to exactly the value asked for -- negative included.
+    flow_bottom = [0.0]
+
     def _splat_element(splat: GaussianSplat, index: int) -> str:
         eigenvals, eigenvecs = splat.eigendecomposition()
         rx = max(
@@ -154,21 +160,42 @@ def generate_css_splat_html(
                 f"{float(opacity):.3f}) {float(offset) * 100.0:.0f}%"
                 for offset, opacity in zip(offsets, opacities)
             )
-            # Every declaration the standard recipe puts in the shared <style>
-            # block is inlined here, because Gmail's app strips <style> for
-            # non-Gmail accounts and the splats would otherwise lose their
-            # ellipse shape and their positioning context.
+            # Laid out by margins in normal flow, not by absolute position.
+            # Gmail strips position, left, top and transform from inline
+            # styles; with position gone an inline <i> also loses width and
+            # height, which is why 285 splats rendered as an empty backdrop.
+            # A block element sized and offset by margins uses only
+            # properties Gmail keeps.
+            width_px = max(1.0, round(2.0 * rx))
+            height_px = max(1.0, round(2.0 * ry))
+            left = cx - width_px / 2.0
+            top = cy - height_px / 2.0
+            # Track the *rounded* position, not the ideal one. Each margin is
+            # relative to the previous element's bottom, so rounding error
+            # accumulates down the chain rather than staying under half a
+            # pixel per splat the way it does with absolute coordinates.
+            margin_top = round(top - flow_bottom[0])
+            flow_bottom[0] += margin_top + height_px
+            # rotate() is kept, deliberately, and without the translate the
+            # absolute version needed: clients that support transforms get
+            # the fitted orientation, and the ones that strip it still get
+            # the splat in the right place, merely axis-aligned.
+            rotate = (
+                f"transform:rotate({rotation:.0f}deg);" if abs(rotation) >= 0.5 else ""
+            )
+            # <div>, not <i>: block display is the default, so nothing depends
+            # on a display declaration surviving the sanitiser.
             style = (
-                "position:absolute;border-radius:50%;"
-                f"left:{cx:.0f}px;top:{cy:.0f}px;"
-                f"width:{2.0 * rx:.0f}px;height:{2.0 * ry:.0f}px;"
-                f"transform:translate(-50%,-50%) rotate({rotation:.0f}deg);"
+                "border-radius:50%;"
+                f"width:{width_px:.0f}px;height:{height_px:.0f}px;"
+                f"margin:{margin_top:.0f}px 0 0 {left:.0f}px;"
+                f"{rotate}"
                 # Size stated explicitly, as in the standard recipe. Omitting
                 # it defaults to farthest-corner, which is sqrt(2) larger and
                 # would show up as a recipe win that is really a size change.
                 f"background:radial-gradient(ellipse 50% 50% at center,{stops})"
             )
-            return f'<i style="{style}"></i>'
+            return f'<div style="{style}"></div>'
 
         mask_stops = ",".join(
             f"rgba(0,0,0,{float(opacity):.4f}) {float(offset) * 100.0:.2f}%"
@@ -265,8 +292,11 @@ def generate_css_splat_html(
         # positioned splat would lay out against the viewport instead, and the
         # backdrop colour would vanish. The <style> block is dropped rather
         # than kept as a fallback, since nothing outside it is now needed.
+        # overflow:hidden does double duty: it clips the splats that hang
+        # over the edge, and it stops the first splat's margin collapsing
+        # out through the container.
         scene_style = (
-            f"position:relative;width:{width}px;height:{height}px;"
+            f"width:{width}px;height:{height}px;"
             f"overflow:hidden;background:{background_css}"
         )
         return (
