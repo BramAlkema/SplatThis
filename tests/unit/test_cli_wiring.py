@@ -80,9 +80,12 @@ def test_svg_flags_reach_the_refinement_config(run_cli: RunCli) -> None:
         # therefore never written into the config.
         (("--training-export-target", "canvas"), None),
         (("--training-export-target", "pixel-runtime"), None),
-        (("--format", "pptx"), None),
         (("--training-export-target", "browser-gradient"), "svg"),
         (("--format", "css"), "svg"),
+        # auto resolves per format; pptx moved to the gradient proxy in
+        # 0.2.6 after a 21-image real-PowerPoint pass.
+        (("--format", "pptx"), "pptx-gradient"),
+        (("--format", "pixel-runtime"), None),
     ],
 )
 def test_training_export_target_aliases_resolve(

@@ -202,7 +202,7 @@ def pptx_fragment() -> str:
         '    <img src="demo/chameleon-pptx.png" '
         'alt="Real Microsoft PowerPoint slideshow capture of the deck">\n'
         f"    <figcaption><strong>PowerPoint</strong> · "
-        f"{row['splats']:,} native DrawingML shapes · back-to-front build "
+        f"{row['splats']:,} native DrawingML shapes · gradient-target fit "
         f"(default) · SSIM {fresh['ssim_srgb']:.4f} · LPIPS "
         f"{fresh['lpips']:.4f} · {size_kb:.0f} KB deck</figcaption>\n"
         "  </figure>"

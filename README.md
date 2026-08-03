@@ -337,10 +337,9 @@ Against the original, the declarative emitters are indistinguishable: median LPI
 |---|---:|---:|---:|---:|---:|---:|
 | Pixel runtime HTML | 2k | 1,395 | 0.7751 | 0.2443 | 226 KB | 3.6 min |
 | Pixel runtime HTML | effective 4k | 2,382 | 0.8406 | 0.1612 | 391 KB | 9.9 min |
-| PowerPoint (back-to-front order, default) | 2k | 1,374 | 0.6279 | 0.3200 | 127 KB | not recorded |
-| PowerPoint (`--pptx-painter-order legacy`) | 2k | 1,374 | 0.6019 | 0.3750 | 127 KB | not recorded |
+| PowerPoint (real slideshow captures) | 2k | 1,374 | 0.6916 | 0.2715 | 118 KB | not recorded |
 
-The strict PowerPoint artifact gate, choosing per image, kept the corrected order on 14 of 21 images and legacy on 7; corrected is the default as of 0.2.6, and legacy remains available for the rare regressing image.
+PowerPoint decks are fitted against a model of the gradient primitive they actually ship (`--training-export-target pptx-gradient`, the default since 0.2.6). Against the previous pixel-runtime-trained default, that improved OKLab colour error on 21 of 21 corpus images and median LPIPS from 0.3212 to 0.2715, both on real slideshow captures. Shape order is a separate axis: the strict artifact gate kept corrected order on 14 of 21 images and legacy on 7; corrected is the default, and legacy remains available for the rare regressing image.
 
 21 of 21 images improved from 2k to effective 4k in both SSIM and LPIPS. The effective-4k runtime rendered in a median 117 ms in Chrome. None reached 0.99 SSIM (best 0.9837).
 

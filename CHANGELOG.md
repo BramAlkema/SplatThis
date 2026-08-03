@@ -60,10 +60,13 @@ All notable changes to SplatThis are documented here.
   in `proxies.py` beside the soft-edge proxy, its MLX mirror in
   `mlx_renderer.py`, torch/MLX parity and emitter-curve fidelity pinned by
   tests. Measured on one image against a real PowerPoint capture: chameleon
-  LPIPS 0.2075 -> 0.1895, SSIM 0.8395 -> 0.8557, and OKLab colour error
-  halved at 0.0568 -> 0.0289, on the shipped primitive at 1,675 shapes and
-  4 seconds to open -- beating the ring-stack line that cost 8x the shapes
-  and 34 seconds. Opt-in, not the `auto` default: that needs a corpus pass.
+  LPIPS 0.2075 -> 0.1895 and SSIM 0.8395 -> 0.8557 -- but those came from a
+  research fine-tune, not the shipped path, and so described an instrument
+  rather than the feature. The shipped path was then measured on the full
+  corpus and became the default (see the entry above); on chameleon it
+  reaches LPIPS 0.1682 and SSIM 0.8723, better than the proxy's figures.
+  Both beat the ring-stack line, which wanted 8x the shapes and 34 seconds
+  to open a slide.
 
   Known follow-up: `_postfit_splats_for_pptx_proxy` still refines against a
   plain Gaussian, so a `pptx-gradient` run that also enables

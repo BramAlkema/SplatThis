@@ -324,25 +324,38 @@ def build_block() -> str:
             f"| {_row_med(rows, 'artifact_bytes') / 1024:,.0f} KB "
             f"| {_row_med(rows, 'runtime_sec') / 60:.1f} min |"
         )
+    # The deployed PowerPoint row comes from the live real-capture ledger,
+    # not the painter-order study: that study answers a different question
+    # and its decks predate the current default training target.
+    ppt_rows = [
+        json.loads(line)
+        for line in (RESULTS.with_name("powerpoint_results.jsonl"))
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line
+    ]
+    _require_corpus({r["image"] for r in ppt_rows}, "powerpoint_results.jsonl")
     pptx_splats = _median([p["splats"] for p in pptx["per_image"]])
-    for label, key in (
-        ("PowerPoint (back-to-front order, default)", "corrected_order"),
-        ("PowerPoint (`--pptx-painter-order legacy`)", "legacy_order"),
-    ):
-        med = pptx["medians"][key]
-        out(
-            f"| {label} | 2k | {pptx_splats:,.0f} | {med['ssim_srgb']:.4f} "
-            f"| {med['lpips']:.4f} | {med['file_size_bytes'] / 1024:,.0f} KB "
-            f"| not recorded |"
-        )
+    out(
+        f"| PowerPoint (real slideshow captures) | 2k | {pptx_splats:,.0f} "
+        f"| {_median([r['ssim_srgb'] for r in ppt_rows]):.4f} "
+        f"| {_median([r['lpips'] for r in ppt_rows]):.4f} "
+        f"| {_median([r['pptx_bytes'] for r in ppt_rows]) / 1024:,.0f} KB "
+        f"| not recorded |"
+    )
     out("")
     counts = pptx["selection_counts"]
     out(
-        f"The strict PowerPoint artifact gate, choosing per image, kept the "
-        f"corrected order on {counts['corrected-order']} of "
-        f"{CORPUS_IMAGES} images and legacy on {counts['legacy-order']}; "
-        f"corrected is the default as of 0.2.6, and legacy remains available "
-        f"for the rare regressing image."
+        f"PowerPoint decks are fitted against a model of the gradient "
+        f"primitive they actually ship (`--training-export-target "
+        f"pptx-gradient`, the default since 0.2.6). Against the previous "
+        f"pixel-runtime-trained default, that improved OKLab colour error on "
+        f"{CORPUS_IMAGES} of {CORPUS_IMAGES} corpus images and median LPIPS "
+        f"from 0.3212 to 0.2715, both on real slideshow captures. Shape order "
+        f"is a separate axis: the strict artifact gate kept corrected order on "
+        f"{counts['corrected-order']} of {CORPUS_IMAGES} images and legacy on "
+        f"{counts['legacy-order']}; corrected is the default, and legacy "
+        f"remains available for the rare regressing image."
     )
     out("")
 

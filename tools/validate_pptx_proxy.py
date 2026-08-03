@@ -12,8 +12,12 @@ proxy-vs-capture loss is small, training against it is training against
 PowerPoint. If it is as large as the gradient emitter's loss, the premise
 collapses and the optimizer is chasing a fiction.
 """
-import json, math, os, sys
+import json
+import math
+import os
+import sys
 from pathlib import Path
+
 import numpy as np
 
 REPO = Path(__file__).resolve().parents[1]
@@ -23,12 +27,13 @@ os.environ.setdefault("RING_COUNT", "8")
 os.environ.setdefault("RING_LAYOUT", "quantile")
 os.environ.setdefault("RING_BLUR", "1.0")
 
-import torch
 import pptx_ring_training_mvp as trainer
-from splatthis.io import load_png
-from splatthis.storage import load_splats_json
+import torch
+
 from splatthis.fidelity.metrics import compute_fidelity_metrics
+from splatthis.io import load_png
 from splatthis.renderer import render_splats_numpy
+from splatthis.storage import load_splats_json
 
 IMAGE = "chameleon"
 K = 8

@@ -26,7 +26,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 
@@ -91,10 +91,72 @@ def process_image(image: str) -> str:
     return f"ok ({len(splats)} splats, {width}x{height})"
 
 
+def _capture_run_tag(run_tag: str, only: Optional[str]) -> int:
+    """Capture the decks a tagged corpus run wrote, scoring nothing here.
+
+    The decks already exist; re-emitting them would discard the very
+    parameters the run was measuring. Captures land beside each deck as
+    ``<deck stem>_powerpoint_slide.png`` so the standard scorer finds them.
+    """
+    import json
+
+    ledger = REPO / "result" / "corpus" / "results.jsonl"
+    rows = [
+        json.loads(line)
+        for line in ledger.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    wanted = {p.strip() for p in only.split(",")} if only else None
+    jobs = []
+    for row in rows:
+        if row.get("run_tag") != run_tag or not row.get("output_path"):
+            continue
+        if wanted and row["image"] not in wanted:
+            continue
+        deck = REPO / "result" / "corpus" / row["output_path"]
+        if deck.is_file():
+            jobs.append((row["image"], deck))
+    if not jobs:
+        print(f"no decks found for run_tag {run_tag!r}", file=sys.stderr)
+        return 2
+
+    failures: List[str] = []
+    for index, (image, deck) in enumerate(sorted(jobs), 1):
+        source = load_png(str(SOURCES / f"{image}.png"))
+        height, width = source.shape[:2]
+        capture = deck.with_name(f"{deck.stem}_powerpoint_slide.png")
+        print(f"[{index}/{len(jobs)}] {image} ... ", end="", flush=True)
+        if capture.exists():
+            print("cached")
+            continue
+        returncode, message = _capture_powerpoint_slideshow(
+            deck, capture, width, height
+        )
+        if returncode or not capture.exists():
+            print(f"FAILED: {message.strip()[-160:]}")
+            failures.append(image)
+        else:
+            print("ok")
+    if failures:
+        print(f"\n{len(failures)} failed: {', '.join(failures)}")
+        return 1
+    print(f"\nCaptured {len(jobs)} decks for run_tag {run_tag}.")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--only", help="comma-separated corpus image names")
+    parser.add_argument(
+        "--from-run-tag",
+        help="capture the decks a corpus run already produced, resolved from "
+        "results.jsonl by run_tag, instead of re-emitting from stored "
+        "populations. Use this to judge a training-target sweep.",
+    )
     args = parser.parse_args()
+
+    if args.from_run_tag:
+        return _capture_run_tag(args.from_run_tag, args.only)
 
     images = sorted(p.stem for p in SOURCES.glob("*.png"))
     if args.only:

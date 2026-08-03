@@ -17,7 +17,7 @@ from .adaptive_compute import (
 )
 from .budgets import TIME_BUDGET_ALIASES, TIME_BUDGET_PRESETS
 from .converter import PNG2SVGConverter
-from .export_common import TRAINING_TARGET_ALIASES
+from .export_common import AUTO_TRAINING_TARGETS, TRAINING_TARGET_ALIASES
 from .profiles import PROFILE_NAMES
 
 DEFAULT_MAX_SPLATS = 2000
@@ -601,9 +601,7 @@ def _run_conversion(args: argparse.Namespace) -> int:
     # output in soffice/LibreOffice viewers; users targeting real PowerPoint
     # should pass --training-export-target pptx-softedge explicitly.
     if args.training_export_target == "auto":
-        training_export_target = (
-            "svg" if args.fmt in {"svg", "css", "canvas"} else "pixel-runtime"
-        )
+        training_export_target = AUTO_TRAINING_TARGETS.get(args.fmt, "pixel-runtime")
     else:
         # Every other spelling is an alias the shared table already resolves.
         training_export_target = TRAINING_TARGET_ALIASES[args.training_export_target]

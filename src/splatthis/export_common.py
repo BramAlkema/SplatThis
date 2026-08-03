@@ -169,6 +169,17 @@ SRGB_TRAINING_TARGETS = frozenset({"svg", "pptx-softedge", "pptx-gradient"})
 #: plain Gaussian; the others mirror the torch proxies in proxies.py.
 PPTX_PROXY_MODES: Tuple[str, ...] = ("none", "softedge", "gradient")
 
+#: What ``--training-export-target auto`` resolves to per output format.
+#: PPTX moved to pptx-gradient in 0.2.6 on a 21-image real-PowerPoint
+#: pass: median LPIPS 0.3212 -> 0.2715, SSIM 0.6279 -> 0.6916, and OKLab
+#: colour error improved on every image without exception.
+AUTO_TRAINING_TARGETS: Dict[str, str] = {
+    "svg": "svg",
+    "css": "svg",
+    "canvas": "svg",
+    "pptx": "pptx-gradient",
+}
+
 #: Which proxy renderer each training target selects.
 PPTX_TARGET_PROXY_MODES: Dict[str, str] = {
     "pptx-softedge": "softedge",
