@@ -234,6 +234,27 @@ non-hovered frame. This target trades runtime code for DOM size: one element
 per splat is convenient and inspectable, but thousands of DOM nodes can cost
 more layout and paint work than the single Canvas element.
 
+### In an email
+
+Because the CSS target downloads no image and runs no script, it survives the
+image blocking that leaves most email blank — and mail clients turn out to be
+a harder renderer than any browser. Two constraints decide it, and neither is
+the gradients: Gmail truncates a message past **102 KB of HTML source**, and
+its CSS allowlist strips `position`, `left`, `top` and `transform`. An
+email-safe variant that inlines every declaration, drops `mask-image`, and
+lays splats out with margins instead of absolute coordinates fits **285
+splats** and renders in Apple Mail at SSIM 0.744, Gmail at 0.667. Outlook
+renders through Word and gets a fallback block.
+
+```bash
+# Package a fitted population as a .eml you can open in real clients.
+PYTHONPATH=src python tools/email_css_package.py --open
+```
+
+[docs/css-splats-in-email.md](https://github.com/BramAlkema/SplatThis/blob/main/docs/css-splats-in-email.md)
+has the sanitiser findings, the measurements, and the dark-mode and Outlook
+handling.
+
 ## PowerPoint workflows
 
 PowerPoint output contains native shapes rather than a bitmap masquerading as

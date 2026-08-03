@@ -70,6 +70,31 @@ All notable changes to SplatThis are documented here.
 - **`--preview-png PATH`.** The preview render was reachable from the Python
   API only, which left the flag above with nothing to write into.
 
+- **CSS splats can be emailed.** `generate_css_splat_html(..., email_safe=True)`
+  emits a variant that survives a mail client: every declaration inlined,
+  `mask-image` replaced by colour folded into the gradient's own stops, and
+  `color(srgb-linear …)` written as legacy `rgb()`. That takes a splat from
+  534 to 348 bytes, so 285 fit under Gmail's 102 KB clip with room for copy,
+  and it costs nothing measurable — LPIPS −0.0029, SSIM −0.0017, both inside
+  noise.
+
+  Layout is by margins rather than absolute coordinates, which is not a
+  stylistic choice. Gmail's allowlist strips `position`, `left`, `top` and
+  `transform`; with `position` gone an inline element also stops honouring
+  `width` and `height`, so the first real Gmail render arrived as a bare
+  backdrop with all 285 splats collapsed to zero size. Block elements offset
+  by `margin-left` and a `margin-top` delta use only properties Gmail keeps.
+  Apple Mail scores 0.7442 — identical to the absolute layout — and Gmail
+  0.6670, where the loss is entirely rotation.
+
+  `tools/email_css_package.py` writes a ready-to-open `.eml` with an Outlook
+  fallback (Word ignores `position:absolute`, so several hundred positioned
+  splats would reflow into one tall column) and a declared colour scheme
+  (Apple Mail otherwise applies its own dark-mode inversion to a picture made
+  entirely of background colours). `tools/email_imap_append.py` uploads it to
+  Gmail, which has no import button. Measurements and the full sanitiser
+  findings are in `docs/css-splats-in-email.md`.
+
 - **`--init-from`: read a population back.** Embedding is only worth
   anything if something can consume it, so the loader accepts either
   artifact this project writes -- an embedded-population SVG or a raw
