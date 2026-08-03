@@ -422,9 +422,7 @@ def generate_native_canvas_html(
   document.documentElement.dataset.splatthisRenderDone = 'true';
   scene.dataset.renderMs = renderMs.toFixed(3);
 })();
-""".replace(
-            "__W__", str(width)
-        )
+""".replace("__W__", str(width))
         .replace("__H__", str(height))
         .replace("__BG__", json.dumps(bg_rgb, separators=(",", ":")))
         .replace("__STRENGTH__", f"{parallax_strength:.4f}")

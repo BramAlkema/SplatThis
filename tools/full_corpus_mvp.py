@@ -900,8 +900,7 @@ def generate_html(summary: dict[str, Any], output_root: Path, output: Path) -> N
             source_uri = _data_uri(Path(record["source"]))
             direct_uri = _data_uri(Path(record["direct_svg"]))
             student_uri = _data_uri(Path(record["student_svg"]))
-            seed_rows = "".join(
-                f"""
+            seed_rows = "".join(f"""
       <tr>
         <td>{seed_record['seed']}</td>
         <td class="{_delta_class(seed_record['delta']['ssim_srgb'])}">{_fmt(seed_record['delta']['ssim_srgb'], 5)}</td>
@@ -910,11 +909,8 @@ def generate_html(summary: dict[str, Any], output_root: Path, output: Path) -> N
         <td class="{_delta_class(seed_record['delta']['worst_roi_error'], lower=True)}">{_fmt(seed_record['delta']['worst_roi_error'], 5)}</td>
         <td class="{_delta_class(seed_record['delta']['edge_chamfer'], lower=True)}">{_fmt(seed_record['delta']['edge_chamfer'], 3)}</td>
         <td>{seed_record['delta']['file_size_bytes'] / 1024:+.1f} KB</td>
-      </tr>"""
-                for seed_record in seed_records
-            )
-            cards.append(
-                f"""
+      </tr>""" for seed_record in seed_records)
+            cards.append(f"""
 <article class="card">
   <header><h3>{html.escape(image_name)}</h3><span>{html.escape(record['content_class'])}</span></header>
   <div class="triptych">
@@ -933,25 +929,20 @@ def generate_html(summary: dict[str, Any], output_root: Path, output: Path) -> N
     <thead><tr><th>seed</th><th>ΔSSIM</th><th>ΔMS-SSIM</th><th>ΔLPIPS</th><th>Δworst ROI</th><th>Δedge</th><th>Δbytes</th></tr></thead>
     <tbody>{seed_rows}</tbody>
   </table></div>
-</article>"""
-            )
+</article>""")
         aggregate_rows = [
             row for row in summary["aggregates"]["topk"] if int(row["budget"]) == budget
         ]
-        aggregate_table_rows = "".join(
-            f"""
+        aggregate_table_rows = "".join(f"""
     <tr>
       <td>{row['seed']}</td><td>{row['n']}</td>
       <td>{_fmt(row.get('ssim_srgb_median_delta'), 5)} ({row.get('ssim_srgb_improved', 0)}/{row['n']})</td>
       <td>{_fmt(row.get('ms_ssim_luma_median_delta'), 5)} ({row.get('ms_ssim_luma_improved', 0)}/{row['n']})</td>
       <td>{_fmt(row.get('lpips_median_delta'), 5)} ({row.get('lpips_improved', 0)}/{row['n']})</td>
       <td>{row.get('file_size_median_delta', 0) / 1024:+.1f} KB</td>
-    </tr>"""
-            for row in aggregate_rows
-        )
+    </tr>""" for row in aggregate_rows)
         seed_label = ", ".join(str(row["seed"]) for row in aggregate_rows)
-        topk_sections.append(
-            f"""
+        topk_sections.append(f"""
 <section>
   <h2>Top-K teacher → alpha-over student · {budget} splats · seed(s) {seed_label}</h2>
   <div class="table-wrap"><table>
@@ -959,8 +950,7 @@ def generate_html(summary: dict[str, Any], output_root: Path, output: Path) -> N
     <tbody>{aggregate_table_rows}</tbody>
   </table></div>
   {''.join(cards)}
-</section>"""
-        )
+</section>""")
 
     mixed_cards = []
     for record in mixed:
@@ -983,8 +973,7 @@ def generate_html(summary: dict[str, Any], output_root: Path, output: Path) -> N
                 f'<span class="{_delta_class(delta["edge_chamfer"], lower=True)}">Δedge {_fmt(delta["edge_chamfer"], 3)}</span>'
                 f'<span>Δbytes {delta["file_size_bytes"] / 1024:+.1f} KB</span>'
             )
-        mixed_cards.append(
-            f"""
+        mixed_cards.append(f"""
 <article class="card">
   <header><h3>{html.escape(record['image'])}</h3><span>{html.escape(record['content_class'])}</span></header>
   <div class="triptych">
@@ -994,8 +983,7 @@ def generate_html(summary: dict[str, Any], output_root: Path, output: Path) -> N
   </div>
   <div class="deltas">{deltas}</div>
   {_powerpoint_panel(record)}
-</article>"""
-        )
+</article>""")
     mixed_aggregate = (
         summary["aggregates"]["mixed"][0] if summary["aggregates"]["mixed"] else {}
     )

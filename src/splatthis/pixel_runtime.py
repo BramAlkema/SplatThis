@@ -236,9 +236,7 @@ def generate_parallax_pixel_runtime_html(
     for (const el of layerEls) el.style.transform = 'translate3d(0,0,0)';
   });
 })();
-""".replace(
-            "__W__", str(int(width))
-        )
+""".replace("__W__", str(int(width)))
         .replace("__H__", str(int(height)))
         .replace("__BG__", f"[{bg_lin[0]:.6f},{bg_lin[1]:.6f},{bg_lin[2]:.6f}]")
         .replace("__STRENGTH__", f"{float(parallax_strength):.3f}")
@@ -477,9 +475,7 @@ def generate_pixel_runtime_html(
     srgbIn: SRGB_IN
   });
 })();
-""".replace(
-            "__W__", str(int(width))
-        )
+""".replace("__W__", str(int(width)))
         .replace("__H__", str(int(height)))
         .replace("__BG__", f"[{bg_lin[0]:.6f},{bg_lin[1]:.6f},{bg_lin[2]:.6f}]")
         .replace("__SRGB_IN__", "true" if srgb_mode else "false")
@@ -965,9 +961,7 @@ void main() {
   if (result) finish(result.mode,result.computeMs,result.pixels);
   else renderInWorker('webgl-fast-paths-unavailable');
 })();
-""".replace(
-            "__W__", str(int(width))
-        )
+""".replace("__W__", str(int(width)))
         .replace("__H__", str(int(height)))
         .replace("__BG__", f"[{bg[0]:.6f},{bg[1]:.6f},{bg[2]:.6f}]")
         .replace("__SRGB_IN__", "true" if srgb_mode else "false")

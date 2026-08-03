@@ -12,6 +12,7 @@ proxy-vs-capture loss is small, training against it is training against
 PowerPoint. If it is as large as the gradient emitter's loss, the premise
 collapses and the optimizer is chasing a fiction.
 """
+
 import json
 import math
 import os

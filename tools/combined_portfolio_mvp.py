@@ -1075,8 +1075,7 @@ def _write_html(
         foreground_bbox = foreground.get("bbox_metrics", {})
         background = regions.get("background", {})
         focus = regions.get("focus", {}).get("metrics", {})
-        svg_cards.append(
-            f"""
+        svg_cards.append(f"""
 <article>
   <header><b>#{rank} {html.escape(candidate.name)}</b><span class="{'ok' if candidate.guarded else 'bad'}">{'guarded' if candidate.guarded else 'rejected'}</span></header>
   <div class="pair">
@@ -1102,8 +1101,7 @@ def _write_html(
     <tr><td>bytes</td><td>{candidate.metrics['file_size_bytes']:,}</td><td>{delta['file_size_bytes']:+,.0f}</td></tr>
     <tr><td>MVP score</td><td>{candidate.score:+.5f}</td><td></td></tr>
   </table>
-</article>"""
-        )
+</article>""")
     pptx_cards = []
     for record in pptx_records:
         metrics = record.get("metrics")
@@ -1128,8 +1126,7 @@ def _write_html(
                 f"{record['bytes']:,} bytes"
             )
         )
-        pptx_cards.append(
-            f"""
+        pptx_cards.append(f"""
 <article>
   <header><b>{html.escape(record['name'])}</b><span>{html.escape(record['style'])}</span></header>
   <div class="pair">
@@ -1137,10 +1134,8 @@ def _write_html(
     <figure>{visual}<figcaption>real Microsoft PowerPoint</figcaption></figure>
   </div>
   <p>{metric_line}</p>
-</article>"""
-        )
-    output.write_text(
-        f"""<!doctype html>
+</article>""")
+    output.write_text(f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>Combined splat portfolio MVP</title>
 <style>
 :root {{ color-scheme: dark; font-family: Inter, system-ui, sans-serif; }}
@@ -1160,8 +1155,7 @@ td:first-child,th:first-child {{ text-align:left; }} .ok {{ color:#5ee0a0; }} .b
 <p class="lede">Real SVG artifacts are ranked with a guarded metric vector, not SSIM alone. The beam combines trained splat populations, export recipes, deployed-artifact recolor, and residual native paths. PowerPoint is selected independently from real slideshow captures.</p>
 <h2>SVG beam</h2><div class="grid">{''.join(svg_cards)}</div>
 <h2>Native PowerPoint shortlist</h2><div class="grid">{''.join(pptx_cards)}</div>
-</body></html>"""
-    )
+</body></html>""")
 
 
 def main() -> int:

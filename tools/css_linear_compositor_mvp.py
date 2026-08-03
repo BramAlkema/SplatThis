@@ -217,14 +217,12 @@ def _capture_variant(
     payload = b""
     for repeat in range(repeats + 1):
         page.goto(uri, wait_until="load", timeout=timeout_ms)
-        settle_ms = page.evaluate(
-            """async () => {
+        settle_ms = page.evaluate("""async () => {
                 if (document.fonts) await document.fonts.ready;
                 await new Promise(resolve => requestAnimationFrame(
                     () => requestAnimationFrame(resolve)));
                 return performance.now();
-            }"""
-        )
+            }""")
         payload = page.locator("#scene").screenshot(
             type="png", animations="disabled", scale="css"
         )
