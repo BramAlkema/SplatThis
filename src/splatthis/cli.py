@@ -558,6 +558,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional directory for run manifest + iteration dumps",
     )
     parser.add_argument(
+        "--embed-population",
+        action="store_true",
+        help="Embed the fitted splat population in the SVG as a "
+        "self-describing <metadata> envelope (gzipped float32, roughly "
+        "4%% of artifact size). Drawn output is byte-identical. Makes the "
+        "file re-targetable to other formats, warm-startable, and "
+        "directly comparable by another fitter at the same splat budget. "
+        "Note it ships a derivative of your source image inside the "
+        "artifact.",
+    )
+    parser.add_argument(
         "--save-json",
         action="store_true",
         help=(
@@ -591,6 +602,8 @@ def _run_conversion(args: argparse.Namespace) -> int:
         refinement_config["svg_compositor_gate"] = args.svg_compositor_gate
     if args.fidelity_stage is not None:
         refinement_config["fidelity_stage"] = args.fidelity_stage
+    if args.embed_population:
+        refinement_config["svg_embed_population"] = True
     if args.svg_optimize:
         refinement_config["svg_optimize"] = True
         refinement_config["svg_optimize_precision"] = int(args.svg_optimize_precision)

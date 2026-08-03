@@ -58,6 +58,7 @@ class ConversionArtifactMixin(ConversionEngineState):
                 if gradient_quality is None
                 else gradient_quality
             ),
+            embed_population=self.svg_embed_population,
             painter_order=(
                 self.svg_painter_order if painter_order is None else painter_order
             ),

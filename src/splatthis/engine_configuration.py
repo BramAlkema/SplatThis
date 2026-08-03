@@ -209,6 +209,9 @@ class ConversionConfigurationMixin(ConversionEngineState):
         self.svg_export_recipe = _normalize_svg_export_recipe(
             self.refinement_config.get("svg_export_recipe", "standard")
         )
+        self.svg_embed_population = bool(
+            self.refinement_config.get("svg_embed_population", False)
+        )
         self.svg_gradient_quality = _normalize_svg_gradient_quality(
             self.refinement_config.get("svg_gradient_quality", "standard")
         )

@@ -1244,3 +1244,51 @@ def test_convert_restores_run_mutated_config(tmp_path):
         converter.acceptance_criteria,
     )
     assert after == before
+
+
+def test_embedded_population_round_trips_without_changing_the_drawing() -> None:
+    """The population must survive the artifact and not alter a pixel.
+
+    Embedding exists so an SVG can be re-targeted, warm-started, or handed to
+    another fitter to beat at the same splat budget. All three depend on the
+    payload surviving verbatim; none of them are worth a rendering change, so
+    the drawn markup is asserted byte-identical.
+    """
+    import re
+
+    from splatthis.population_embed import decode_population, population_from_svg
+    from splatthis.splat import create_isotropic_splat
+    from splatthis.svg_export import generate_svg_content
+
+    splats = [
+        create_isotropic_splat(
+            center=[10.0 + 3 * i, 12.0 + 2 * i],
+            sigma=1.5 + 0.1 * i,
+            color=[0.2 + 0.01 * i, 0.5, 0.7],
+            alpha=0.3 + 0.02 * i,
+        )
+        for i in range(12)
+    ]
+
+    for recipe in ("standard", "palette-quantized", "blur", "scripted-matrix"):
+        plain = generate_svg_content(splats, 64, 64, export_recipe=recipe)
+        embedded = generate_svg_content(
+            splats, 64, 64, export_recipe=recipe, embed_population=True
+        )
+        assert "@@METADATA@@" not in embedded, f"{recipe}: placeholder left unfilled"
+
+        recovered = population_from_svg(embedded)
+        assert len(recovered) == len(splats), recipe
+        for before, after in zip(splats, recovered):
+            assert float(after.mu[0]) == pytest.approx(float(before.mu[0]), abs=1e-4)
+            assert float(after.alpha) == pytest.approx(float(before.alpha), abs=1e-4)
+
+        stripped = re.sub(r"\n?\s*<metadata>.*?</metadata>", "", embedded, flags=re.S)
+        assert (
+            stripped.strip() == plain.strip()
+        ), f"{recipe}: embedding changed the drawn markup"
+
+    assert "<metadata>" not in generate_svg_content(splats, 64, 64)
+
+    with pytest.raises(ValueError, match="not a splatthis population envelope"):
+        decode_population('{"schema": "something.else/1"}')

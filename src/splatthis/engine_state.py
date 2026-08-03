@@ -75,6 +75,7 @@ class ConversionEngineState:
     # -- Deployment targets ------------------------------------------------
     svg_export_recipe: str
     svg_gradient_quality: str
+    svg_embed_population: bool
     svg_painter_order: str
     pptx_splat_style: str
     pptx_painter_order: str

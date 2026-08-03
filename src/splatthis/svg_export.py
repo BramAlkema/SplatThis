@@ -248,6 +248,52 @@ def generate_svg_content(
     palette_size: Optional[int] = None,
     gradient_quality: str = SVG_GRADIENT_QUALITY_STANDARD,
     painter_order: str = SVG_PAINTER_ORDER_BACK_TO_FRONT,
+    embed_population: bool = False,
+) -> str:
+    """Emit SVG markup, optionally carrying the population that produced it.
+
+    ``embed_population`` adds an SVG ``<metadata>`` block holding the splats
+    as a self-describing gzipped float32 envelope (see
+    ``population_embed``). Renderers ignore it, so pixels are unchanged; it
+    costs roughly 4% of a typical artifact and makes the file re-targetable,
+    warm-startable and directly comparable by another fitter.
+    """
+    metadata = ""
+    if embed_population and splats:
+        from .population_embed import svg_metadata_element
+
+        metadata = svg_metadata_element(splats)
+    return _generate_svg_content_uncommented(
+        splats,
+        width,
+        height,
+        k_sigma,
+        background_linear_rgb,
+        export_recipe,
+        foreground_mask,
+        background_safe_mask,
+        edge_band_mask,
+        palette_size,
+        gradient_quality,
+        painter_order,
+        metadata,
+    )
+
+
+def _generate_svg_content_uncommented(
+    splats: List[GaussianSplat],
+    width: int,
+    height: int,
+    k_sigma: float = 2.5,
+    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
+    export_recipe: str = "standard",
+    foreground_mask: Optional[npt.NDArray[Any]] = None,
+    background_safe_mask: Optional[npt.NDArray[Any]] = None,
+    edge_band_mask: Optional[npt.NDArray[Any]] = None,
+    palette_size: Optional[int] = None,
+    gradient_quality: str = SVG_GRADIENT_QUALITY_STANDARD,
+    painter_order: str = SVG_PAINTER_ORDER_BACK_TO_FRONT,
+    metadata: str = "",
 ) -> str:
     """
     Generate SVG content from splats.
@@ -282,6 +328,7 @@ def generate_svg_content(
             edge_band_mask=edge_band_mask,
             gradient_quality=normalized_gradient_quality,
             painter_order=normalized_painter_order,
+            metadata=metadata,
         )
     if normalized_recipe == SVG_PALETTE_QUANTIZED_RECIPE:
         return generate_palette_quantized_svg_content(
@@ -299,6 +346,7 @@ def generate_svg_content(
                 else int(palette_size)
             ),
             painter_order=normalized_painter_order,
+            metadata=metadata,
         )
     if normalized_recipe == SVG_BLUR_RECIPE:
         return generate_blur_svg_content(
@@ -308,6 +356,7 @@ def generate_svg_content(
             k_sigma=k_sigma,
             background_linear_rgb=background_linear_rgb,
             painter_order=normalized_painter_order,
+            metadata=metadata,
         )
     use_browser_recipe = normalized_recipe == SVG_BROWSER_COMPAT_RECIPE
 
@@ -461,6 +510,7 @@ def generate_svg_content(
         background = f"{background_rect_line}\n\n"
     return render_template(
         "svg/standard_document.svg",
+        metadata=metadata,
         width=width,
         height=height,
         gradients=gradients,
@@ -480,6 +530,7 @@ def generate_scripted_svg_content(
     edge_band_mask: Optional[npt.NDArray[Any]] = None,
     gradient_quality: str = SVG_GRADIENT_QUALITY_STANDARD,
     painter_order: str = SVG_PAINTER_ORDER_BACK_TO_FRONT,
+    metadata: str = "",
 ) -> str:
     """
     Generate a compact browser SVG that stores splats as a numeric matrix.
@@ -603,6 +654,7 @@ def generate_scripted_svg_content(
 
     return render_template(
         "svg/scripted_document.svg",
+        metadata=metadata,
         width=width,
         height=height,
         background=f"rgb({bg_rgb[0]},{bg_rgb[1]},{bg_rgb[2]})",
@@ -622,6 +674,7 @@ def generate_palette_quantized_svg_content(
     edge_band_mask: Optional[npt.NDArray[Any]] = None,
     palette_size: int = SVG_PALETTE_QUANTIZED_DEFAULT_SIZE,
     painter_order: str = SVG_PAINTER_ORDER_BACK_TO_FRONT,
+    metadata: str = "",
 ) -> str:
     """Compact SVG that quantizes splat colors into a shared palette.
 
@@ -839,6 +892,7 @@ def generate_palette_quantized_svg_content(
         )
     return render_template(
         "svg/palette_document.svg",
+        metadata=metadata,
         width=width,
         height=height,
         palette_size=actual_palette_size,
@@ -855,6 +909,7 @@ def generate_blur_svg_content(
     k_sigma: float = 2.5,
     background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     painter_order: str = SVG_PAINTER_ORDER_BACK_TO_FRONT,
+    metadata: str = "",
 ) -> str:
     """Generate SVG using `<feGaussianBlur>` per splat instead of gradient stops.
 
@@ -976,6 +1031,7 @@ def generate_blur_svg_content(
     background = "" if bg_rect_line is None else f"{bg_rect_line}\n"
     return render_template(
         "svg/blur_document.svg",
+        metadata=metadata,
         width=int(width),
         height=int(height),
         filters=filters,
@@ -988,6 +1044,7 @@ def _empty_svg_document(
     width: int,
     height: int,
     background_linear_rgb: Optional[npt.NDArray[Any]],
+    metadata: str = "",
 ) -> str:
     bg_line = ""
     if background_linear_rgb is not None:
@@ -1007,6 +1064,7 @@ def _empty_svg_document(
         )
     return render_template(
         "svg/empty_document.svg",
+        metadata=metadata,
         width=int(width),
         height=int(height),
         background=bg_line,
