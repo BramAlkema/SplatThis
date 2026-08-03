@@ -37,7 +37,7 @@ already write.
 from splatthis import (
     encode_population,      # List[GaussianSplat] -> envelope text
     decode_population,      # envelope text -> List[GaussianSplat]
-    load_population,        # path (.svg | .pptx | .json) -> List[GaussianSplat]
+    load_population,        # path (.svg|.pptx|.png|.json) -> List[GaussianSplat]
     population_from_svg,    # SVG markup -> List[GaussianSplat]
     population_from_pptx,   # .pptx path -> List[GaussianSplat]
     population_from_png,    # .png path -> List[GaussianSplat]
@@ -116,12 +116,6 @@ Per carrier, for a 1,595-splat population: about **4%** of a typical SVG,
 deck. Size is one reason all three are off by default; the other is that
 the population is a derivative of the source image travelling inside a
 file people share.
-
-That is about **4% of a typical SVG** and a much larger fraction of a small
-deck — PPTX artifacts are around 120–160 KB, so embedding is a far bigger
-relative cost there. Both are off by default, and not only for size: the
-population is a derivative of the source image, travelling inside a file
-people share. That is a disclosure the user should choose.
 
 ## Known limits
 
