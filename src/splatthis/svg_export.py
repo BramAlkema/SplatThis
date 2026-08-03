@@ -58,6 +58,36 @@ logger = logging.getLogger(__name__)
 SVG_OPTIMIZE_MIN_SAFE_PRECISION = 2
 
 
+def _restore_population(*, source: str, optimized: str) -> bool:
+    """Put an embedded population back after svgo has stripped it.
+
+    Returns True when ``optimized`` was rewritten. The population lives in
+    ``<metadata>``, which svgo's default preset removes; the element is
+    inert markup, so re-inserting it before ``</svg>`` restores the file
+    without touching anything svgo did to the drawing.
+    """
+    import re
+
+    with open(source, "r", encoding="utf-8") as handle:
+        original = handle.read()
+    match = re.search(r"[ \t]*<metadata>.*?</metadata>\n?", original, re.S)
+    if not match or "splatthis:population" not in match.group(0):
+        return False
+
+    with open(optimized, "r", encoding="utf-8") as handle:
+        result = handle.read()
+    if "splatthis:population" in result:
+        return False
+
+    closing = result.rfind("</svg>")
+    if closing < 0:
+        return False
+    restored = result[:closing] + match.group(0).strip() + result[closing:]
+    with open(optimized, "w", encoding="utf-8") as handle:
+        handle.write(restored)
+    return True
+
+
 def optimize_svg_file(
     path: str,
     precision: int = SVG_OPTIMIZE_MIN_SAFE_PRECISION,
@@ -146,6 +176,15 @@ def optimize_svg_file(
             report["reason"] = "svgo-dropped-shapes"
             logger.warning("svgo dropped shapes; keeping the original SVG.")
             return report
+
+        # svgo's default preset includes removeMetadata, so an SVG written
+        # with --embed-population came out of the optimizer without the
+        # population -- silently, since nothing downstream reads it back.
+        # Restoring it here rather than configuring svgo keeps this working
+        # whatever plugin defaults a given svgo version ships with.
+        if _restore_population(source=path, optimized=tmp_path):
+            report["population_restored"] = True
+            after = os.path.getsize(tmp_path)
 
         if after >= before:
             report["reason"] = "no-size-win"

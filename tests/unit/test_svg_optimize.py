@@ -181,3 +181,46 @@ def test_converter_records_optimization_in_manifest(tmp_path):
     assert "svg_optimize" in manifest
     assert manifest["svg_optimize"]["precision"] == 2
     ET.parse(out)  # emitted file still parses after optimization
+
+
+def test_svgo_does_not_take_the_embedded_population_with_it(tmp_path):
+    """svgo's default preset includes removeMetadata.
+
+    That silently destroyed the population in every
+    `--embed-population --svg-optimize` run: nothing downstream reads it
+    back, so the SVG looked fine and simply was not re-loadable any more.
+    """
+    import shutil
+
+    if shutil.which("svgo") is None:
+        pytest.skip("svgo is not installed")
+
+    from splatthis.population_embed import load_population
+    from splatthis.splat import create_isotropic_splat
+    from splatthis.svg_export import generate_svg_content, optimize_svg_file
+
+    splats = [
+        create_isotropic_splat(
+            center=[8.0 + i * 3, 9.0 + i * 2],
+            sigma=2.5,
+            color=[0.3, 0.5, 0.7],
+            alpha=0.6,
+        )
+        for i in range(24)
+    ]
+    path = tmp_path / "embedded.svg"
+    path.write_text(
+        generate_svg_content(splats, width=96, height=96, embed_population=True),
+        encoding="utf-8",
+    )
+    assert len(load_population(str(path))) == len(splats)
+
+    report = optimize_svg_file(str(path), precision=2)
+    assert report["applied"] or report.get("reason") in {
+        "no-size-win",
+        "svgo-not-installed",
+    }
+    assert len(load_population(str(path))) == len(splats), (
+        "svgo stripped the embedded population; the artifact is no longer "
+        "re-targetable or warm-startable"
+    )
