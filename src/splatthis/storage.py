@@ -9,7 +9,7 @@ import stat
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 import numpy as np
 import numpy.typing as npt
@@ -160,7 +160,7 @@ def save_linear_rgb_png(
     rendered_linear_rgb: npt.NDArray[Any],
     output_path: str,
     scale: float = 1.0,
-    embed_splats: Optional[List[GaussianSplat]] = None,
+    embed_splats: Optional[Sequence[GaussianSplat]] = None,
     embed_in_pixels: bool = False,
 ) -> str:
     """Write an HxWx3 linear-RGB framebuffer as an atomic display-sRGB PNG.

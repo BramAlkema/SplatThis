@@ -32,7 +32,7 @@ from __future__ import annotations
 import base64
 import gzip
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -72,7 +72,7 @@ PPTX_POPULATION_PART = "splatthis/population.json"
 PNG_POPULATION_KEY = "splatthis:population"
 
 
-def encode_population(splats: List[GaussianSplat]) -> str:
+def encode_population(splats: Sequence[GaussianSplat]) -> str:
     """Return a self-describing JSON envelope for ``splats``.
 
     The envelope is plain text so it can sit in SVG ``<metadata>`` or an
@@ -133,7 +133,7 @@ def decode_population(envelope_text: str) -> List[GaussianSplat]:
     ]
 
 
-def svg_metadata_element(splats: List[GaussianSplat]) -> str:
+def svg_metadata_element(splats: Sequence[GaussianSplat]) -> str:
     """Return an SVG ``<metadata>`` block carrying the population.
 
     ``<metadata>`` is the standards-defined home for this; a comment would be
@@ -192,7 +192,7 @@ def load_population(path: str) -> List[GaussianSplat]:
     return load_splats_json(path)
 
 
-def pptx_population_part(splats: List[GaussianSplat]) -> tuple:
+def pptx_population_part(splats: Sequence[GaussianSplat]) -> Tuple[str, str]:
     """Return the ``(name, text)`` package part carrying ``splats``."""
     return (PPTX_POPULATION_PART, encode_population(splats))
 
@@ -210,7 +210,7 @@ def population_from_pptx(path: str) -> List[GaussianSplat]:
         return decode_population(package.read(PPTX_POPULATION_PART).decode("utf-8"))
 
 
-def png_population_chunk(splats: List[GaussianSplat]) -> Any:
+def png_population_chunk(splats: Sequence[GaussianSplat]) -> Any:
     """Return a ``PngInfo`` carrying ``splats``, for ``Image.save(pnginfo=...)``.
 
     The payload goes in a compressed text chunk. PNG readers that do not know
@@ -302,7 +302,7 @@ def steg_capacity_bytes(image: Any, bits_per_channel: int = 1) -> int:
 
 def embed_population_in_pixels(
     image: Any,
-    splats: List[GaussianSplat],
+    splats: Sequence[GaussianSplat],
     bits_per_channel: Optional[int] = None,
 ) -> Any:
     """Hide a population in the low bits of an RGB PIL image.

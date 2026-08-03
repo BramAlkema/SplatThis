@@ -49,7 +49,8 @@ class _PPTXSoftEdgeProxyRenderer(torch.nn.Module):
             ],
             dim=-1,
         )
-        return self.base_renderer(fitted)
+        rendered: torch.Tensor = self.base_renderer(fitted)
+        return rendered
 
 
 def pptx_effective_alpha(
@@ -102,6 +103,10 @@ class _PPTXGradientProxyRenderer(torch.nn.Module):
     ellipse spans the same footprint the renderer integrates over.
     """
 
+    #: Declared because nn.Module.__getattr__ is typed as returning Module,
+    #: so a registered buffer otherwise reads as a Module rather than a Tensor.
+    alpha_gain: torch.Tensor
+
     def __init__(
         self,
         base_renderer: torch.nn.Module,
@@ -119,11 +124,20 @@ class _PPTXGradientProxyRenderer(torch.nn.Module):
         self.register_buffer("alpha_gain", gain)
 
     def forward(self, splats_tensor: torch.Tensor) -> torch.Tensor:
-        return self.base_renderer(splats_tensor * self.alpha_gain)
+        rendered: torch.Tensor = self.base_renderer(splats_tensor * self.alpha_gain)
+        return rendered
 
 
 class _PPTXProxyLoss(torch.nn.Module):
     """Perceptual loss for PPTX-soft-edge proxy training."""
+
+    # Same reason as above: these are buffers, not submodules.
+    weights: torch.Tensor
+    target_luma: torch.Tensor
+    target_sat: torch.Tensor
+    target_luma_std: torch.Tensor
+    target_sat_mean: torch.Tensor
+    target_sat_std: torch.Tensor
 
     def __init__(
         self,
@@ -168,7 +182,7 @@ class _PPTXProxyLoss(torch.nn.Module):
         )
 
     def forward(self, rendered: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        loss = self.base_loss(rendered, target)
+        loss: torch.Tensor = self.base_loss(rendered, target)
         if (
             self.contrast_weight <= 0.0
             and self.saturation_weight <= 0.0
