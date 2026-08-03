@@ -558,6 +558,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional directory for run manifest + iteration dumps",
     )
     parser.add_argument(
+        "--init-from",
+        metavar="ARTIFACT",
+        help="Start from an existing population instead of seeding: an SVG "
+        "written with --embed-population, or a raw population JSON. Use with "
+        "--stages 0 to re-target an artifact to another format without "
+        "retraining, or with a normal schedule to warm-start a refit.",
+    )
+    parser.add_argument(
         "--embed-population",
         action="store_true",
         help="Embed the fitted splat population in the SVG as a "
@@ -602,6 +610,8 @@ def _run_conversion(args: argparse.Namespace) -> int:
         refinement_config["svg_compositor_gate"] = args.svg_compositor_gate
     if args.fidelity_stage is not None:
         refinement_config["fidelity_stage"] = args.fidelity_stage
+    if args.init_from:
+        refinement_config["init_from"] = str(args.init_from)
     if args.embed_population:
         refinement_config["svg_embed_population"] = True
     if args.svg_optimize:

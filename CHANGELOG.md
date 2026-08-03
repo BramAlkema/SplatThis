@@ -26,6 +26,26 @@ All notable changes to SplatThis are documented here.
   Off by default: it ships a derivative of the source image inside a file
   people share, which is a disclosure the user should choose.
 
+- **`--init-from`: read a population back.** Embedding is only worth
+  anything if something can consume it, so the loader accepts either
+  artifact this project writes -- an embedded-population SVG or a raw
+  population JSON -- and the pipeline starts from it instead of seeding.
+  Two uses: re-target an artifact to another format without the source
+  image, or warm-start a refit, which matters because 97-99% of a repeat
+  run's wall clock is the optimizer loop and none of it is seeding.
+
+  Measured on astronaut: warm-starting from a fitted population at *half*
+  the default schedule reached SSIM 0.7586 in 3.3 minutes against the cold
+  run's 0.7030 in 6.6. That comparison is not clean, and the caveat belongs
+  next to the number -- densification still runs on the loaded population,
+  so the warm run finished with 1,913 splats against 1,617, and some of the
+  gain is simply more splats.
+
+  Two rough edges left deliberately: `--stages 0` is rejected by the
+  schedule validator, so a zero-training re-target is not expressible yet;
+  and a faithful re-target needs `--splats` pinned to the loaded count or
+  densification will grow the population.
+
 - **Defaults now match the corpus evidence.** Two defaults the August audit
   flagged as measured losers are flipped, and one API break is repaired:
 

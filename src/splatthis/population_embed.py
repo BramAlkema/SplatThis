@@ -55,6 +55,10 @@ POPULATION_FIELDS = (
 
 POPULATION_SCHEMA = "splatthis.population/1"
 
+#: Detects SVG input by its namespace rather than its root tag, so this
+#: module stays free of vector markup (test_module_boundaries).
+SVG_NAMESPACE = "http://www.w3.org/2000/svg"
+
 
 def encode_population(splats: List[GaussianSplat]) -> str:
     """Return a self-describing JSON envelope for ``splats``.
@@ -143,3 +147,29 @@ def population_from_svg(svg_text: str) -> List[GaussianSplat]:
     if not match:
         raise ValueError("no embedded splatthis population in this SVG")
     return decode_population(match.group(1))
+
+
+def load_population(path: str) -> List[GaussianSplat]:
+    """Load a population from an embedded-population SVG or a raw JSON file.
+
+    Accepts either artifact this project can produce: an SVG written with
+    ``--embed-population``, or the canonical ``*.raw.json`` that
+    ``--save-json`` and the artifacts directory already emit. Callers get
+    splats without needing to know which.
+    """
+    from pathlib import Path as _Path
+
+    from .storage import load_splats_json
+
+    text = _Path(path).read_text(encoding="utf-8", errors="ignore")
+    if "<splatthis:population" in text:
+        return population_from_svg(text)
+    if SVG_NAMESPACE in text[:2048]:
+        # Falling through to the JSON loader here would surface a bare
+        # "Expecting value: line 1 column 1", which says nothing about the
+        # actual problem: this SVG was written without --embed-population.
+        raise ValueError(
+            f"no embedded splatthis population in {path}; re-export it with "
+            f"--embed-population, or pass a population JSON instead"
+        )
+    return load_splats_json(path)

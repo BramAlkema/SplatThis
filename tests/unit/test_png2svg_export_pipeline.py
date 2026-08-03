@@ -1292,3 +1292,44 @@ def test_embedded_population_round_trips_without_changing_the_drawing() -> None:
 
     with pytest.raises(ValueError, match="not a splatthis population envelope"):
         decode_population('{"schema": "something.else/1"}')
+
+
+def test_load_population_accepts_both_artifact_kinds(tmp_path) -> None:
+    """A population must load from either artifact this project writes.
+
+    Embedding is only useful if something can read it back: without this the
+    `--embed-population` envelope is write-only and the re-target and
+    warm-start claims made for it are aspirational.
+    """
+    from splatthis.population_embed import load_population
+    from splatthis.splat import create_isotropic_splat
+    from splatthis.storage import save_splats_json
+    from splatthis.svg_export import generate_svg_content
+
+    splats = [
+        create_isotropic_splat(
+            center=[8.0 + i, 9.0 + i], sigma=1.2, color=[0.3, 0.4, 0.5], alpha=0.4
+        )
+        for i in range(7)
+    ]
+
+    svg_path = tmp_path / "embedded.svg"
+    svg_path.write_text(
+        generate_svg_content(splats, 48, 48, embed_population=True), encoding="utf-8"
+    )
+    from_svg = load_population(str(svg_path))
+    assert len(from_svg) == len(splats)
+
+    json_path = tmp_path / "population.json"
+    save_splats_json(splats, str(json_path))
+    from_json = load_population(str(json_path))
+    assert len(from_json) == len(splats)
+
+    for a, b in zip(from_svg, from_json):
+        assert float(a.mu[0]) == pytest.approx(float(b.mu[0]), abs=1e-4)
+        assert float(a.alpha) == pytest.approx(float(b.alpha), abs=1e-4)
+
+    plain = tmp_path / "plain.svg"
+    plain.write_text(generate_svg_content(splats, 48, 48), encoding="utf-8")
+    with pytest.raises(ValueError, match="no embedded splatthis population"):
+        load_population(str(plain))

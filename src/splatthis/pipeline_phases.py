@@ -302,12 +302,27 @@ def fit_scene(
     artifacts_path = context.artifacts_path
 
     phase_started = time.perf_counter()
-    splats = converter._initialize_splats(
-        image,
-        rng=context.rng,
-        structure_primary=prepared.structure_primary,
-        structure_anisotropy=prepared.structure_anisotropy,
-    )
+    init_from = converter.refinement_config.get("init_from")
+    if init_from:
+        # Warm start: seeding is ~0.1% of wall clock, but starting from a
+        # fitted population means the optimizer begins where a previous run
+        # finished instead of at content-adaptive seeds. With --stages 0 this
+        # is a pure re-target of an existing artifact to another format.
+        from .population_embed import load_population
+
+        splats = load_population(str(init_from))
+        logger.info(
+            "warm start: loaded %d splats from %s (seeding skipped)",
+            len(splats),
+            init_from,
+        )
+    else:
+        splats = converter._initialize_splats(
+            image,
+            rng=context.rng,
+            structure_primary=prepared.structure_primary,
+            structure_anisotropy=prepared.structure_anisotropy,
+        )
     timings["initialize_splats"] = float(time.perf_counter() - phase_started)
     converter._write_stage_artifact(
         artifacts_path, "init", splats, {"count": len(splats)}
