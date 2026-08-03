@@ -47,6 +47,7 @@ from splatthis.adaptive_compute import (  # noqa: E402
     DEFAULT_CHROME_PSNR_SAFETY_MARGIN,
     DEFAULT_CHROME_SSIM_SAFETY_MARGIN,
 )
+from splatthis.export_common import SRGB_TRAINING_TARGETS  # noqa: E402
 
 DEFAULT_ROOT = REPO / "result" / "corpus"
 MAX_EDGE = 384  # keeps a 20-image x 2-format sweep tractable; recorded in meta
@@ -836,7 +837,7 @@ def generate_canvas_corpus_html(root: Path, output: Path) -> None:
                 ),
             )
         )
-        srgb_mode = training_target in {"svg", "pptx-softedge"}
+        srgb_mode = training_target in SRGB_TRAINING_TARGETS
 
         background = np.asarray(
             config.get("background_linear_rgb", [0.0, 0.0, 0.0]),
@@ -1548,6 +1549,7 @@ def _run_config(
     adaptive_min_checkpoints: int = 2,
     adaptive_chrome_ssim_margin: float = DEFAULT_CHROME_SSIM_SAFETY_MARGIN,
     adaptive_chrome_psnr_margin: float = DEFAULT_CHROME_PSNR_SAFETY_MARGIN,
+    training_export_target: str = "auto",
 ) -> dict:
     """Return the canonical, content-addressed identity of a corpus run."""
     geometry = full_geometry or profile in {"balanced", "max-fidelity"}
@@ -1560,6 +1562,7 @@ def _run_config(
         "stages": stages or "cli-default",
         "profile": profile,
         "optimizer_backend": optimizer_backend,
+        "training_export_target": training_export_target,
         "mlx_tile_plan": "periodic" if geometry else "profile-default",
         "mlx_tile_plan_rebuild_interval": 10 if full_geometry else "profile-default",
         "mlx_trainable_groups": (
@@ -1737,6 +1740,11 @@ def _build_corpus_job(
         "--artifacts-dir",
         str(artifacts),
     ]
+    if config.get("training_export_target", "auto") != "auto":
+        command += [
+            "--training-export-target",
+            str(config["training_export_target"]),
+        ]
     if config["stages"] != "cli-default":
         command += ["--stages", str(config["stages"])]
     if config["initial_splat_cap"] != "profile-default":
@@ -1892,6 +1900,7 @@ def run(
     adaptive_min_checkpoints: int,
     adaptive_chrome_ssim_margin: float,
     adaptive_chrome_psnr_margin: float,
+    training_export_target: str = "auto",
     jobs: int = 1,
 ) -> None:
     """Run content-addressed corpus jobs with single-writer result handling."""
@@ -1925,6 +1934,7 @@ def run(
                     adaptive_min_checkpoints,
                     adaptive_chrome_ssim_margin,
                     adaptive_chrome_psnr_margin,
+                    training_export_target,
                 )
                 config_hash = _config_hash(config)
                 if run_key(name, fmt, seed, config_hash) not in done:
@@ -2309,6 +2319,12 @@ def main() -> int:
         help="score *_pptx_s0_powerpoint_slide.png captures from real PowerPoint",
     )
     ap.add_argument("--formats", default="svg")
+    ap.add_argument(
+        "--training-export-target",
+        default="auto",
+        help="Training compositor passed through to splatthis; part of the "
+        "run identity, so targets resume as separate jobs",
+    )
     ap.add_argument("--seeds", default="0")
     ap.add_argument("--splats", type=int, default=2000)
     ap.add_argument(
@@ -2453,6 +2469,7 @@ def main() -> int:
             adaptive_min_checkpoints=args.adaptive_min_checkpoints,
             adaptive_chrome_ssim_margin=args.adaptive_chrome_ssim_margin,
             adaptive_chrome_psnr_margin=args.adaptive_chrome_psnr_margin,
+            training_export_target=args.training_export_target,
             jobs=args.jobs,
         )
     if args.capture_canvas_runs:
