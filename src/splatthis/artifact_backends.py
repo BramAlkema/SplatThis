@@ -290,12 +290,18 @@ class PptxArtifactBackend(DrawingMLArtifactBackend):
         payload: ArtifactPayload,
     ) -> Mapping[str, Any]:
         if request.output_path is not None:
+            embedded_population = None
+            if converter.svg_embed_population and scene.splats:
+                from .population_embed import pptx_population_part
+
+                embedded_population = pptx_population_part(scene.splats)
             save_pptx_with_drawingml_content(
                 slide_xml=payload.content,
                 width=scene.width,
                 height=scene.height,
                 output_path=request.output_path,
                 splat_count=len(scene.splats),
+                embedded_population=embedded_population,
             )
         return {}
 

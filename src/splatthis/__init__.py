@@ -21,6 +21,15 @@ from .pixel_runtime import (
     generate_pixel_runtime_html,
     generate_webgl_pixel_runtime_html,
 )
+from .population_embed import (
+    POPULATION_FIELDS,
+    POPULATION_SCHEMA,
+    decode_population,
+    encode_population,
+    load_population,
+    population_from_pptx,
+    population_from_svg,
+)
 from .pptx_export import save_pptx_with_splat_png, save_pptx_with_splats
 from .reporting import save_side_by_side_html
 from .roundtrip import validate_export_roundtrip
@@ -37,6 +46,13 @@ __all__ = [
     "Fidelity",
     "CompositorFidelity",
     "expected_fidelity",
+    "encode_population",
+    "decode_population",
+    "load_population",
+    "population_from_svg",
+    "population_from_pptx",
+    "POPULATION_FIELDS",
+    "POPULATION_SCHEMA",
     "compositor_fidelity",
     "ConversionRequest",
     "ConverterConfig",

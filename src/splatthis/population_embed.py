@@ -59,6 +59,12 @@ POPULATION_SCHEMA = "splatthis.population/1"
 #: module stays free of vector markup (test_module_boundaries).
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 
+#: Where the population lives inside an OOXML package. Deliberately a
+#: plain, unreferenced part outside ppt/: PowerPoint ignores parts it has
+#: no relationship to, so the deck opens normally, and a Save As that
+#: rewrites the package simply drops it rather than corrupting anything.
+PPTX_POPULATION_PART = "splatthis/population.json"
+
 
 def encode_population(splats: List[GaussianSplat]) -> str:
     """Return a self-describing JSON envelope for ``splats``.
@@ -161,6 +167,8 @@ def load_population(path: str) -> List[GaussianSplat]:
 
     from .storage import load_splats_json
 
+    if str(path).lower().endswith(".pptx"):
+        return population_from_pptx(path)
     text = _Path(path).read_text(encoding="utf-8", errors="ignore")
     if "<splatthis:population" in text:
         return population_from_svg(text)
@@ -173,3 +181,21 @@ def load_population(path: str) -> List[GaussianSplat]:
             f"--embed-population, or pass a population JSON instead"
         )
     return load_splats_json(path)
+
+
+def pptx_population_part(splats: List[GaussianSplat]) -> tuple:
+    """Return the ``(name, text)`` package part carrying ``splats``."""
+    return (PPTX_POPULATION_PART, encode_population(splats))
+
+
+def population_from_pptx(path: str) -> List[GaussianSplat]:
+    """Extract an embedded population from a .pptx package."""
+    import zipfile
+
+    with zipfile.ZipFile(path) as package:
+        if PPTX_POPULATION_PART not in package.namelist():
+            raise ValueError(
+                f"no embedded splatthis population in {path}; re-export it "
+                f"with --embed-population"
+            )
+        return decode_population(package.read(PPTX_POPULATION_PART).decode("utf-8"))

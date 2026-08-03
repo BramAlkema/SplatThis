@@ -612,6 +612,19 @@ def _run_conversion(args: argparse.Namespace) -> int:
         refinement_config["fidelity_stage"] = args.fidelity_stage
     if args.init_from:
         refinement_config["init_from"] = str(args.init_from)
+        if args.splats is None:
+            # Without this the densifier grows the population it was handed,
+            # so a "re-target this artifact" run silently returns a different
+            # fit than the one embedded in it. An explicit --splats still wins.
+            from .population_embed import load_population
+
+            loaded = len(load_population(str(args.init_from)))
+            args.splats = loaded
+            logging.getLogger(__name__).info(
+                "--init-from: splat budget pinned to the loaded population "
+                "(%d); pass --splats to override",
+                loaded,
+            )
     if args.embed_population:
         refinement_config["svg_embed_population"] = True
     if args.svg_optimize:

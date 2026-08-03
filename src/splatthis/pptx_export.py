@@ -474,8 +474,21 @@ def _splat_to_drawingml_blur_shape_lines(
     )
 
 
-def _pptx_content_types_xml() -> str:
-    return load_template("pptx/content_types.xml").rstrip("\n") + "\n"
+def _pptx_content_types_xml(extra_part: Optional[str] = None) -> str:
+    """Content types for the package, including any extra part we add.
+
+    OPC requires every part to have a declared content type. An undeclared
+    part does not make PowerPoint ignore it -- it makes the package invalid,
+    and PowerPoint offers to repair the file. ``openxml-audit`` did not catch
+    this, so a real open is the only check that counts here.
+    """
+    base = load_template("pptx/content_types.xml").rstrip("\n")
+    if extra_part:
+        override = render_template(
+            "pptx/population_content_type.xml", part=extra_part
+        ).rstrip("\n")
+        base = base.replace("</Types>", f"{override}\n</Types>")
+    return base + "\n"
 
 
 def _pptx_root_rels_xml() -> str:
@@ -701,8 +714,17 @@ def save_pptx_with_drawingml_content(
     height: int,
     output_path: str,
     splat_count: int,
+    embedded_population: Optional[Tuple[str, str]] = None,
 ) -> None:
-    """Package already-emitted DrawingML without generating it a second time."""
+    """Package already-emitted DrawingML without generating it a second time.
+
+    ``embedded_population`` is an optional ``(part_name, text)`` pair
+    carrying the splats this deck was fitted from, so the file can be
+    re-targeted or warm-started without its source image. It is written as
+    an unreferenced package part: PowerPoint ignores parts nothing relates
+    to, so the deck opens normally, and a Save As that rewrites the
+    package drops it rather than corrupting anything.
+    """
 
     _emu_scale = pptx_emu_scale(width, height)
     slide_cx = max(px_to_emu(width, _emu_scale), 1)
@@ -717,7 +739,12 @@ def save_pptx_with_drawingml_content(
     _write_pptx_package(
         output_path,
         [
-            ("[Content_Types].xml", _pptx_content_types_xml()),
+            (
+                "[Content_Types].xml",
+                _pptx_content_types_xml(
+                    embedded_population[0] if embedded_population else None
+                ),
+            ),
             ("_rels/.rels", _pptx_root_rels_xml()),
             ("docProps/core.xml", _pptx_core_props_xml(now_iso)),
             ("docProps/app.xml", _pptx_app_props_xml()),
@@ -744,6 +771,7 @@ def save_pptx_with_drawingml_content(
             ("ppt/theme/theme1.xml", _pptx_theme_xml()),
             ("ppt/presProps.xml", _pptx_pres_props_xml()),
             ("ppt/viewProps.xml", _pptx_view_props_xml()),
+            *([embedded_population] if embedded_population else []),
         ],
     )
 
