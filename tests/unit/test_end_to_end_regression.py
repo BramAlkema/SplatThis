@@ -90,6 +90,10 @@ def conversion(tmp_path_factory):
             # Pinned: see module docstring.
             "--optimizer-backend",
             "torch",
+            # This test asserts seeded pipeline quality, not the ambient host
+            # memory policy. The safety valve is covered independently and can
+            # halve the population on a busy CI runner.
+            "--no-memory-guard",
             "--artifacts-dir",
             str(artifacts),
         ]

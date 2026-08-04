@@ -550,6 +550,12 @@ def build_parser() -> argparse.ArgumentParser:
         const=DISABLE_APPLE_SILICON_SPLAT_CAP,
         help="Disable the conservative Apple Silicon splat cap for exploratory runs.",
     )
+    parser.add_argument(
+        "--no-memory-guard",
+        action="store_true",
+        help="Disable the host-memory safety valve for reproducible seeded runs; "
+        "only use when the process has enough memory for the requested population.",
+    )
     parser.add_argument("--device", default="cpu", help="Torch device (cpu or cuda)")
     parser.add_argument("--seed", type=int, default=0, help="Deterministic seed")
     parser.add_argument(
@@ -771,6 +777,8 @@ def _run_conversion(args: argparse.Namespace) -> int:
         pptx_splat_style=args.pptx_splat_style,
         pptx_painter_order=args.pptx_painter_order,
     )
+    if args.no_memory_guard:
+        converter.memory_guard_percent = None
     converter.convert(
         input_path=input_path,
         output_path=output,

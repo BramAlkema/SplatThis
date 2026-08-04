@@ -27,9 +27,13 @@ def run_cli(tmp_path, monkeypatch) -> RunCli:
     class CaptureConverter:
         def __init__(self, **kwargs: Any) -> None:
             captured["init"] = kwargs
+            self.memory_guard_percent = 85.0
 
         def convert(self, **kwargs: Any) -> None:
-            captured["convert"] = kwargs
+            captured["convert"] = {
+                **kwargs,
+                "_memory_guard_percent": self.memory_guard_percent,
+            }
 
     monkeypatch.setattr(cli, "PNG2SVGConverter", CaptureConverter)
 
@@ -142,3 +146,11 @@ def test_constructor_passthroughs(run_cli: RunCli) -> None:
     assert init["pptx_splat_style"] == "soft-edge"
     assert convert["output_format"] == "pptx"
     assert convert["seed"] == 7
+
+
+def test_no_memory_guard_disables_the_ambient_resource_valve(run_cli: RunCli) -> None:
+    # The flag is intentionally applied after construction because the
+    # resource valve is mutable run policy, not part of the fit configuration.
+    # The fixture exposes the post-wiring value through the convert call.
+    _, convert = run_cli("--no-memory-guard")
+    assert convert["_memory_guard_percent"] is None
