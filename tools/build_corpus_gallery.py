@@ -13,8 +13,8 @@ Two modes:
 
 - ``--emit`` (local only) materializes the artifact assets under
   ``docs/corpus/`` from repository state that CI does not have: source
-  images and PowerPoint captures/decks from ``result/corpus/``, the
-  current-emitter SVGs from ``result/svg-quality/``, and CSS plus
+  images and PowerPoint captures/decks from ``result/corpus/``, the latest
+  successful deployed SVGs from the governing results ledger, and CSS plus
   pixel-runtime builds emitted by the shipped emitters from the stored
   seed-0 populations (the same populations the fidelity registry measured,
   so the quoted numbers describe these exact artifacts). Splat counts are
@@ -29,6 +29,7 @@ Two modes:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import shutil
@@ -41,8 +42,8 @@ GALLERY = REPO / "docs" / "corpus"
 INDEX = GALLERY / "index.html"
 STATS = GALLERY / "stats.json"
 SOURCES = REPO / "result" / "corpus" / "images"
-SVG_LAB = REPO / "result" / "svg-quality"
 RUNS = REPO / "result" / "corpus" / "runs"
+RESULTS = REPO / "result" / "corpus" / "results.jsonl"
 PPT_RESULTS = REPO / "result" / "corpus" / "powerpoint_results.jsonl"
 
 #: Pixel-runtime pages are flex-centered with 16px padding and a status line.
@@ -91,6 +92,28 @@ def powerpoint_rows() -> Dict[str, Dict[str, Any]]:
     return rows
 
 
+def svg_rows() -> Dict[str, Dict[str, Any]]:
+    """Return the newest successful deployed SVG row per corpus image."""
+    rows = [
+        json.loads(line)
+        for line in RESULTS.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    selected = {
+        row["image"]: row
+        for row in rows
+        if row.get("format") == "svg"
+        and row.get("is_deployed_artifact") is True
+        and row.get("returncode") == 0
+    }
+    if len(selected) != TOOL.CORPUS_IMAGES:
+        raise TOOL.LedgerError(
+            "deployed SVG results do not cover the corpus "
+            f"({len(selected)} of {TOOL.CORPUS_IMAGES})"
+        )
+    return selected
+
+
 def _png_size(path: Path) -> Tuple[int, int]:
     from PIL import Image
 
@@ -103,14 +126,33 @@ def _lf_kb(path: Path) -> float:
     return len(path.read_bytes().replace(b"\r\n", b"\n")) / 1024
 
 
-def emit_assets(registry: Dict[str, Any]) -> None:
-    """Materialize gallery assets from local repository state (not in CI)."""
-    sys.path.insert(0, str(REPO / "src"))
-    import numpy as np
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
-    from splatthis.browser_export import generate_css_splat_html
-    from splatthis.pixel_runtime import generate_pixel_runtime_html
-    from splatthis.storage import load_splats_json
+
+def emit_assets(registry: Dict[str, Any]) -> None:
+    """Materialize gallery assets from local repository state (not in CI).
+
+    Browser-side CSS/runtime regeneration needs the full training environment.
+    When that environment is unavailable, preserve those already-committed
+    assets while still refreshing the independently verifiable SVG/PPTX files.
+    """
+    sys.path.insert(0, str(REPO / "src"))
+    try:
+        import numpy as np
+
+        from splatthis.browser_export import generate_css_splat_html
+        from splatthis.pixel_runtime import generate_pixel_runtime_html
+        from splatthis.storage import load_splats_json
+    except ModuleNotFoundError as error:
+        if error.name != "torch":
+            raise
+        generate_browser_assets = False
+        print(
+            "training dependencies unavailable; preserving committed CSS/runtime assets"
+        )
+    else:
+        generate_browser_assets = True
 
     for sub in ("src", "svg", "css", "runtime", "pptx"):
         (GALLERY / sub).mkdir(parents=True, exist_ok=True)
@@ -124,20 +166,40 @@ def emit_assets(registry: Dict[str, Any]) -> None:
         )
         return load_splats_json(str(run_dir / "final.raw.json")), background
 
+    previous_stats = (
+        json.loads(STATS.read_text(encoding="utf-8")) if STATS.is_file() else {}
+    )
+
     stats: Dict[str, Dict[str, int]] = {}
+    svg = svg_rows()
+    ppt = powerpoint_rows()
     for image in corpus_images(registry):
         source = SOURCES / f"{image}.png"
-        svg = SVG_LAB / f"{image}-standard.svg"
-        svg_run = RUNS / f"{image}_svg_s0_art"
+        svg_row = svg[image]
+        svg_path = REPO / "result" / "corpus" / svg_row["output_path"]
+        svg_run = REPO / "result" / "corpus" / svg_row["artifacts_path"]
         runtime_run = RUNS / f"{image}_canvas_s0_art"
-        pptx_run = RUNS / f"{image}_pptx_s0_art"
-        deck = RUNS / f"{image}_pptx_s0.pptx"
-        capture = RUNS / f"{image}_pptx_s0_powerpoint_slide.png"
-        for needed in (source, svg, deck, capture) + tuple(
+        ppt_row = ppt[image]
+        capture = REPO / "result" / "corpus" / ppt_row["capture"]
+        deck = capture.with_name(capture.name.replace("_powerpoint_slide.png", ".pptx"))
+        pptx_run = deck.with_name(f"{deck.stem}_art")
+        required_runs = [svg_run, pptx_run]
+        if generate_browser_assets:
+            required_runs.append(runtime_run)
+        needed_paths = [source, svg_path, deck, capture]
+        needed_paths.extend(
             run / name
-            for run in (svg_run, runtime_run, pptx_run)
+            for run in required_runs
             for name in ("final.raw.json", "run_manifest.json")
-        ):
+        )
+        if not generate_browser_assets:
+            needed_paths.extend(
+                (
+                    GALLERY / "css" / f"{image}.html",
+                    GALLERY / "runtime" / f"{image}.html",
+                )
+            )
+        for needed in needed_paths:
             if not needed.exists():
                 raise TOOL.LedgerError(
                     f"cannot emit gallery assets: missing {needed.relative_to(REPO)}"
@@ -145,31 +207,46 @@ def emit_assets(registry: Dict[str, Any]) -> None:
         width, height = _png_size(source)
 
         shutil.copy2(source, GALLERY / "src" / f"{image}.png")
-        shutil.copy2(svg, GALLERY / "svg" / f"{image}.svg")
+        shutil.copy2(svg_path, GALLERY / "svg" / f"{image}.svg")
         shutil.copy2(deck, GALLERY / "pptx" / f"{image}.pptx")
         shutil.copy2(capture, GALLERY / "pptx" / f"{image}.png")
 
-        svg_splats, svg_bg = population(svg_run)
-        (GALLERY / "css" / f"{image}.html").write_text(
-            generate_css_splat_html(
-                svg_splats, width, height, background_linear_rgb=svg_bg
-            ),
-            encoding="utf-8",
+        if generate_browser_assets:
+            svg_splats, svg_bg = population(svg_run)
+            (GALLERY / "css" / f"{image}.html").write_text(
+                generate_css_splat_html(
+                    svg_splats, width, height, background_linear_rgb=svg_bg
+                ),
+                encoding="utf-8",
+            )
+            runtime_splats, runtime_bg = population(runtime_run)
+            (GALLERY / "runtime" / f"{image}.html").write_text(
+                generate_pixel_runtime_html(
+                    runtime_splats, width, height, background_linear_rgb=runtime_bg
+                ),
+                encoding="utf-8",
+            )
+            css_splat_count = len(svg_splats)
+            runtime_splat_count = len(runtime_splats)
+        else:
+            old = previous_stats.get(image, {})
+            css_splat_count = int(old.get("css_splats", old["svg_splats"]))
+            runtime_splat_count = int(old["runtime_splats"])
+        pptx_splat_count = int(
+            json.loads((pptx_run / "final.raw.json").read_text(encoding="utf-8"))[
+                "num_splats"
+            ]
         )
-        runtime_splats, runtime_bg = population(runtime_run)
-        (GALLERY / "runtime" / f"{image}.html").write_text(
-            generate_pixel_runtime_html(
-                runtime_splats, width, height, background_linear_rgb=runtime_bg
-            ),
-            encoding="utf-8",
-        )
-        pptx_splats, _ = population(pptx_run)
         stats[image] = {
-            "svg_splats": len(svg_splats),
-            "runtime_splats": len(runtime_splats),
-            "pptx_splats": len(pptx_splats),
+            "svg_splats": int(svg_row["splats_final"]),
+            "css_splats": css_splat_count,
+            "runtime_splats": runtime_splat_count,
+            "pptx_splats": pptx_splat_count,
         }
-        print(f"emitted {image}: src, svg, css, runtime, pptx")
+        print(
+            f"emitted {image}: src, svg, pptx"
+            + (", css, runtime" if generate_browser_assets else "")
+        )
     STATS.write_text(json.dumps(stats, indent=1, sort_keys=True) + "\n")
     print(f"wrote {STATS.relative_to(REPO)}")
 
@@ -215,8 +292,9 @@ click away.</p>
 score is a seed-0 measurement of these exact artifact families against the
 source in the governing renderer — Chromium for the browser targets, real
 PowerPoint for the decks — quoted from the versioned ledgers. The page is
-generated by <code>tools/build_corpus_gallery.py</code> and goes stale
-loudly in CI.</p>
+generated by <code>tools/build_corpus_gallery.py</code>; SVGs use the newest
+successful deployed ledger row per image and PowerPoint uses the newest real
+PowerPoint capture. It goes stale loudly in CI.</p>
 """
 
 PAGE_FOOT = """
@@ -250,6 +328,7 @@ def build_index(registry: Dict[str, Any]) -> str:
             "missing docs/corpus/stats.json (regenerate locally with --emit)"
         )
     ppt = powerpoint_rows()
+    svg_rows_by_image = svg_rows()
     per_image = {
         fmt: {p["image"]: p for p in registry["per_image"][fmt]}
         for fmt in ("svg", "css", "pixel-runtime")
@@ -257,9 +336,11 @@ def build_index(registry: Dict[str, Any]) -> str:
     parts: List[str] = [PAGE_HEAD]
     ordered = sorted(
         corpus_images(registry),
-        key=lambda image: per_image["svg"][image]["deployed_lpips"],
+        key=lambda image: svg_rows_by_image[image]["lpips"],
     )
     for image in ordered:
+        svg_row = svg_rows_by_image[image]
+        ppt_row = ppt[image]
         assets = {
             "source": GALLERY / "src" / f"{image}.png",
             "svg": GALLERY / "svg" / f"{image}.svg",
@@ -274,14 +355,27 @@ def build_index(registry: Dict[str, Any]) -> str:
                     f"gallery asset missing: {needed.relative_to(REPO)} "
                     f"(regenerate locally with --emit)"
                 )
+        if _sha256(assets["svg"]) != svg_row["artifact_sha256"]:
+            raise TOOL.LedgerError(
+                f"gallery SVG is not the ledger artifact for {image} "
+                "(regenerate locally with --emit)"
+            )
+        if _sha256(assets["pptx_deck"]) != ppt_row["pptx_sha256"]:
+            raise TOOL.LedgerError(
+                f"gallery PPTX is not the ledger artifact for {image} "
+                "(regenerate locally with --emit)"
+            )
+        if _sha256(assets["pptx_png"]) != ppt_row["capture_sha256"]:
+            raise TOOL.LedgerError(
+                f"gallery PowerPoint capture is not the ledger artifact for {image} "
+                "(regenerate locally with --emit)"
+            )
         if image not in stats:
             raise TOOL.LedgerError(f"stats.json is missing {image}")
         width, height = _png_size(assets["source"])
         frame_w, frame_h = width + RUNTIME_PAD_W, height + RUNTIME_PAD_H
-        svg_row = per_image["svg"][image]
         css_row = per_image["css"][image]
         runtime_row = per_image["pixel-runtime"][image]
-        ppt_row = ppt[image]
         counts = stats[image]
         parts.append(
             f'<h2 class="img">{image} '
@@ -319,15 +413,15 @@ def build_index(registry: Dict[str, Any]) -> str:
             f"    <figcaption><strong>Scriptless CSS</strong> · LPIPS "
             f"{css_row['deployed_lpips']:.4f} · SSIM "
             f"{css_row['deployed_ssim_srgb']:.4f} · "
-            f"{counts['svg_splats']:,} splats · "
+            f"{counts['css_splats']:,} splats · "
             f"{_lf_kb(assets['css']):,.0f} KB · live DOM</figcaption>\n"
             f"  </figure>\n"
             f"  <figure>\n"
             f'    <img src="svg/{image}.svg" loading="lazy" '
             f'alt="{image} as corrected-exporter SVG">\n'
             f"    <figcaption><strong>SVG</strong> · LPIPS "
-            f"{svg_row['deployed_lpips']:.4f} · SSIM "
-            f"{svg_row['deployed_ssim_srgb']:.4f} · "
+            f"{svg_row['lpips']:.4f} · SSIM "
+            f"{svg_row['ssim_srgb']:.4f} · "
             f"{counts['svg_splats']:,} splats · "
             f"{_lf_kb(assets['svg']):,.0f} KB · live vector</figcaption>\n"
             f"  </figure>\n"

@@ -1,107 +1,128 @@
 {
  "astronaut": {
-  "pptx_splats": 1621,
+  "css_splats": 1623,
+  "pptx_splats": 1822,
   "runtime_splats": 1619,
-  "svg_splats": 1595
+  "svg_splats": 1623
  },
  "brick": {
-  "pptx_splats": 1456,
+  "css_splats": 1444,
+  "pptx_splats": 1391,
   "runtime_splats": 1449,
-  "svg_splats": 1458
+  "svg_splats": 1444
  },
  "camera": {
-  "pptx_splats": 1224,
+  "css_splats": 1248,
+  "pptx_splats": 1279,
   "runtime_splats": 1192,
-  "svg_splats": 1184
+  "svg_splats": 1248
  },
  "cell": {
-  "pptx_splats": 1374,
+  "css_splats": 1419,
+  "pptx_splats": 1389,
   "runtime_splats": 1457,
-  "svg_splats": 1389
+  "svg_splats": 1419
  },
  "chameleon": {
-  "pptx_splats": 1674,
+  "css_splats": 1634,
+  "pptx_splats": 1778,
   "runtime_splats": 1682,
-  "svg_splats": 1615
+  "svg_splats": 1634
  },
  "checkerboard": {
-  "pptx_splats": 1391,
+  "css_splats": 1411,
+  "pptx_splats": 1755,
   "runtime_splats": 1395,
-  "svg_splats": 1345
+  "svg_splats": 1411
  },
  "chelsea": {
-  "pptx_splats": 1686,
+  "css_splats": 1664,
+  "pptx_splats": 1787,
   "runtime_splats": 1674,
-  "svg_splats": 1616
+  "svg_splats": 1664
  },
  "coffee": {
-  "pptx_splats": 1449,
+  "css_splats": 1404,
+  "pptx_splats": 1591,
   "runtime_splats": 1429,
-  "svg_splats": 1389
+  "svg_splats": 1404
  },
  "coins": {
-  "pptx_splats": 1171,
+  "css_splats": 1200,
+  "pptx_splats": 1386,
   "runtime_splats": 1157,
-  "svg_splats": 1182
+  "svg_splats": 1200
  },
  "colorwheel": {
-  "pptx_splats": 1354,
+  "css_splats": 1736,
+  "pptx_splats": 1858,
   "runtime_splats": 1389,
-  "svg_splats": 1706
+  "svg_splats": 1736
  },
  "grass": {
-  "pptx_splats": 1341,
+  "css_splats": 1295,
+  "pptx_splats": 1361,
   "runtime_splats": 1346,
-  "svg_splats": 1290
+  "svg_splats": 1295
  },
  "gravel": {
-  "pptx_splats": 1273,
+  "css_splats": 1263,
+  "pptx_splats": 1387,
   "runtime_splats": 1260,
-  "svg_splats": 1475
+  "svg_splats": 1263
  },
  "hubble_deep_field": {
-  "pptx_splats": 1177,
+  "css_splats": 953,
+  "pptx_splats": 1074,
   "runtime_splats": 1189,
-  "svg_splats": 959
+  "svg_splats": 953
  },
  "immunohistochemistry": {
-  "pptx_splats": 1652,
+  "css_splats": 1741,
+  "pptx_splats": 1839,
   "runtime_splats": 1651,
-  "svg_splats": 1714
+  "svg_splats": 1741
  },
  "logo": {
-  "pptx_splats": 1452,
+  "css_splats": 1517,
+  "pptx_splats": 1572,
   "runtime_splats": 1454,
-  "svg_splats": 1445
+  "svg_splats": 1517
  },
  "moon": {
-  "pptx_splats": 1276,
+  "css_splats": 1298,
+  "pptx_splats": 1253,
   "runtime_splats": 1276,
-  "svg_splats": 1239
+  "svg_splats": 1298
  },
  "page": {
-  "pptx_splats": 994,
+  "css_splats": 960,
+  "pptx_splats": 1049,
   "runtime_splats": 1009,
-  "svg_splats": 973
+  "svg_splats": 960
  },
  "retina": {
+  "css_splats": 1547,
   "pptx_splats": 1523,
   "runtime_splats": 1516,
-  "svg_splats": 1533
+  "svg_splats": 1547
  },
  "rocket": {
-  "pptx_splats": 1348,
+  "css_splats": 1379,
+  "pptx_splats": 1489,
   "runtime_splats": 1356,
-  "svg_splats": 1325
+  "svg_splats": 1379
  },
  "stereo_motorcycle": {
-  "pptx_splats": 1434,
+  "css_splats": 1341,
+  "pptx_splats": 1569,
   "runtime_splats": 1419,
-  "svg_splats": 1338
+  "svg_splats": 1341
  },
  "text": {
-  "pptx_splats": 942,
+  "css_splats": 937,
+  "pptx_splats": 978,
   "runtime_splats": 954,
-  "svg_splats": 962
+  "svg_splats": 937
  }
 }

@@ -380,6 +380,27 @@ can still choose per image.
 
 Reported because they cost real time and are absent from the literature.
 
+### 7.1 CSS in email (experimental)
+
+The scriptless CSS emitter can be packaged as a complete RFC 5322 `.eml`, but
+email is a separate deployment target with a much smaller budget and a hostile
+CSS allowlist. The full 1,615-splat Chameleon build is 842 KB; the
+email-safe 300-splat build is 102 KB and fits Gmail's approximate HTML clip,
+whereas the standard 300-splat recipe is 157 KB and does not. At that budget,
+the email-safe recipe is effectively quality-neutral in Chromium (SSIM 0.744
+and LPIPS 0.386 versus 0.746 and 0.389 for the standard recipe).
+
+The harder failure is layout. Gmail strips `position`, `left`, `top`, and
+`transform`; replacing absolute positioning with block elements and tracked
+margin deltas recovers placement, but not anisotropic rotation. With transforms
+kept, the result scores SSIM 0.7442 / LPIPS 0.3882; with Gmail's declarations
+stripped it falls to 0.6670 / 0.5328. Apple Mail renders the gradients, while
+Outlook/Word receives a plain-colour fallback because it cannot render CSS
+gradients reliably. The `.eml` is therefore a portable experiment and a
+client-inspection vehicle, not a general email delivery claim. The full
+[email experiment note](../docs/css-splats-in-email.md) and
+`tools/email_css_package.py` reproduce the package and its constraints.
+
 - **`feGaussianBlur` as the SVG primitive.** A true Gaussian via filter
   primitives loses to radial-gradient stops: rsvg's filter pipeline is 8-bit,
   so a point source underflows before amplification, and enlarging the source
