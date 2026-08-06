@@ -1,47 +1,25 @@
 cff-version: 1.2.0
-title: "SplatThis: target-aware 2D Gaussian splatting for vector and document formats"
+title: "SplatThis: portable 2D Gaussian splat artifacts"
 message: "If you use this software, please cite it using these metadata."
 type: software
 authors:
   - family-names: Alkema
     given-names: Bram
 repository-code: "https://github.com/BramAlkema/SplatThis"
-url: "https://bramalkema.github.io/SplatThis/"
 license: MIT
-version: 0.2.6
-date-released: "2026-08-02"
+version: 0.3.0
+date-released: "2026-08-06"
 keywords:
   - gaussian-splatting
   - svg
-  - ooxml
-  - drawingml
-  - image-vectorization
+  - powerpoint
+  - canvas
   - css
+  - mlx
+  - steganography
+  - image-vectorization
 abstract: >-
-  SplatThis fits 2D anisotropic Gaussian splats to a single image and emits
-  them to compositors that share no rendering code: SVG radial gradients,
-  scriptless DOM/CSS, browser-native Canvas, an accelerated pixel runtime with
-  exact CPU fallbacks, and native PowerPoint DrawingML shapes. The difficult
-  part is not the fit but the export, because the optimizer's differentiable
-  forward model and the renderer that finally draws the artifact are different
-  programs. Each output is therefore graded on the deployed artifact in its
-  governing renderer -- Chromium for browser targets, real Microsoft PowerPoint
-  for decks -- and proxy metrics are recorded as diagnostics that cannot
-  approve a candidate.
-
-# The report's seed noise floor (§5.2) and corpus-wide SVG-versus-OOXML
-# comparison (§5.3) are measured; its living results section (§5.4) is
-# regenerated from the versioned ledgers by tools/update_paper.py and guarded
-# by tests/unit/test_paper_page.py.
-preferred-citation:
-  type: report
-  title: "Deploying 2D Gaussian Splats to Vector Document Formats"
-  authors:
-    - family-names: Alkema
-      given-names: Bram
-  year: 2026
-  month: 8
-  institution:
-    name: "SplatThis project"
-  url: "https://bramalkema.github.io/SplatThis/paper/"
-  notes: "Technical report; rendered from paper/report.md"
+  SplatThis fits anisotropic 2D Gaussian splats to a bitmap with Torch and
+  exports the fitted population as SVG, native PowerPoint, Canvas HTML, CSS
+  HTML, or CSS-based EML, with optional MLX fitting, browser capture, and
+  recoverable population carriers.

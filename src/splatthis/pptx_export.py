@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 import logging
 import math
 import zipfile
@@ -12,7 +11,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import numpy.typing as npt
-from PIL import Image
 
 from .color import linear_to_srgb
 from .export_common import (
@@ -475,20 +473,13 @@ def _splat_to_drawingml_blur_shape_lines(
 
 
 def _pptx_content_types_xml(extra_part: Optional[str] = None) -> str:
-    """Content types for the package, including any extra part we add.
-
-    OPC requires every part to have a declared content type. An undeclared
-    part does not make PowerPoint ignore it -- it makes the package invalid,
-    and PowerPoint offers to repair the file. ``openxml-audit`` did not catch
-    this, so a real open is the only check that counts here.
-    """
-    base = load_template("pptx/content_types.xml").rstrip("\n")
+    content = load_template("pptx/content_types.xml").rstrip("\n")
     if extra_part:
         override = render_template(
             "pptx/population_content_type.xml", part=extra_part
         ).rstrip("\n")
-        base = base.replace("</Types>", f"{override}\n</Types>")
-    return base + "\n"
+        content = content.replace("</Types>", f"{override}\n</Types>")
+    return content + "\n"
 
 
 def _pptx_root_rels_xml() -> str:
@@ -524,21 +515,6 @@ def _pptx_pres_props_xml() -> str:
 
 def _pptx_view_props_xml() -> str:
     return load_template("pptx/view_props.xml").rstrip("\n") + "\n"
-
-
-def _pptx_slide_xml(slide_cx: int, slide_cy: int) -> str:
-    return (
-        render_template(
-            "pptx/raster_slide.xml",
-            slide_cx=slide_cx,
-            slide_cy=slide_cy,
-        ).rstrip("\n")
-        + "\n"
-    )
-
-
-def _pptx_slide_rels_xml() -> str:
-    return load_template("pptx/raster_slide_rels.xml").rstrip("\n") + "\n"
 
 
 def _pptx_vector_slide_rels_xml() -> str:
@@ -579,93 +555,6 @@ def _write_pptx_package(
                 archive.writestr(member_path, payload)
 
 
-def save_pptx_with_splat_png(
-    splats: List[GaussianSplat],
-    width: int,
-    height: int,
-    output_path: str,
-    sort_mode: str = DEFAULT_EXPORT_ORDER,
-    sort_by_area: bool = False,
-    render_scale: float = 1.0,
-    background_linear_rgb: Optional[npt.NDArray[Any]] = None,
-    compositing_space: str = "linear",
-) -> None:
-    """
-    Save a self-contained PPTX containing one slide with a rendered splat PNG.
-    """
-    ordered_splats = _sort_splats_for_export(
-        splats=splats,
-        sort_mode=sort_mode,
-        sort_by_area=sort_by_area,
-    )
-
-    from .renderer import render_splats_numpy
-
-    render_width = max(1, int(round(float(width) * float(render_scale))))
-    render_height = max(1, int(round(float(height) * float(render_scale))))
-    rendered = render_splats_numpy(
-        ordered_splats,
-        width=width,
-        height=height,
-        background_linear_rgb=background_linear_rgb,
-        compositing_space=compositing_space,
-    )
-    rendered_srgb = linear_to_srgb(np.clip(rendered, 0.0, 1.0))
-    image = Image.fromarray((rendered_srgb * 255.0).astype(np.uint8), mode="RGB")
-    if (render_width, render_height) != (width, height):
-        image = image.resize((render_width, render_height), Image.Resampling.LANCZOS)
-
-    png_buffer = io.BytesIO()
-    image.save(png_buffer, format="PNG")
-    png_bytes = png_buffer.getvalue()
-
-    _emu_scale = pptx_emu_scale(render_width, render_height)
-    slide_cx = max(px_to_emu(render_width, _emu_scale), 1)
-    slide_cy = max(px_to_emu(render_height, _emu_scale), 1)
-    now_iso = (
-        datetime.now(timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
-
-    _write_pptx_package(
-        output_path,
-        [
-            ("[Content_Types].xml", _pptx_content_types_xml()),
-            ("_rels/.rels", _pptx_root_rels_xml()),
-            ("docProps/core.xml", _pptx_core_props_xml(now_iso)),
-            ("docProps/app.xml", _pptx_app_props_xml()),
-            (
-                "ppt/presentation.xml",
-                _pptx_presentation_xml(slide_cx=slide_cx, slide_cy=slide_cy),
-            ),
-            ("ppt/_rels/presentation.xml.rels", _pptx_presentation_rels_xml()),
-            (
-                "ppt/slides/slide1.xml",
-                _pptx_slide_xml(slide_cx=slide_cx, slide_cy=slide_cy),
-            ),
-            ("ppt/slides/_rels/slide1.xml.rels", _pptx_slide_rels_xml()),
-            ("ppt/slideLayouts/slideLayout1.xml", _pptx_slide_layout_xml()),
-            (
-                "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
-                _pptx_slide_layout_rels_xml(),
-            ),
-            ("ppt/slideMasters/slideMaster1.xml", _pptx_slide_master_xml()),
-            (
-                "ppt/slideMasters/_rels/slideMaster1.xml.rels",
-                _pptx_slide_master_rels_xml(),
-            ),
-            ("ppt/theme/theme1.xml", _pptx_theme_xml()),
-            ("ppt/presProps.xml", _pptx_pres_props_xml()),
-            ("ppt/viewProps.xml", _pptx_view_props_xml()),
-            ("ppt/media/image1.png", png_bytes),
-        ],
-    )
-
-    logger.info("Saved PPTX with rasterized splat image: %s", output_path)
-
-
 def save_pptx_with_splats(
     splats: List[GaussianSplat],
     width: int,
@@ -677,6 +566,7 @@ def save_pptx_with_splats(
     background_linear_rgb: Optional[npt.NDArray[Any]] = None,
     splat_style: str = DEFAULT_PPTX_SPLAT_STYLE,
     painter_order: str = PPTX_PAINTER_ORDER_BACK_TO_FRONT,
+    embed_population: bool = False,
 ) -> None:
     """
     Save a self-contained PPTX containing native DrawingML splat shapes.
@@ -698,12 +588,18 @@ def save_pptx_with_splats(
         splat_style=splat_style,
         painter_order=painter_order,
     )
+    embedded_population = None
+    if embed_population and ordered_splats:
+        from .population_embed import pptx_population_part
+
+        embedded_population = pptx_population_part(ordered_splats)
     save_pptx_with_drawingml_content(
         slide_xml=slide_xml,
         width=width,
         height=height,
         output_path=output_path,
         splat_count=len(ordered_splats),
+        embedded_population=embedded_population,
     )
 
 
@@ -716,15 +612,7 @@ def save_pptx_with_drawingml_content(
     splat_count: int,
     embedded_population: Optional[Tuple[str, str]] = None,
 ) -> None:
-    """Package already-emitted DrawingML without generating it a second time.
-
-    ``embedded_population`` is an optional ``(part_name, text)`` pair
-    carrying the splats this deck was fitted from, so the file can be
-    re-targeted or warm-started without its source image. It is written as
-    an unreferenced package part: PowerPoint ignores parts nothing relates
-    to, so the deck opens normally, and a Save As that rewrites the
-    package drops it rather than corrupting anything.
-    """
+    """Package already-emitted DrawingML without generating it a second time."""
 
     _emu_scale = pptx_emu_scale(width, height)
     slide_cx = max(px_to_emu(width, _emu_scale), 1)

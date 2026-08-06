@@ -352,6 +352,9 @@ def generate_native_canvas_html(
     height = int(height)
     parallax_strength = float(parallax_strength)
     ordered_splats = _sort_splats_for_export(splats)
+    # Canvas source-over paints later calls on top. The numerical renderer's
+    # front-most splat is first, so Canvas must submit the population reversed.
+    ordered_splats.reverse()
     gradient_footprint = ELLIPSE_OVERLAP_BOOST * float(k_sigma)
     stop_error = _density_aware_stop_error(len(ordered_splats))
 

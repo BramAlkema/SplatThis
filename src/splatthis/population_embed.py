@@ -32,6 +32,7 @@ from __future__ import annotations
 import base64
 import gzip
 import json
+from io import BytesIO
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -54,6 +55,7 @@ POPULATION_FIELDS = (
 )
 
 POPULATION_SCHEMA = "splatthis.population/1"
+MAX_POPULATION_COUNT = 1_000_000
 
 #: Detects SVG input by its namespace rather than its root tag, so this
 #: module stays free of vector markup (test_module_boundaries).
@@ -114,17 +116,24 @@ def decode_population(envelope_text: str) -> List[GaussianSplat]:
     """
     envelope = json.loads(envelope_text)
     schema = str(envelope.get("schema", ""))
-    if not schema.startswith("splatthis.population/"):
+    if schema != POPULATION_SCHEMA:
         raise ValueError(f"not a splatthis population envelope: {schema!r}")
     fields = list(envelope["fields"])
-    buffer = gzip.decompress(base64.b64decode(envelope["data"]))
-    array = np.frombuffer(buffer, dtype=np.dtype(envelope["dtype"]))
-    if array.size != int(envelope["count"]) * len(fields):
+    if fields != list(POPULATION_FIELDS) or envelope.get("dtype") != "float32":
+        raise ValueError("unsupported population field layout or dtype")
+    count = int(envelope["count"])
+    if not 0 <= count <= MAX_POPULATION_COUNT:
+        raise ValueError(f"population count out of bounds: {count}")
+    expected_bytes = count * len(fields) * np.dtype(np.float32).itemsize
+    compressed = base64.b64decode(envelope["data"], validate=True)
+    with gzip.GzipFile(fileobj=BytesIO(compressed)) as stream:
+        buffer = stream.read(expected_bytes + 1)
+    if len(buffer) != expected_bytes:
         raise ValueError(
-            f"population payload is {array.size} values; envelope declares "
-            f"{envelope['count']} x {len(fields)}"
+            f"population payload is {len(buffer)} bytes; envelope declares "
+            f"{expected_bytes}"
         )
-    array = array.reshape(int(envelope["count"]), len(fields))
+    array = np.frombuffer(buffer, dtype=np.float32).reshape(count, len(fields))
     return [
         GaussianSplat.from_raw_splat(
             RawSplat.from_dict({name: float(value) for name, value in zip(fields, row)})
@@ -139,13 +148,14 @@ def svg_metadata_element(splats: Sequence[GaussianSplat]) -> str:
     ``<metadata>`` is the standards-defined home for this; a comment would be
     stripped by ``svgo`` (which ``--svg-optimize`` runs) and cannot contain
     ``--``. Renderers ignore the element, so the drawn output is unchanged.
-    The markup itself lives in the packaged template set, like every other
-    fragment this project emits.
+    The namespace makes the payload self-describing without another template.
     """
-    from .template_assets import render_template
-
-    return render_template(
-        "svg/population_metadata.svg", envelope=encode_population(splats)
+    return (
+        "  <metadata>\n"
+        '    <splatthis:population xmlns:splatthis="'
+        'https://github.com/BramAlkema/SplatThis/ns/population/1">'
+        f"{encode_population(splats)}</splatthis:population>\n"
+        "  </metadata>"
     )
 
 
@@ -171,7 +181,7 @@ def load_population(path: str) -> List[GaussianSplat]:
     """
     from pathlib import Path as _Path
 
-    from .storage import load_splats_json
+    from .io import load_splats_json
 
     lowered = str(path).lower()
     if lowered.endswith(".pptx"):

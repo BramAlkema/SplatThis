@@ -8,7 +8,6 @@ many artifacts to avoid measuring browser startup for every capture.
 from __future__ import annotations
 
 import atexit
-import base64
 import hashlib
 import os
 import re
@@ -27,7 +26,7 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 
-from .color import srgb_to_linear
+from .color import linear_to_srgb, srgb_to_linear
 from .storage import atomic_output_path
 
 DEFAULT_CHROME_EXECUTABLE = Path(
@@ -272,66 +271,6 @@ def _capture_html_element_page_png(
     elapsed_ms = (time.perf_counter() - started) * 1000.0
     _validate_png_size(payload, width=width, height=height)
     return payload, elapsed_ms
-
-
-def _capture_pixel_runtime_page_png(
-    page: Any,
-    *,
-    html_uri: str,
-    width: int,
-    height: int,
-    timeout_ms: int,
-) -> tuple[bytes, float, str]:
-    """Read the completed pixel runtime's own canvas buffer as PNG bytes."""
-
-    started = time.perf_counter()
-    page.goto(html_uri, wait_until="load", timeout=timeout_ms)
-    page.wait_for_function(
-        """() => {
-            const root = document.documentElement.dataset;
-            return root.splatthisRenderDone === 'true' ||
-                Boolean(root.splatthisRenderError);
-        }""",
-        timeout=timeout_ms,
-    )
-    result = page.evaluate("""() => {
-            const elements = document.querySelectorAll('#c');
-            const canvas = elements.length === 1 ? elements[0] : null;
-            const root = document.documentElement.dataset;
-            return {
-                count: elements.length,
-                width: canvas ? canvas.width : null,
-                height: canvas ? canvas.height : null,
-                compositor: canvas ? canvas.dataset.compositor : null,
-                execution: canvas ? canvas.dataset.execution : null,
-                error: root.splatthisRenderError || null,
-                png: canvas ? canvas.toDataURL('image/png').split(',', 2)[1] : null,
-            };
-        }""")
-    if result.get("error"):
-        raise RuntimeError(f"pixel runtime failed: {result['error']}")
-    expected = {
-        "count": 1,
-        "width": width,
-        "height": height,
-        "compositor": "pixel-runtime",
-    }
-    for key, expected_value in expected.items():
-        actual = result.get(key)
-        if actual != expected_value:
-            raise RuntimeError(
-                f"pixel runtime canvas mismatch for {key}: "
-                f"expected {expected_value!r}, got {actual!r}"
-            )
-    execution = str(result.get("execution") or "")
-    if execution in {"", "pending"}:
-        raise RuntimeError("pixel runtime did not report its execution backend")
-    try:
-        payload = base64.b64decode(str(result["png"]), validate=True)
-    except (KeyError, ValueError) as exc:
-        raise RuntimeError("pixel runtime returned an invalid canvas PNG") from exc
-    _validate_png_size(payload, width=width, height=height)
-    return payload, (time.perf_counter() - started) * 1000.0, execution
 
 
 @dataclass(frozen=True)
@@ -600,47 +539,6 @@ class PlaywrightSvgRenderer:
             srgb = np.asarray(image.convert("RGB"), dtype=np.float32) / 255.0
         return srgb_to_linear(srgb)
 
-    def render_pixel_runtime_linear_rgb(
-        self,
-        html_path: Path,
-        *,
-        width: int,
-        height: int,
-    ) -> tuple[NDArray[np.float32], str]:
-        """Capture the completed static pixel runtime and selected backend."""
-
-        if width < 1 or height < 1:
-            raise ValueError("capture dimensions must be positive")
-        html_path = html_path.resolve()
-        if not html_path.is_file():
-            raise FileNotFoundError(html_path)
-
-        page = self._page_for(width, height)
-        html_uri = html_path.as_uri()
-        try:
-            # Warm shader compilation and browser image encoding, then grade a
-            # fresh navigation just as the SVG capture path does.
-            _capture_pixel_runtime_page_png(
-                page,
-                html_uri=html_uri,
-                width=width,
-                height=height,
-                timeout_ms=self.timeout_ms,
-            )
-            payload, _, execution = _capture_pixel_runtime_page_png(
-                page,
-                html_uri=html_uri,
-                width=width,
-                height=height,
-                timeout_ms=self.timeout_ms,
-            )
-        except Exception:
-            self._close_page()
-            raise
-        with Image.open(BytesIO(payload)) as image:
-            srgb = np.asarray(image.convert("RGB"), dtype=np.float32) / 255.0
-        return srgb_to_linear(srgb), execution
-
     def capture(
         self,
         svg_path: Path,
@@ -785,25 +683,54 @@ def render_canvas_html_in_browser_to_linear_rgb(
         ) from exc
 
 
-def render_pixel_runtime_html_in_browser_to_linear_rgb(
-    html_path: str | Path,
+def capture_artifact_to_png(
+    artifact_path: str | Path,
+    output_path: str | Path,
+    *,
+    artifact_format: str,
     width: int,
     height: int,
-) -> tuple[NDArray[np.float32], str]:
-    """Render the selected static pixel-runtime backend in Chromium."""
+    browser_executable: Optional[Path] = None,
+) -> dict[str, Any]:
+    """Capture an SVG, CSS, or Canvas artifact with installed Chromium."""
 
-    try:
-        renderer = get_shared_svg_renderer()
-        rendered, execution = renderer.render_pixel_runtime_linear_rgb(
-            Path(html_path), width=width, height=height
+    normalized = str(artifact_format).strip().lower()
+    if normalized not in {"svg", "css", "canvas"}:
+        raise ValueError("browser capture supports svg, css, and canvas artifacts")
+    source = Path(artifact_path).resolve()
+    destination = Path(output_path).resolve()
+    executable = resolve_browser_executable(browser_executable)
+    with PlaywrightSvgRenderer(browser_executable=executable) as renderer:
+        if normalized == "svg":
+            return renderer.capture(
+                source,
+                destination,
+                width=int(width),
+                height=int(height),
+                repeats=1,
+            ).as_dict()
+        rendered = renderer.render_html_element_linear_rgb(
+            source,
+            selector="#scene",
+            width=int(width),
+            height=int(height),
         )
-        return rendered, f"{renderer.renderer_label}:{execution}"
-    except Exception as exc:
-        close_shared_svg_renderer()
-        raise RuntimeError(
-            "governing Chromium pixel-runtime capture failed: "
-            f"{type(exc).__name__}: {exc}"
-        ) from exc
+        label = renderer.renderer_label
+
+    srgb = linear_to_srgb(np.clip(rendered, 0.0, 1.0))
+    image = Image.fromarray(np.round(srgb * 255.0).astype(np.uint8), mode="RGB")
+    with atomic_output_path(destination) as temporary:
+        image.save(temporary, format="PNG")
+    return {
+        "schema": "splatthis.browser-capture/1",
+        "artifact": str(source),
+        "output": str(destination),
+        "format": normalized,
+        "browser": label,
+        "browser_executable": str(executable) if executable else "playwright-managed",
+        "width": int(width),
+        "height": int(height),
+    }
 
 
 atexit.register(close_shared_svg_renderer)

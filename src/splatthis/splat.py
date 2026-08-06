@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
-import numpy.typing as npt
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +130,6 @@ def render_importance_for_raw(raw: RawSplat) -> float:
     importance = float(raw.importance)
     if raw.layer is None:
         return importance
-
     layer = float(int(raw.layer))
     if layer <= importance < layer + 1.0:
         return importance
@@ -139,7 +137,7 @@ def render_importance_for_raw(raw: RawSplat) -> float:
 
 
 def render_order_key(splat: "GaussianSplat") -> float:
-    """Front-to-back alpha-over key used by renderers and export preparation."""
+    """Front-to-back alpha-over key shared by renderers and exporters."""
     return render_importance_for_raw(splat.to_raw_splat())
 
 
@@ -152,9 +150,9 @@ class GaussianSplat:
     """
 
     # Core parameters
-    mu: npt.NDArray[Any]  # mean μᵢ = (x, y) in image coordinates
-    sigma: npt.NDArray[Any]  # covariance Σᵢ ∈ ℝ²ˣ² (positive-definite)
-    color: npt.NDArray[Any]  # color cᵢ = (r, g, b) in [0,1]
+    mu: np.ndarray  # mean μᵢ = (x, y) in image coordinates
+    sigma: np.ndarray  # covariance Σᵢ ∈ ℝ²ˣ² (positive-definite)
+    color: np.ndarray  # color cᵢ = (r, g, b) in [0,1]
     alpha: float  # opacity αᵢ ∈ [0,1]
 
     # Optional metadata
@@ -197,7 +195,7 @@ class GaussianSplat:
             logger.warning("Covariance matrix is not positive definite, clamping")
             self.sigma = clamp_positive_definite(self.sigma)
 
-    def evaluate_at(self, point: npt.NDArray[Any]) -> float:
+    def evaluate_at(self, point: np.ndarray) -> float:
         """
         Evaluate Gaussian at given point.
 
@@ -216,7 +214,7 @@ class GaussianSplat:
             logger.warning("Singular covariance matrix in evaluation")
             return 0.0
 
-    def eigendecomposition(self) -> Tuple[npt.NDArray[Any], npt.NDArray[Any]]:
+    def eigendecomposition(self) -> Tuple[np.ndarray, np.ndarray]:
         """
         Compute eigendecomposition of covariance matrix.
 
@@ -246,7 +244,7 @@ class GaussianSplat:
             float(self.color[2]),
             float(self.alpha),
             float(self.importance),
-            float(-1 if self.layer is None else int(self.layer)),
+            float(-1 if self.layer is None else self.layer),
         )
 
     def _principal_params_from_sigma(self) -> Tuple[float, float, float]:
@@ -389,7 +387,7 @@ class GaussianSplat:
 
 
 def create_isotropic_splat(
-    center: npt.NDArray[Any], sigma: float, color: npt.NDArray[Any], alpha: float = 0.8
+    center: np.ndarray, sigma: float, color: np.ndarray, alpha: float = 0.8
 ) -> GaussianSplat:
     """
     Create isotropic (circular) Gaussian splat.
@@ -413,10 +411,10 @@ def create_isotropic_splat(
 
 
 def create_anisotropic_splat(
-    center: npt.NDArray[Any],
-    eigenvals: npt.NDArray[Any],
-    eigenvecs: npt.NDArray[Any],
-    color: npt.NDArray[Any],
+    center: np.ndarray,
+    eigenvals: np.ndarray,
+    eigenvecs: np.ndarray,
+    color: np.ndarray,
     alpha: float = 0.8,
 ) -> GaussianSplat:
     """
@@ -444,7 +442,7 @@ def create_anisotropic_splat(
     )
 
 
-def is_positive_definite(matrix: npt.NDArray[Any], tolerance: float = 1e-8) -> bool:
+def is_positive_definite(matrix: np.ndarray, tolerance: float = 1e-8) -> bool:
     """Check if matrix is positive definite."""
     try:
         eigenvals = np.linalg.eigvals(matrix)
@@ -454,8 +452,8 @@ def is_positive_definite(matrix: npt.NDArray[Any], tolerance: float = 1e-8) -> b
 
 
 def clamp_positive_definite(
-    matrix: npt.NDArray[Any], min_eigenval: float = 1e-6
-) -> npt.NDArray[Any]:
+    matrix: np.ndarray, min_eigenval: float = 1e-6
+) -> np.ndarray:
     """
     Clamp matrix to be positive definite.
 

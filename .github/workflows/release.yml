@@ -24,7 +24,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v7
       with:
-        # Must satisfy requires-python (>=3.13) or the wheel-install smoke fails.
+        # Release on the newest supported interpreter.
         python-version: "3.13"
 
     - name: Install build dependencies
@@ -98,7 +98,7 @@ jobs:
         if [ -z "$prev_tag" ] || [ "$prev_tag" = "${GITHUB_REF_NAME}" ]; then
           echo "body=Initial release" >> "$GITHUB_OUTPUT"
         else
-          changelog=$(git log --pretty=format:"- %s" "$prev_tag"..HEAD -- src/ tests/ docs/ | head -50)
+          changelog=$(git log --pretty=format:"- %s" "$prev_tag"..HEAD -- src/ tests/ | head -50)
           {
             echo "body<<EOF"
             echo "$changelog"

@@ -1,132 +1,326 @@
-"""Backward-compatible export facade.
+"""Image loading, SVG export, raw splat storage, and lightweight metrics."""
 
-Implementations live in focused modules. New code should import those modules
-directly; this file preserves the established splatthis.io API.
-"""
+from __future__ import annotations
 
-from .artifact_io import (  # noqa: F401
-    _evaluate_browser_export_quality,
-    _global_ssim_np,
-    _image_ssim,
-    atomic_output_path,
-    atomic_write_text,
-    compute_quality_metrics,
-    evaluate_css_export_quality,
-    evaluate_native_canvas_export_quality,
-    evaluate_pixel_runtime_export_quality,
-    evaluate_svg_export_quality,
-    load_png,
-    load_splats_json,
-    render_splats_preview_png,
-    save_linear_rgb_png,
-    save_side_by_side_html,
-    save_splats_json,
-    validate_export_roundtrip,
-)
-from .browser_export import (  # noqa: F401
-    generate_css_splat_html,
-    generate_native_canvas_html,
-)
-from .color import linear_to_srgb, srgb_to_linear  # noqa: F401
-from .export_common import (  # noqa: F401
-    DEFAULT_EXPORT_ORDER,
-    DEFAULT_PPTX_SPLAT_STYLE,
-    ELLIPSE_OVERLAP_BOOST,
-    EMU_PER_PX,
-    MIN_ELLIPSE_RADIUS_PX,
-    MIN_SLIDE_EMU,
-    PPTX_BLUR_CORE_K_SIGMA,
-    PPTX_BLUR_RAD_PER_SIGMA,
-    PPTX_GRADIENT_ALPHA_SCALE,
-    PPTX_PAINTER_ORDER_BACK_TO_FRONT,
-    PPTX_PAINTER_ORDER_LEGACY,
-    PPTX_SOFT_EDGE_ALPHA_SCALE,
-    PPTX_SOFT_EDGE_K_SIGMA_SCALE,
-    PPTX_SOFT_EDGE_RADIUS_FACTOR,
-    SVG_BACKGROUND_ALPHA_CAP,
-    SVG_BLUR_CORE_K_SIGMA,
-    SVG_BLUR_RECIPE,
-    SVG_BLUR_SIGMA_BUCKETS,
-    SVG_BROWSER_COMPAT_RECIPE,
-    SVG_FEATHER_EXTENT,
-    SVG_GRADIENT_QUALITY_HIGH,
-    SVG_GRADIENT_QUALITY_STANDARD,
-    SVG_GRADIENT_STOP_HIGH_MAX_ERROR,
-    SVG_GRADIENT_STOP_MAX_ERROR,
-    SVG_GRADIENT_STOPS,
-    SVG_GRADIENT_STOPS_HIGH,
-    SVG_GRADIENT_STOPS_MIN,
-    SVG_PAINTER_ORDER_BACK_TO_FRONT,
-    SVG_PAINTER_ORDER_LEGACY,
-    SVG_PALETTE_QUANTIZED_DEFAULT_SIZE,
-    SVG_PALETTE_QUANTIZED_RECIPE,
-    SVG_PRECOMP_ALPHA_THRESHOLD,
-    SVG_PRECOMP_MAX_SRGB,
-    SVG_SCRIPTED_MATRIX_RECIPE,
-    RegionMasks,
-    _adaptive_gradient_stops,
-    _density_aware_stop_error,
-    _gaussian_opacity_curve,
-    _layer_name,
-    _layer_title,
-    _normalize_pptx_painter_order,
-    _normalize_pptx_splat_style,
-    _normalize_svg_export_recipe,
-    _normalize_svg_gradient_quality,
-    _normalize_svg_painter_order,
-    _pptx_painter_splats,
-    _sort_splats_for_export,
-    _splat_layer,
-    _svg_gradient_settings,
-    _svg_painter_indices,
-    pptx_emu_scale,
-    px_to_emu,
-)
-from .pixel_runtime import (  # noqa: F401
-    generate_parallax_pixel_runtime_html,
-    generate_pixel_runtime_html,
-    generate_webgl_pixel_runtime_html,
-)
-from .pptx_export import (  # noqa: F401
-    _background_to_drawingml_shape_lines,
-    _drawingml_group_start_lines,
-    _drawingml_shape_lines,
-    _pptx_app_props_xml,
-    _pptx_content_types_xml,
-    _pptx_core_props_xml,
-    _pptx_pres_props_xml,
-    _pptx_presentation_rels_xml,
-    _pptx_presentation_xml,
-    _pptx_root_rels_xml,
-    _pptx_slide_layout_rels_xml,
-    _pptx_slide_layout_xml,
-    _pptx_slide_master_rels_xml,
-    _pptx_slide_master_xml,
-    _pptx_slide_rels_xml,
-    _pptx_slide_xml,
-    _pptx_theme_xml,
-    _pptx_vector_slide_rels_xml,
-    _pptx_view_props_xml,
-    _solid_fill_lines,
-    _splat_geometry_for_drawingml,
-    _splat_to_drawingml_blur_shape_lines,
-    _splat_to_drawingml_shape_lines,
-    _splat_to_drawingml_soft_edge_shape_lines,
-    _write_pptx_package,
-    generate_drawingml_slide_content,
-    save_drawingml,
-    save_pptx_with_splat_png,
-    save_pptx_with_splats,
-)
-from .svg_export import (  # noqa: F401
-    SVG_OPTIMIZE_MIN_SAFE_PRECISION,
-    _empty_svg_document,
-    estimate_svg_size,
-    generate_blur_svg_content,
-    generate_palette_quantized_svg_content,
-    generate_scripted_svg_content,
-    generate_svg_content,
-    optimize_svg_file,
-    save_svg,
-    splat_to_svg_ellipse,
-)
+import json
+import logging
+import math
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+from PIL import Image
+
+from .splat import RAW_SPLAT_SCHEMA_VERSION, GaussianSplat, RawSplat
+
+logger = logging.getLogger(__name__)
+
+ELLIPSE_OVERLAP_BOOST = 1.15
+MIN_ELLIPSE_RADIUS_PX = 0.35
+SVG_GRADIENT_STOPS = 8
+
+
+def srgb_to_linear(srgb: np.ndarray) -> np.ndarray:
+    values = np.asarray(srgb, dtype=np.float32)
+    return np.where(
+        values <= 0.04045,
+        values / 12.92,
+        np.power((values + 0.055) / 1.055, 2.4),
+    ).astype(np.float32)
+
+
+def linear_to_srgb(linear: np.ndarray) -> np.ndarray:
+    values = np.clip(np.asarray(linear, dtype=np.float32), 0.0, 1.0)
+    return np.where(
+        values <= 0.0031308,
+        12.92 * values,
+        1.055 * np.power(values, 1.0 / 2.4) - 0.055,
+    ).astype(np.float32)
+
+
+def load_png(
+    path: str,
+    target_size: Optional[Tuple[int, int]] = None,
+    linearize_srgb: bool = True,
+) -> np.ndarray:
+    """Load an image as float32 RGB in linear light by default."""
+    with Image.open(path) as source:
+        image = source.convert("RGB")
+        if target_size is not None:
+            image = image.resize(target_size, Image.Resampling.LANCZOS)
+        pixels = np.asarray(image, dtype=np.float32) / 255.0
+    return srgb_to_linear(pixels) if linearize_srgb else pixels
+
+
+def _ordered(splats: List[GaussianSplat]) -> List[GaussianSplat]:
+    # The mathematical renderer consumes the lowest key first (front-most).
+    # Static painters draw their front-most element last, so reverse that order.
+    return sorted(splats, key=lambda splat: float(splat.importance), reverse=True)
+
+
+def _rgb(linear: np.ndarray) -> str:
+    encoded = linear_to_srgb(np.asarray(linear, dtype=np.float32)[:3])
+    channels = [int(np.clip(np.round(value * 255.0), 0, 255)) for value in encoded]
+    return f"rgb({channels[0]},{channels[1]},{channels[2]})"
+
+
+def splat_to_svg_ellipse(
+    splat: GaussianSplat,
+    k_sigma: float = 2.5,
+    element_id: Optional[str] = None,
+    gradient_id: Optional[str] = None,
+) -> str:
+    eigenvalues, eigenvectors = splat.eigendecomposition()
+    rx = max(
+        MIN_ELLIPSE_RADIUS_PX,
+        ELLIPSE_OVERLAP_BOOST * k_sigma * float(np.sqrt(eigenvalues[0])),
+    )
+    ry = max(
+        MIN_ELLIPSE_RADIUS_PX,
+        ELLIPSE_OVERLAP_BOOST * k_sigma * float(np.sqrt(eigenvalues[1])),
+    )
+    rotation = float(np.degrees(np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0])))
+    cx, cy = (float(splat.mu[0]), float(splat.mu[1]))
+    identifier = f' id="{element_id}"' if element_id else ""
+    transform = (
+        f' transform="rotate({rotation:.2f} {cx:.2f} {cy:.2f})"'
+        if abs(rotation) > 0.1
+        else ""
+    )
+    fill = f"url(#{gradient_id})" if gradient_id else _rgb(splat.color)
+    opacity = (
+        ""
+        if gradient_id
+        else f' fill-opacity="{float(np.clip(splat.alpha, 0.0, 1.0)):.3f}"'
+    )
+    return (
+        f'<ellipse{identifier} cx="{cx:.2f}" cy="{cy:.2f}" '
+        f'rx="{rx:.2f}" ry="{ry:.2f}" fill="{fill}"{opacity}{transform}/>'
+    )
+
+
+def generate_svg_content(
+    splats: List[GaussianSplat],
+    width: int,
+    height: int,
+    k_sigma: float = 2.5,
+    background_linear_rgb: Optional[np.ndarray] = None,
+    embed_population: bool = False,
+) -> str:
+    """Return one standards-based, script-free SVG document."""
+    ordered = _ordered(splats)
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        (
+            f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" '
+            'xmlns="http://www.w3.org/2000/svg">'
+        ),
+        "  <desc>Generated by SplatThis</desc>",
+    ]
+    if embed_population and splats:
+        from .population_embed import svg_metadata_element
+
+        lines.extend(svg_metadata_element(splats).splitlines())
+    lines.append("  <defs>")
+    footprint = ELLIPSE_OVERLAP_BOOST * k_sigma
+    for index, splat in enumerate(ordered):
+        lines.append(
+            f'    <radialGradient id="splat-{index}" cx="50%" cy="50%" r="50%">'
+        )
+        color = _rgb(splat.color)
+        alpha = float(np.clip(splat.alpha, 0.0, 1.0))
+        for stop in range(SVG_GRADIENT_STOPS):
+            radius = stop / (SVG_GRADIENT_STOPS - 1)
+            opacity = 1.0 - math.exp(
+                -alpha * math.exp(-0.5 * (radius * footprint) ** 2)
+            )
+            lines.append(
+                f'      <stop offset="{radius * 100:.1f}%" '
+                f'stop-color="{color}" stop-opacity="{opacity:.5f}"/>'
+            )
+        lines.append("    </radialGradient>")
+    lines.append("  </defs>")
+    if background_linear_rgb is not None:
+        lines.append(
+            f'  <rect width="{width}" height="{height}" '
+            f'fill="{_rgb(background_linear_rgb)}"/>'
+        )
+    for index, splat in enumerate(ordered):
+        lines.append(
+            "  "
+            + splat_to_svg_ellipse(
+                splat,
+                k_sigma=k_sigma,
+                element_id=f"splat-{index}-shape",
+                gradient_id=f"splat-{index}",
+            )
+        )
+    lines.append("</svg>")
+    return "\n".join(lines) + "\n"
+
+
+def save_svg(
+    splats: List[GaussianSplat],
+    width: int,
+    height: int,
+    output_path: str,
+    k_sigma: float = 2.5,
+    background_linear_rgb: Optional[np.ndarray] = None,
+    embed_population: bool = False,
+) -> None:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        generate_svg_content(
+            splats,
+            width,
+            height,
+            k_sigma=k_sigma,
+            background_linear_rgb=background_linear_rgb,
+            embed_population=embed_population,
+        ),
+        encoding="utf-8",
+    )
+
+
+def save_splats_json(splats: List[GaussianSplat], output_path: str) -> None:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema": RAW_SPLAT_SCHEMA_VERSION,
+                "num_splats": len(splats),
+                "splats": [splat.to_raw_splat().to_dict() for splat in splats],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def load_splats_json(input_path: str) -> List[GaussianSplat]:
+    payload = json.loads(Path(input_path).read_text(encoding="utf-8"))
+    return [
+        GaussianSplat.from_raw_splat(RawSplat.from_dict(item))
+        for item in payload.get("splats", [])
+    ]
+
+
+def _windowed_ssim(left: np.ndarray, right: np.ndarray) -> float:
+    """Dependency-free local-window SSIM for RGB arrays in [0, 1]."""
+    left = np.asarray(left, dtype=np.float32)
+    right = np.asarray(right, dtype=np.float32)
+    if left.ndim == 2:
+        left = left[..., None]
+        right = right[..., None]
+    window = min(7, left.shape[0], left.shape[1])
+    if window < 3:
+        return _global_ssim(left, right)
+    if window % 2 == 0:
+        window -= 1
+    pad = window // 2
+    padded_left = np.pad(left, ((pad, pad), (pad, pad), (0, 0)), mode="reflect")
+    padded_right = np.pad(right, ((pad, pad), (pad, pad), (0, 0)), mode="reflect")
+    shape = (window, window)
+    left_windows = np.lib.stride_tricks.sliding_window_view(
+        padded_left, shape, axis=(0, 1)
+    )
+    right_windows = np.lib.stride_tricks.sliding_window_view(
+        padded_right, shape, axis=(0, 1)
+    )
+    axes = (-2, -1)
+    mean_left = np.mean(left_windows, axis=axes)
+    mean_right = np.mean(right_windows, axis=axes)
+    var_left = np.mean((left_windows - mean_left[..., None, None]) ** 2, axis=axes)
+    var_right = np.mean((right_windows - mean_right[..., None, None]) ** 2, axis=axes)
+    covariance = np.mean(
+        (left_windows - mean_left[..., None, None])
+        * (right_windows - mean_right[..., None, None]),
+        axis=axes,
+    )
+    c1 = 0.01**2
+    c2 = 0.03**2
+    numerator = (2 * mean_left * mean_right + c1) * (2 * covariance + c2)
+    denominator = (mean_left**2 + mean_right**2 + c1) * (var_left + var_right + c2)
+    return float(np.clip(np.mean(numerator / np.maximum(denominator, 1e-12)), -1, 1))
+
+
+def _global_ssim(left: np.ndarray, right: np.ndarray) -> float:
+    left = np.asarray(left, dtype=np.float64)
+    right = np.asarray(right, dtype=np.float64)
+    mean_left = np.mean(left, axis=(0, 1))
+    mean_right = np.mean(right, axis=(0, 1))
+    centered_left = left - mean_left
+    centered_right = right - mean_right
+    var_left = np.mean(centered_left * centered_left, axis=(0, 1))
+    var_right = np.mean(centered_right * centered_right, axis=(0, 1))
+    covariance = np.mean(centered_left * centered_right, axis=(0, 1))
+    numerator = (2 * mean_left * mean_right + 0.01**2) * (2 * covariance + 0.03**2)
+    denominator = (mean_left**2 + mean_right**2 + 0.01**2) * (
+        var_left + var_right + 0.03**2
+    )
+    return float(np.clip(np.mean(numerator / np.maximum(denominator, 1e-12)), -1, 1))
+
+
+def compute_quality_metrics(
+    target_linear_rgb: np.ndarray, candidate_linear_rgb: np.ndarray
+) -> Dict[str, float]:
+    target = np.clip(np.asarray(target_linear_rgb, dtype=np.float32), 0.0, 1.0)
+    candidate = np.clip(np.asarray(candidate_linear_rgb, dtype=np.float32), 0.0, 1.0)
+    if target.shape != candidate.shape:
+        raise ValueError(
+            f"Quality metric shape mismatch: target={target.shape}, candidate={candidate.shape}"
+        )
+    difference = candidate - target
+    mse = float(np.mean(difference * difference))
+    target_srgb = linear_to_srgb(target)
+    candidate_srgb = linear_to_srgb(candidate)
+    mse_srgb = float(np.mean((candidate_srgb - target_srgb) ** 2))
+    return {
+        "l1": float(np.mean(np.abs(difference))),
+        "mse": mse,
+        "psnr": float(-10.0 * np.log10(max(mse, 1e-12))),
+        "ssim": _windowed_ssim(candidate, target),
+        "psnr_srgb": float(-10.0 * np.log10(max(mse_srgb, 1e-12))),
+        "ssim_srgb": _windowed_ssim(candidate_srgb, target_srgb),
+    }
+
+
+def render_splats_preview_png(
+    splats: List[GaussianSplat],
+    width: int,
+    height: int,
+    output_path: str,
+    scale: float = 1.0,
+    background_linear_rgb: Optional[np.ndarray] = None,
+    embed_splats: Optional[List[GaussianSplat]] = None,
+    embed_in_pixels: bool = False,
+) -> str:
+    from .renderer import render_splats_numpy
+
+    rendered = render_splats_numpy(
+        splats,
+        width,
+        height,
+        background_linear_rgb=background_linear_rgb,
+    )
+    image = Image.fromarray(
+        np.round(linear_to_srgb(rendered) * 255.0).astype(np.uint8), mode="RGB"
+    )
+    size = (max(1, round(width * scale)), max(1, round(height * scale)))
+    if size != image.size:
+        image = image.resize(size, Image.Resampling.LANCZOS)
+    save_options = {}
+    if embed_splats:
+        from .population_embed import embed_population_in_pixels, png_population_chunk
+
+        save_options["pnginfo"] = png_population_chunk(embed_splats)
+        if embed_in_pixels:
+            image = embed_population_in_pixels(image, embed_splats)
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(path, **save_options)
+    return str(path)
