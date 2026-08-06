@@ -1,88 +1,42 @@
-"""Target-aware 2D Gaussian splat conversion and browser runtimes."""
+"""Fit images with 2D Gaussian splats and export portable artifacts."""
 
 from ._version import __version__
-from .artifact_evaluation import (
-    evaluate_css_export_quality,
-    evaluate_native_canvas_export_quality,
-    evaluate_svg_export_quality,
-)
+from .browser_capture import capture_artifact_to_png
 from .browser_export import generate_css_splat_html, generate_native_canvas_html
-from .config import ConversionRequest, ConverterConfig
-from .converter import PNG2SVGConverter
-from .domain import EvidenceLevel, SplatScene
-from .expectations import (
-    CompositorFidelity,
-    Fidelity,
-    compositor_fidelity,
-    expected_fidelity,
-)
-from .pixel_runtime import (
-    generate_parallax_pixel_runtime_html,
-    generate_pixel_runtime_html,
-    generate_webgl_pixel_runtime_html,
-)
+from .converter import PNG2SVGConverter, SplatConverter
+from .email_export import generate_css_email_message, save_css_email
+from .io import load_png, load_splats_json, save_splats_json, save_svg
 from .population_embed import (
-    POPULATION_FIELDS,
-    POPULATION_SCHEMA,
-    STEG_BIT_DEPTHS,
-    STEG_READ_DEPTHS,
     decode_population,
     embed_population_in_pixels,
     encode_population,
     load_population,
     population_from_pixels,
-    population_from_png,
-    population_from_pptx,
-    population_from_svg,
-    steg_capacity_bytes,
 )
-from .pptx_export import save_pptx_with_splat_png, save_pptx_with_splats
-from .reporting import save_side_by_side_html
-from .roundtrip import validate_export_roundtrip
+from .powerpoint_osa import capture_pptx_with_powerpoint
+from .pptx_export import save_pptx_with_splats
 from .splat import GaussianSplat, RawSplat
-from .storage import load_png, load_splats_json, render_splats_preview_png
-from .svg_export import save_svg
 
 __all__ = [
     "__version__",
     "GaussianSplat",
+    "PNG2SVGConverter",
     "RawSplat",
-    "SplatScene",
-    "EvidenceLevel",
-    "Fidelity",
-    "CompositorFidelity",
-    "expected_fidelity",
-    "encode_population",
+    "SplatConverter",
+    "capture_artifact_to_png",
+    "capture_pptx_with_powerpoint",
     "decode_population",
-    "load_population",
-    "population_from_svg",
-    "population_from_pptx",
-    "population_from_png",
     "embed_population_in_pixels",
-    "population_from_pixels",
-    "steg_capacity_bytes",
-    "STEG_BIT_DEPTHS",
-    "STEG_READ_DEPTHS",
-    "POPULATION_FIELDS",
-    "POPULATION_SCHEMA",
-    "compositor_fidelity",
-    "ConversionRequest",
-    "ConverterConfig",
-    "load_png",
-    "save_svg",
-    "save_pptx_with_splats",
-    "save_pptx_with_splat_png",
-    "load_splats_json",
-    "render_splats_preview_png",
-    "save_side_by_side_html",
+    "encode_population",
+    "generate_css_email_message",
     "generate_css_splat_html",
     "generate_native_canvas_html",
-    "generate_pixel_runtime_html",
-    "generate_webgl_pixel_runtime_html",
-    "generate_parallax_pixel_runtime_html",
-    "evaluate_css_export_quality",
-    "evaluate_native_canvas_export_quality",
-    "evaluate_svg_export_quality",
-    "validate_export_roundtrip",
-    "PNG2SVGConverter",
+    "load_png",
+    "load_population",
+    "load_splats_json",
+    "save_css_email",
+    "save_pptx_with_splats",
+    "save_splats_json",
+    "save_svg",
+    "population_from_pixels",
 ]

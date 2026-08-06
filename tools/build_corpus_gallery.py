@@ -14,25 +14,25 @@ Two modes:
 - ``--emit`` (local only) materializes the artifact assets under
   ``docs/corpus/`` from repository state that CI does not have: source
   images and PowerPoint captures/decks from ``result/corpus/``, the latest
-  successful deployed SVGs from the governing results ledger, and CSS plus
-  pixel-runtime builds emitted by the shipped emitters from the stored
-  seed-0 populations (the same populations the fidelity registry measured,
-  so the quoted numbers describe these exact artifacts). Splat counts are
-  recorded in ``docs/corpus/stats.json`` at emit time.
+  successful deployed SVGs from the governing results ledger, and CSS emitted
+  by the current package from the stored seed-0 populations. The historical
+  pixel-runtime pages remain committed deployment evidence; that removed
+  runtime is not restored to the package. Splat counts are recorded in
+  ``docs/corpus/stats.json`` at emit time.
 - default / ``--check`` renders ``docs/corpus/index.html`` from the
   committed assets plus the cross-checked ledgers, failing closed on any
   missing artifact, missing stats, or registry mismatch.
 
-``tests/unit/test_corpus_gallery.py`` runs ``--check`` in CI.
+``tests/test_corpus_gallery.py`` runs ``--check`` in CI.
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
 import json
 import shutil
+import statistics
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -42,26 +42,95 @@ GALLERY = REPO / "docs" / "corpus"
 INDEX = GALLERY / "index.html"
 STATS = GALLERY / "stats.json"
 SOURCES = REPO / "result" / "corpus" / "images"
-RUNS = REPO / "result" / "corpus" / "runs"
 RESULTS = REPO / "result" / "corpus" / "results.jsonl"
 PPT_RESULTS = REPO / "result" / "corpus" / "powerpoint_results.jsonl"
+FIDELITY = REPO / "src" / "splatthis" / "data" / "compositor-fidelity.json"
+SVG_MEASUREMENTS = REPO / "result" / "svg-quality" / "measurements.json"
+CORPUS_IMAGES = 21
 
 #: Pixel-runtime pages are flex-centered with 16px padding and a status line.
 RUNTIME_PAD_W = 32
 RUNTIME_PAD_H = 52
 
 
-def _load_readme_tool() -> Any:
-    spec = importlib.util.spec_from_file_location(
-        "update_readme", Path(__file__).with_name("update_readme.py")
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+class GalleryError(RuntimeError):
+    """A committed gallery asset or its provenance ledger is inconsistent."""
 
 
-TOOL = _load_readme_tool()
+def _load_json(path: Path) -> Any:
+    if not path.is_file():
+        raise GalleryError(f"missing gallery ledger: {path.relative_to(REPO)}")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _percentile(values: List[float], quantile: float) -> float:
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * quantile
+    low = int(position)
+    high = min(low + 1, len(ordered) - 1)
+    fraction = position - low
+    return ordered[low] * (1.0 - fraction) + ordered[high] * fraction
+
+
+def _require_corpus(images: set[str], label: str) -> None:
+    if len(images) != CORPUS_IMAGES:
+        raise GalleryError(
+            f"{label}: expected {CORPUS_IMAGES} images, found {len(images)}"
+        )
+
+
+def fidelity_registry() -> Dict[str, Any]:
+    """Load and internally cross-check the gallery's published measurements."""
+
+    registry = _load_json(FIDELITY)
+
+    def pin(label: str, published: float, measured: float) -> None:
+        if abs(float(published) - float(measured)) > 5e-5:
+            raise GalleryError(
+                f"{label}: registry has {published}, evidence gives {measured:.4f}"
+            )
+
+    for output_format in ("svg", "svg-high", "css", "pixel-runtime"):
+        rows = registry["per_image"][output_format]
+        _require_corpus(
+            {str(row["image"]) for row in rows},
+            f"fidelity registry {output_format}",
+        )
+        deployed = registry["formats"][output_format]["expectation"]["deployed"]
+        lpips = [float(row["deployed_lpips"]) for row in rows]
+        ssim = [float(row["deployed_ssim_srgb"]) for row in rows]
+        pin(
+            f"{output_format} deployed LPIPS median",
+            deployed["lpips_median"],
+            statistics.median(lpips),
+        )
+        pin(
+            f"{output_format} deployed LPIPS p90",
+            deployed["lpips_p90"],
+            _percentile(lpips, 0.9),
+        )
+        pin(
+            f"{output_format} deployed SSIM median",
+            deployed["ssim_srgb_median"],
+            statistics.median(ssim),
+        )
+        pin(
+            f"{output_format} deployed SSIM p10",
+            deployed["ssim_srgb_p10"],
+            _percentile(ssim, 0.1),
+        )
+
+    measurements = _load_json(SVG_MEASUREMENTS)
+    _require_corpus(set(measurements), "SVG measurements")
+    for output_format, quality in (("svg", "standard"), ("svg-high", "high")):
+        published = registry["formats"][output_format]["expectation"]["compositor"][
+            "ssim_srgb_median"
+        ]
+        measured = statistics.median(
+            float(measurements[image][quality][0]) for image in measurements
+        )
+        pin(f"{output_format} compositor SSIM median", published, measured)
+    return registry
 
 
 def corpus_images(registry: Dict[str, Any]) -> List[str]:
@@ -70,7 +139,7 @@ def corpus_images(registry: Dict[str, Any]) -> List[str]:
 
 def content_classes() -> Dict[str, str]:
     classes: Dict[str, str] = {}
-    for line in TOOL.RESULTS.read_text(encoding="utf-8").splitlines():
+    for line in RESULTS.read_text(encoding="utf-8").splitlines():
         if line:
             row = json.loads(line)
             if "content_class" in row:
@@ -87,8 +156,8 @@ def powerpoint_rows() -> Dict[str, Dict[str, Any]]:
             if line
         )
     }
-    if len(rows) != TOOL.CORPUS_IMAGES:
-        raise TOOL.LedgerError("PowerPoint results do not cover the corpus")
+    if len(rows) != CORPUS_IMAGES:
+        raise GalleryError("PowerPoint results do not cover the corpus")
     return rows
 
 
@@ -106,10 +175,10 @@ def svg_rows() -> Dict[str, Dict[str, Any]]:
         and row.get("is_deployed_artifact") is True
         and row.get("returncode") == 0
     }
-    if len(selected) != TOOL.CORPUS_IMAGES:
-        raise TOOL.LedgerError(
+    if len(selected) != CORPUS_IMAGES:
+        raise GalleryError(
             "deployed SVG results do not cover the corpus "
-            f"({len(selected)} of {TOOL.CORPUS_IMAGES})"
+            f"({len(selected)} of {CORPUS_IMAGES})"
         )
     return selected
 
@@ -137,28 +206,20 @@ def _gallery_asset_paths(
     capture: Path,
     svg_run: Path,
     pptx_run: Path,
-    runtime_run: Path,
     image: str,
-    generate_browser_assets: bool,
+    generate_css_assets: bool,
 ) -> List[Path]:
     """Return every local input needed to emit one gallery row."""
     required_runs = [svg_run, pptx_run]
-    if generate_browser_assets:
-        required_runs.append(runtime_run)
-
     paths = [source, svg_path, deck, capture]
     paths.extend(
         run / name
         for run in required_runs
         for name in ("final.raw.json", "run_manifest.json")
     )
-    if not generate_browser_assets:
-        paths.extend(
-            (
-                GALLERY / "css" / f"{image}.html",
-                GALLERY / "runtime" / f"{image}.html",
-            )
-        )
+    if not generate_css_assets:
+        paths.append(GALLERY / "css" / f"{image}.html")
+    paths.append(GALLERY / "runtime" / f"{image}.html")
     return paths
 
 
@@ -166,7 +227,7 @@ def _require_gallery_assets(paths: List[Path]) -> None:
     """Fail closed when any input needed by the gallery is absent."""
     for path in paths:
         if not path.exists():
-            raise TOOL.LedgerError(
+            raise GalleryError(
                 f"cannot emit gallery assets: missing {path.relative_to(REPO)}"
             )
 
@@ -174,26 +235,23 @@ def _require_gallery_assets(paths: List[Path]) -> None:
 def emit_assets(registry: Dict[str, Any]) -> None:
     """Materialize gallery assets from local repository state (not in CI).
 
-    Browser-side CSS/runtime regeneration needs the full training environment.
-    When that environment is unavailable, preserve those already-committed
-    assets while still refreshing the independently verifiable SVG/PPTX files.
+    CSS regeneration needs the full training environment. When that environment
+    is unavailable, preserve the committed CSS. The historical pixel-runtime
+    evidence is always preserved because that emitter is no longer packaged.
     """
     sys.path.insert(0, str(REPO / "src"))
     try:
         import numpy as np
 
         from splatthis.browser_export import generate_css_splat_html
-        from splatthis.pixel_runtime import generate_pixel_runtime_html
-        from splatthis.storage import load_splats_json
+        from splatthis.io import load_splats_json
     except ModuleNotFoundError as error:
         if error.name != "torch":
             raise
-        generate_browser_assets = False
-        print(
-            "training dependencies unavailable; preserving committed CSS/runtime assets"
-        )
+        generate_css_assets = False
+        print("training dependencies unavailable; preserving committed CSS assets")
     else:
-        generate_browser_assets = True
+        generate_css_assets = True
 
     for sub in ("src", "svg", "css", "runtime", "pptx"):
         (GALLERY / sub).mkdir(parents=True, exist_ok=True)
@@ -219,7 +277,6 @@ def emit_assets(registry: Dict[str, Any]) -> None:
         svg_row = svg[image]
         svg_path = REPO / "result" / "corpus" / svg_row["output_path"]
         svg_run = REPO / "result" / "corpus" / svg_row["artifacts_path"]
-        runtime_run = RUNS / f"{image}_canvas_s0_art"
         ppt_row = ppt[image]
         capture = REPO / "result" / "corpus" / ppt_row["capture"]
         deck = capture.with_name(capture.name.replace("_powerpoint_slide.png", ".pptx"))
@@ -231,9 +288,8 @@ def emit_assets(registry: Dict[str, Any]) -> None:
             capture,
             svg_run,
             pptx_run,
-            runtime_run,
             image,
-            generate_browser_assets,
+            generate_css_assets,
         )
         _require_gallery_assets(needed_paths)
         width, height = _png_size(source)
@@ -243,7 +299,8 @@ def emit_assets(registry: Dict[str, Any]) -> None:
         shutil.copy2(deck, GALLERY / "pptx" / f"{image}.pptx")
         shutil.copy2(capture, GALLERY / "pptx" / f"{image}.png")
 
-        if generate_browser_assets:
+        old = previous_stats.get(image, {})
+        if generate_css_assets:
             svg_splats, svg_bg = population(svg_run)
             (GALLERY / "css" / f"{image}.html").write_text(
                 generate_css_splat_html(
@@ -251,19 +308,10 @@ def emit_assets(registry: Dict[str, Any]) -> None:
                 ),
                 encoding="utf-8",
             )
-            runtime_splats, runtime_bg = population(runtime_run)
-            (GALLERY / "runtime" / f"{image}.html").write_text(
-                generate_pixel_runtime_html(
-                    runtime_splats, width, height, background_linear_rgb=runtime_bg
-                ),
-                encoding="utf-8",
-            )
             css_splat_count = len(svg_splats)
-            runtime_splat_count = len(runtime_splats)
         else:
-            old = previous_stats.get(image, {})
             css_splat_count = int(old.get("css_splats", old["svg_splats"]))
-            runtime_splat_count = int(old["runtime_splats"])
+        runtime_splat_count = int(old["runtime_splats"])
         pptx_splat_count = int(
             json.loads((pptx_run / "final.raw.json").read_text(encoding="utf-8"))[
                 "num_splats"
@@ -277,7 +325,7 @@ def emit_assets(registry: Dict[str, Any]) -> None:
         }
         print(
             f"emitted {image}: src, svg, pptx"
-            + (", css, runtime" if generate_browser_assets else "")
+            + (", css" if generate_css_assets else "")
         )
     STATS.write_text(json.dumps(stats, indent=1, sort_keys=True) + "\n")
     print(f"wrote {STATS.relative_to(REPO)}")
@@ -312,14 +360,14 @@ PAGE_HEAD = """<!doctype html>
 <body>
 <main>
 <h1>The whole corpus, rendered live</h1>
-<p>All 21 governing-corpus images side by side: the original, the scripted
-pixel runtime evaluating the splat formula in your browser, the scriptless
-CSS build as real DOM composited from a stylesheet, and the
+<p>All 21 governing-corpus images side by side: the original, the historical
+scripted pixel runtime retained as deployed evidence, the scriptless CSS build
+as real DOM composited from a stylesheet, and the
 corrected-exporter SVG as a true vector — every one of them the deployed
 artifact itself, drawn live by your browser, because GitHub Pages applies no
 sanitizer. PowerPoint is the one target that cannot render live: its column
 is a real Microsoft PowerPoint slideshow capture, with the editable deck one
-click away.</p>
+click away. The pixel runtime is no longer part of the installable package.</p>
 <p class="note">Rows are ordered best-to-worst by deployed SVG LPIPS. Every
 score is a seed-0 measurement of these exact artifact families against the
 source in the governing renderer — Chromium for the browser targets, real
@@ -330,8 +378,7 @@ PowerPoint capture. It goes stale loudly in CI.</p>
 """
 
 PAGE_FOOT = """
-<p class="note"><a href="../">← SplatThis project page</a> ·
-<a href="../paper/">technical report</a></p>
+<p class="note"><a href="https://github.com/BramAlkema/SplatThis">← SplatThis repository</a></p>
 </main>
 <script>
   const fitFrames = () => {
@@ -356,7 +403,7 @@ def build_index(registry: Dict[str, Any]) -> str:
     classes = content_classes()
     stats = json.loads(STATS.read_text(encoding="utf-8")) if STATS.is_file() else None
     if not stats:
-        raise TOOL.LedgerError(
+        raise GalleryError(
             "missing docs/corpus/stats.json (regenerate locally with --emit)"
         )
     ppt = powerpoint_rows()
@@ -383,27 +430,27 @@ def build_index(registry: Dict[str, Any]) -> str:
         }
         for needed in assets.values():
             if not needed.is_file():
-                raise TOOL.LedgerError(
+                raise GalleryError(
                     f"gallery asset missing: {needed.relative_to(REPO)} "
                     f"(regenerate locally with --emit)"
                 )
         if _sha256(assets["svg"]) != svg_row["artifact_sha256"]:
-            raise TOOL.LedgerError(
+            raise GalleryError(
                 f"gallery SVG is not the ledger artifact for {image} "
                 "(regenerate locally with --emit)"
             )
         if _sha256(assets["pptx_deck"]) != ppt_row["pptx_sha256"]:
-            raise TOOL.LedgerError(
+            raise GalleryError(
                 f"gallery PPTX is not the ledger artifact for {image} "
                 "(regenerate locally with --emit)"
             )
         if _sha256(assets["pptx_png"]) != ppt_row["capture_sha256"]:
-            raise TOOL.LedgerError(
+            raise GalleryError(
                 f"gallery PowerPoint capture is not the ledger artifact for {image} "
                 "(regenerate locally with --emit)"
             )
         if image not in stats:
-            raise TOOL.LedgerError(f"stats.json is missing {image}")
+            raise GalleryError(f"stats.json is missing {image}")
         width, height = _png_size(assets["source"])
         frame_w, frame_h = width + RUNTIME_PAD_W, height + RUNTIME_PAD_H
         css_row = per_image["css"][image]
@@ -428,7 +475,7 @@ def build_index(registry: Dict[str, Any]) -> str:
             f'height="{frame_h}" loading="lazy" '
             f'title="{image} scripted pixel runtime, live"></iframe>\n'
             f"    </div>\n"
-            f"    <figcaption><strong>Scripted runtime</strong> · LPIPS "
+            f"    <figcaption><strong>Historical scripted runtime</strong> · LPIPS "
             f"{runtime_row['deployed_lpips']:.4f} · SSIM "
             f"{runtime_row['deployed_ssim_srgb']:.4f} · "
             f"{counts['runtime_splats']:,} splats · "
@@ -487,11 +534,11 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        registry = TOOL.declarative_expectations()
+        registry = fidelity_registry()
         if args.emit:
             emit_assets(registry)
         rendered = build_index(registry)
-    except TOOL.LedgerError as error:
+    except GalleryError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
 

@@ -1,1 +1,0 @@
-  <ellipse cx="@@CX@@" cy="@@CY@@" rx="@@RX@@" ry="@@RY@@" opacity="@@OPACITY@@"@@TRANSFORM_ATTR@@ fill="url(#p@@LABEL@@)"/>

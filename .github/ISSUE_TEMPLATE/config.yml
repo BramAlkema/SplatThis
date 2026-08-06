@@ -1,8 +1,0 @@
-blank_issues_enabled: true
-contact_links:
-  - name: Fidelity protocol and benchmarks
-    url: https://github.com/BramAlkema/SplatThis/blob/main/docs/PROVENANCE_AND_BENCHMARKS.md
-    about: How outputs are measured, and which renderers can support a claim
-  - name: Architecture
-    url: https://github.com/BramAlkema/SplatThis/blob/main/docs/ARCHITECTURE.md
-    about: Module boundaries, the evidence model, and how to add an output format

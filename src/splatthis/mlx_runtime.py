@@ -29,12 +29,16 @@ def is_mlx_available() -> bool:
         return False
     metal = getattr(mx, "metal", None)
     probe = getattr(metal, "is_available", None)
-    if probe is None:
-        # Older MLX releases did not expose the probe.  Preserve compatibility
-        # and let the first operation provide the platform-specific error.
-        return True
     try:
-        return bool(probe())
+        if probe is not None and not bool(probe()):
+            return False
+    except Exception:
+        return False
+    # Some sandboxed sessions report Metal as present but fail on allocation.
+    try:
+        probe_array = mx.ones((2, 2), dtype=mx.float32)
+        mx.eval(probe_array @ probe_array)
+        return True
     except Exception:
         return False
 

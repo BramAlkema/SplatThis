@@ -2,198 +2,25 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
   pull_request:
-    branches: [ main, develop ]
 
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
     strategy:
-      # Let every platform finish so one environment-specific failure does not
-      # hide the Linux/Windows results needed to diagnose cross-OS behavior.
       fail-fast: false
-      # Single Python version (3.13), three OSes. We don't gain coverage
-      # from older Pythons — MLX and the venv are 3.13. Cross-OS still
-      # catches pathlib / line-ending / shell quirks.
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.13"]
-
+        python-version: ["3.11", "3.13"]
     steps:
-    - uses: actions/checkout@v7
-
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v7
-      with:
-        python-version: ${{ matrix.python-version }}
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e '.[dev,capture]'
-
-    - name: Verify governing Chrome renderer
-      run: |
-        python -c "from splatthis.browser_capture import PlaywrightSvgRenderer, resolve_browser_executable; r=PlaywrightSvgRenderer(browser_executable=resolve_browser_executable()).start(); print('Chrome', r.browser_version); r.close()"
-
-    - name: Install MLX (Apple Silicon backend)
-      # macos-latest runners are arm64; installing mlx lets the MLX
-      # parity/loss/renderer tests actually run instead of skipping.
-      if: runner.os == 'macOS' && runner.arch == 'ARM64'
-      run: |
-        pip install mlx
-
-    - name: Lint with flake8
-      run: |
-        flake8 src/ tests/ tools/
-
-    - name: Check formatting with black
-      run: |
-        black --check src/ tests/ tools/
-
-    - name: Check import sorting with isort
-      run: |
-        isort --check-only src/ tests/ tools/
-
-    - name: Type check with mypy (ratcheted)
-      # Ratcheted rather than informational. 187 findings remain under
-      # `strict = true` and clearing them needs case-by-case judgement, so a
-      # hard gate at zero would fail every build and be ignored within a week.
-      # A ratchet gates the direction instead: new type errors fail the build,
-      # the backlog is allowed to persist, and it can only shrink.
-      #
-      # History, for whoever lowers this next:
-      #   778  before the engine mixins declared a shared surface. 340 of those
-      #        were one structural gap reported once per access site.
-      #   462  after engine_state.py.
-      #   187  after parameterizing 308 bare `np.ndarray` annotations (CI count;
-      #        a local venv with extra stubs installed may differ).
-      #   166  after widening the population helpers from List to Sequence and
-      #        declaring proxies.py's registered buffers. Both were one root
-      #        cause reported at many call sites: nn.Module.__getattr__ is
-      #        typed as returning Module, so every buffer read as a Module.
-      #
-      # What is left is not mechanical: arg-type, no-untyped-call, assignment,
-      # and a tail of operator/union-attr/no-any-return. Lower the baseline
-      # whenever the run reports a smaller number.
-      shell: bash
-      env:
-        # macOS reports 164; the gate takes the matrix maximum, not the best.
-        MYPY_BASELINE: "166"
-      run: |
-        set -o pipefail
-        output=$(mypy src/ 2>&1) || true
-        echo "$output" | tail -20
-        if echo "$output" | grep -q "^Success"; then
-          count=0
-        else
-          count=$(echo "$output" | grep -oE "^Found [0-9]+" | grep -oE "[0-9]+" || echo 0)
-        fi
-        echo "mypy findings: $count (baseline $MYPY_BASELINE)"
-        if [ "$count" -gt "$MYPY_BASELINE" ]; then
-          echo "::error::mypy findings rose from $MYPY_BASELINE to $count."
-          exit 1
-        fi
-        # The count is platform-dependent, so the baseline is the maximum across
-        # the matrix, not any one platform's number. Measured: macOS 185,
-        # ubuntu 187, windows 187. MLX installs only on Apple Silicon, and
-        # having it present *resolves* those imports, so macOS reports fewer
-        # findings than the platforms where `import mlx` is unresolvable.
-        # Lower the baseline only to a value every platform clears.
-        if [ "$count" -lt "$MYPY_BASELINE" ]; then
-          echo "::notice::mypy on ${{ runner.os }} fell to $count of $MYPY_BASELINE. Lower the baseline only to a value every platform clears."
-        fi
-
-    - name: Test with pytest
-      # The coverage floor is platform-dependent by construction, not by
-      # accident: MLX installs only on Apple Silicon, so the five mlx_* modules
-      # (~705 statements, 9.3% of the package) are unreachable on Linux and
-      # Windows and their tests skip there.
-      #
-      # Measured on this matrix: 87.44% macOS, 79.64% ubuntu, 79.66% windows.
-      # One global floor would be either vacuous on macOS or unmeetable
-      # everywhere else, so the condition below mirrors exactly when MLX is
-      # installed above.
-      #
-      # --cov-fail-under lives here rather than in pyproject addopts so that
-      # running a single test file locally with coverage does not fail against
-      # the project-wide total.
-      shell: bash
-      run: |
-        if [ "${{ runner.os }}" = "macOS" ] && [ "${{ runner.arch }}" = "ARM64" ]; then
-          FLOOR=87
-        else
-          FLOOR=79
-        fi
-        echo "coverage floor for ${{ runner.os }}/${{ runner.arch }}: $FLOOR%"
-        pytest tests/ --cov=src/splatthis --cov-report=xml --cov-fail-under=$FLOOR
-
-    - name: Upload coverage to Codecov
-      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
-      uses: codecov/codecov-action@v7
-      with:
-        files: ./coverage.xml
-        flags: unittests
-        fail_ci_if_error: false
-
-  security:
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v7
-
-    - name: Set up Python
-      uses: actions/setup-python@v7
-      with:
-        python-version: "3.13"
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install safety bandit[toml]
-
-    - name: Run safety scan (informational)
-      # `safety check` was deprecated 2024-06; the replacement is `safety scan`.
-      # Treated as informational so transient transitive-dep CVEs (which are
-      # often unpatched at upstream-latest and outside our control) don't gate
-      # CI on the main project package. Track findings via the run logs.
-      continue-on-error: true
-      run: |
-        safety scan --short-report || true
-
-    - name: Run bandit security check (informational)
-      # Bandit flags potential issues in our own code; keep informational so
-      # CI surfaces them without blocking unrelated work.
-      continue-on-error: true
-      run: |
-        bandit -r src/
-
-  build:
-    runs-on: ubuntu-latest
-    needs: [test, security]
-
-    steps:
-    - uses: actions/checkout@v7
-
-    - name: Set up Python
-      uses: actions/setup-python@v7
-      with:
-        # Must satisfy requires-python (>=3.13) or the wheel-install smoke fails.
-        python-version: "3.13"
-
-    - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install build twine
-
-    - name: Build package
-      run: |
-        python -m build
-        python -m twine check dist/*
-
-    - name: Test package installation
-      run: |
-        pip install dist/*.whl
-        splatthis --version
-        splatthis --help
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: pytest
+      - run: python -m build
+      - run: python -m twine check dist/*

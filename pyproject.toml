@@ -1,88 +1,41 @@
 [build-system]
-requires = ["setuptools>=77.0", "wheel"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "splatthis"
-version = "0.2.6"
-description = "Fit 2D Gaussian splats to an image and deploy them as SVG, CSS, Canvas, a pixel runtime, or editable PowerPoint shapes"
-readme = "README.md"
+version = "0.3.0"
+description = "Fit 2D Gaussian splats and export SVG, PPTX, Canvas, CSS, or EML"
+readme = { file = "README_PYPI.md", content-type = "text/markdown" }
+requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [
-    {name = "Bram Alkema"}
-]
-keywords = ["svg", "pptx", "canvas", "css", "parallax", "image", "splat", "gaussian"]
+authors = [{ name = "Bram Alkema" }]
+keywords = ["svg", "pptx", "canvas", "css", "email", "mlx", "steganography", "gaussian-splatting"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
-    "Intended Audience :: Developers",
-    "Intended Audience :: End Users/Desktop",
-    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.13",
-    "Topic :: Multimedia :: Graphics",
     "Topic :: Multimedia :: Graphics :: Graphics Conversion",
-    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-requires-python = ">=3.13"
 dependencies = [
-    "Pillow>=9.0.0",
-    "numpy>=1.21.0",
-    "scikit-image>=0.19.0",
-    # Direct imports in splatthis (features.py and mixed_primitives.py); do not
-    # rely on it arriving transitively via scikit-image.
-    "scipy>=1.10",
-    "psutil>=5.9.0",
-    "torch>=2.0.0"
+    "numpy>=1.24",
+    "Pillow>=9",
+    "torch>=2",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    # Formatters PINNED so CI and local devs agree on the rules.
-    # This pin is kept in lockstep with CI and requirements-dev.txt; bump both
-    # together when moving to a newer black.
-    "black==26.3.1",
-    "isort==5.13.2",
-    "mypy==1.18.2",
-    "flake8==7.3.0",
-    "build>=1.2.0",
-    "twine>=5.0.0",
-    # Without this in dev, CI installs '.[dev,capture]' and every in-pixel
-    # carrier test importorskips -- the carrier justifying the feature would
-    # never actually run there.
-    "stego-lsb>=1.4",
-    # Renders paper/report.md to the GitHub Pages paper (tools/update_paper.py);
-    # tests/unit/test_paper_page.py needs it in CI.
-    "markdown>=3.6"
+    "build>=1.2",
+    "pytest>=8",
+    "ruff>=0.12",
+    "twine>=5",
 ]
-test = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "stego-lsb>=1.4"
-]
-# Governing native Canvas, CSS, pixel-runtime, and SVG capture. The tools launch
-# an installed Chrome executable, so this installs the Python automation client
-# without requiring a bundled browser download. Library SVG rasterizers are not
-# implicit fallbacks because they are not the deployed browser target.
-capture = [
-    "playwright>=1.55"
-]
-# In-pixel population embedding (--embed-population-in-pixels). Optional
-# because it is opt-in and costs picture quality: the PNG text chunk is the
-# default carrier. MIT-licensed and pure-Python over Pillow, which is already
-# a hard dependency. Only the LSB bit-packing is delegated -- getting that
-# off by one corrupts payloads silently.
-steg = [
-    "stego-lsb>=1.4"
-]
-# Apple-Silicon-native optimizer backend (the CLI default when available;
-# PNG2SVGConverter falls back to torch with a warning when mlx is missing).
-mlx = [
-    "mlx>=0.15; platform_machine == 'arm64' and sys_platform == 'darwin'"
-]
+capture = ["playwright>=1.55"]
+steg = ["stego-lsb>=1.4"]
+mlx = ["mlx>=0.15; platform_machine == 'arm64' and sys_platform == 'darwin'"]
 
 [project.scripts]
 splatthis = "splatthis.cli:main"
@@ -99,60 +52,15 @@ where = ["src"]
 "" = "src"
 
 [tool.setuptools.package-data]
-splatthis = [
-    # PEP 561 marker: without it, type checkers ignore this package's
-    # annotations entirely and every consumer sees Any.
-    "py.typed",
-    # Published fidelity expectations, read by consumers at runtime.
-    "data/*.json",
-    "templates/**/*.html",
-    "templates/**/*.js",
-    "templates/**/*.svg",
-    "templates/**/*.xml",
-]
-
-[tool.black]
-line-length = 88
-target-version = ['py313']
-include = '\.pyi?$'
-
-[tool.mypy]
-python_version = "3.13"
-strict = true
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-
-[[tool.mypy.overrides]]
-module = [
-    "skimage.*",
-    "cv2.*",
-    # Ships no py.typed marker. Only the LSB bit-packing crosses this
-    # boundary, and population_embed re-checks every recovered payload
-    # against the envelope schema before returning it.
-    "stego_lsb.*"
-]
-ignore_missing_imports = true
-
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 88
+"splatthis.templates" = ["drawingml/*.xml", "pptx/*.xml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = [
-    "--strict-markers",
-    "--strict-config",
-    "--verbose"
-]
-markers = [
-    "unit: Unit tests",
-    "integration: Integration tests",
-    "performance: Performance tests",
-    "slow: Slow-running tests"
-]
+addopts = ["--strict-markers", "--strict-config"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

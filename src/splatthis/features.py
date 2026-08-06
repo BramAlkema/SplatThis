@@ -5,13 +5,37 @@ Implements gradient-based analysis and spatial organization for Gaussian placeme
 """
 
 import logging
-from typing import Any, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
-import numpy.typing as npt
-from scipy import ndimage
 
 logger = logging.getLogger(__name__)
+
+
+def _convolve2d(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
+    """Small dependency-free 2D convolution for feature maps."""
+    kernel = np.asarray(kernel, dtype=np.float32)
+    pad_y = kernel.shape[0] // 2
+    pad_x = kernel.shape[1] // 2
+    padded = np.pad(
+        np.asarray(image, dtype=np.float32),
+        ((pad_y, pad_y), (pad_x, pad_x)),
+        mode="reflect",
+    )
+    windows = np.lib.stride_tricks.sliding_window_view(padded, kernel.shape)
+    return np.einsum("ijkl,kl->ij", windows, kernel, optimize=True).astype(np.float32)
+
+
+def _gaussian_filter(image: np.ndarray, sigma: float) -> np.ndarray:
+    """Gaussian smoothing without pulling SciPy into the runtime."""
+    sigma = float(max(0.0, sigma))
+    if sigma == 0.0:
+        return np.asarray(image, dtype=np.float32)
+    radius = max(1, int(np.ceil(3.0 * sigma)))
+    axis = np.arange(-radius, radius + 1, dtype=np.float32)
+    weights = np.exp(-(axis * axis) / (2.0 * sigma * sigma))
+    weights /= np.sum(weights)
+    return _convolve2d(image, np.outer(weights, weights))
 
 
 def _resolve_rng(rng: Optional[np.random.Generator] = None) -> np.random.Generator:
@@ -19,7 +43,7 @@ def _resolve_rng(rng: Optional[np.random.Generator] = None) -> np.random.Generat
     return rng if rng is not None else np.random.default_rng()
 
 
-def _to_grayscale(image: npt.NDArray[Any]) -> npt.NDArray[Any]:
+def _to_grayscale(image: np.ndarray) -> np.ndarray:
     """Convert image to float32 grayscale."""
     if image.ndim == 3:
         return (
@@ -29,12 +53,13 @@ def _to_grayscale(image: npt.NDArray[Any]) -> npt.NDArray[Any]:
 
 
 def _compute_gradients(
-    gray: npt.NDArray[Any], method: str = "sobel"
-) -> Tuple[npt.NDArray[Any], npt.NDArray[Any]]:
+    gray: np.ndarray, method: str = "sobel"
+) -> Tuple[np.ndarray, np.ndarray]:
     """Compute image gradients for a grayscale image."""
     if method == "sobel":
-        grad_x = ndimage.sobel(gray, axis=1)
-        grad_y = ndimage.sobel(gray, axis=0)
+        kernel_x = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=np.float32)
+        grad_x = _convolve2d(gray, kernel_x)
+        grad_y = _convolve2d(gray, kernel_x.T)
     elif method == "scharr":
         scharr_x = (
             np.array([[-3, 0, 3], [-10, 0, 10], [-3, 0, 3]], dtype=np.float32) / 32.0
@@ -42,19 +67,18 @@ def _compute_gradients(
         scharr_y = (
             np.array([[-3, -10, -3], [0, 0, 0], [3, 10, 3]], dtype=np.float32) / 32.0
         )
-        grad_x = ndimage.convolve(gray, scharr_x)
-        grad_y = ndimage.convolve(gray, scharr_y)
+        grad_x = _convolve2d(gray, scharr_x)
+        grad_y = _convolve2d(gray, scharr_y)
     elif method == "prewitt":
-        grad_x = ndimage.prewitt(gray, axis=1)
-        grad_y = ndimage.prewitt(gray, axis=0)
+        kernel_x = np.array([[-1, 0, 1], [-1, 0, 1], [-1, 0, 1]], dtype=np.float32)
+        grad_x = _convolve2d(gray, kernel_x)
+        grad_y = _convolve2d(gray, kernel_x.T)
     else:
         raise ValueError(f"Unknown gradient method: {method}")
     return grad_x.astype(np.float32), grad_y.astype(np.float32)
 
 
-def compute_gradient_magnitude(
-    image: npt.NDArray[Any], method: str = "sobel"
-) -> npt.NDArray[Any]:
+def compute_gradient_magnitude(image: np.ndarray, method: str = "sobel") -> np.ndarray:
     """
     Compute gradient magnitude for content-adaptive seeding.
 
@@ -74,12 +98,12 @@ def compute_gradient_magnitude(
 
 
 def compute_structure_field(
-    image: npt.NDArray[Any],
+    image: np.ndarray,
     method: str = "sobel",
     smoothing_sigma: float = 1.0,
     anisotropy_clip: float = 10.0,
     min_coherence: float = 0.12,
-) -> Tuple[npt.NDArray[Any], npt.NDArray[Any]]:
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Compute full-image principal direction and anisotropy maps.
 
@@ -96,9 +120,9 @@ def compute_structure_field(
 
     sigma = float(max(0.0, smoothing_sigma))
     if sigma > 0.0:
-        i_xx = ndimage.gaussian_filter(i_xx, sigma=sigma)
-        i_yy = ndimage.gaussian_filter(i_yy, sigma=sigma)
-        i_xy = ndimage.gaussian_filter(i_xy, sigma=sigma)
+        i_xx = _gaussian_filter(i_xx, sigma=sigma)
+        i_yy = _gaussian_filter(i_yy, sigma=sigma)
+        i_xy = _gaussian_filter(i_xy, sigma=sigma)
 
     trace = i_xx + i_yy
     disc = np.maximum((i_xx - i_yy) ** 2 + 4.0 * (i_xy**2), 0.0)
@@ -123,9 +147,7 @@ def compute_structure_field(
     return primary_dirs, anisotropy
 
 
-def compute_laplacian_of_gaussian(
-    image: npt.NDArray[Any], sigma: float = 1.0
-) -> npt.NDArray[Any]:
+def compute_laplacian_of_gaussian(image: np.ndarray, sigma: float = 1.0) -> np.ndarray:
     """
     Compute Laplacian of Gaussian for blob detection.
 
@@ -143,14 +165,17 @@ def compute_laplacian_of_gaussian(
         gray = image
 
     # Apply Gaussian blur then Laplacian
-    blurred = ndimage.gaussian_filter(gray, sigma=sigma)
-    log_response = ndimage.laplace(blurred)
+    blurred = _gaussian_filter(gray, sigma=sigma)
+    log_response = _convolve2d(
+        blurred,
+        np.array([[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=np.float32),
+    )
 
     return np.abs(log_response)  # Take absolute value for feature strength
 
 
 def init_seeds_content_adaptive(
-    image: npt.NDArray[Any],
+    image: np.ndarray,
     target_count: int,
     gradient_weight: float = 0.7,
     method: str = "sobel",
@@ -191,9 +216,7 @@ def init_seeds_content_adaptive(
 
 
 def sample_from_probability_map(
-    prob_map: npt.NDArray[Any],
-    num_samples: int,
-    rng: Optional[np.random.Generator] = None,
+    prob_map: np.ndarray, num_samples: int, rng: Optional[np.random.Generator] = None
 ) -> List[Tuple[float, float]]:
     """
     Sample positions from probability map.
@@ -244,8 +267,6 @@ def poisson_disk_sampling(
     Returns:
         List of (x, y) positions
     """
-    rng = _resolve_rng(rng)
-
     # Grid for spatial lookup
     cell_size = min_distance / np.sqrt(2)
     grid_width = int(np.ceil(width / cell_size))
@@ -321,7 +342,7 @@ def _is_valid_poisson_point(
     x: float,
     y: float,
     points: List[Tuple[float, float]],
-    grid: npt.NDArray[Any],
+    grid: np.ndarray,
     grid_x: int,
     grid_y: int,
     grid_width: int,
@@ -376,14 +397,14 @@ def create_spatial_grid(
 
 
 def analyze_local_structure(
-    image: npt.NDArray[Any],
+    image: np.ndarray,
     x: int,
     y: int,
     window_size: int = 7,
     anisotropy_clip: float = 4.0,
     min_coherence: float = 0.12,
     min_energy: float = 1e-4,
-) -> Tuple[npt.NDArray[Any], float]:
+) -> Tuple[np.ndarray, float]:
     """
     Analyze local structure tensor for orientation estimation.
 
@@ -419,8 +440,7 @@ def analyze_local_structure(
         return np.array([1.0, 0.0]), 1.0
 
     # Compute gradients
-    grad_x = ndimage.sobel(patch, axis=1)
-    grad_y = ndimage.sobel(patch, axis=0)
+    grad_x, grad_y = _compute_gradients(np.asarray(patch, dtype=np.float32))
 
     # Structure tensor components (window-averaged).
     i_xx = float(np.mean(grad_x * grad_x))
@@ -448,15 +468,8 @@ def analyze_local_structure(
     return primary_direction, anisotropy
 
 
-def edge_tangent_angle(primary_direction: npt.NDArray[Any]) -> float:
-    """Rotation angle that aligns a splat's major axis with the local edge.
-
-    ``primary_direction`` is the structure tensor's dominant eigenvector — the
-    *gradient* direction, perpendicular to the edge. A splat elongated along
-    the edge must therefore be rotated 90° from it. Every anisotropic-splat
-    creation site should go through this helper so the convention cannot
-    drift between call sites.
-    """
+def edge_tangent_angle(primary_direction: np.ndarray) -> float:
+    """Rotate the structure tensor's gradient direction onto the edge."""
     return float(
         np.arctan2(float(primary_direction[1]), float(primary_direction[0]))
         + 0.5 * np.pi
@@ -464,8 +477,8 @@ def edge_tangent_angle(primary_direction: npt.NDArray[Any]) -> float:
 
 
 def estimate_local_color(
-    image: npt.NDArray[Any], x: int, y: int, window_size: int = 5
-) -> npt.NDArray[Any]:
+    image: np.ndarray, x: int, y: int, window_size: int = 5
+) -> np.ndarray:
     """
     Estimate local color by averaging neighborhood.
 

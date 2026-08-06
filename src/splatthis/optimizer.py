@@ -16,6 +16,7 @@ Parameter layout of the [N, 11] tensor consumed by the renderer:
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Dict, Optional
 
 import torch
@@ -129,3 +130,28 @@ def build_optimizer(
             {"params": [params.alpha], "lr": float(lr["alpha"])},
         ]
     )
+
+
+@dataclass
+class TrainStepResult:
+    loss: float
+    rendered: torch.Tensor
+
+
+def train_step(
+    params: SplatParams,
+    optimizer: torch.optim.Adam,
+    renderer: nn.Module,
+    loss_fn: nn.Module,
+    target: torch.Tensor,
+    image_width: int,
+    image_height: int,
+) -> TrainStepResult:
+    """One training iteration: forward, loss, backward, step, constrain."""
+    optimizer.zero_grad(set_to_none=True)
+    rendered = renderer(params.as_tensor())
+    loss = loss_fn(rendered, target)
+    loss.backward()
+    optimizer.step()
+    params.apply_constraints(image_width, image_height)
+    return TrainStepResult(loss=float(loss.detach().item()), rendered=rendered.detach())

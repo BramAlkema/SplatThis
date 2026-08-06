@@ -180,7 +180,12 @@ def optimize_stage_mlx(
     def rebuild_plan(
         tree: Mapping[str, Any], *, count_as_training_rebuild: bool
     ) -> None:
-        nonlocal plan, plan_build_sec, plan_builds_total, plan_rebuilds_in_loop, plan_rebuild_sec
+        nonlocal \
+            plan, \
+            plan_build_sec, \
+            plan_builds_total, \
+            plan_rebuilds_in_loop, \
+            plan_rebuild_sec
         table = params.as_table(tree)
         mlx.eval(table)
         current_table_np = np.asarray(table, dtype=np.float32)
