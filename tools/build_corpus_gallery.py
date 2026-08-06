@@ -130,6 +130,47 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _gallery_asset_paths(
+    source: Path,
+    svg_path: Path,
+    deck: Path,
+    capture: Path,
+    svg_run: Path,
+    pptx_run: Path,
+    runtime_run: Path,
+    image: str,
+    generate_browser_assets: bool,
+) -> List[Path]:
+    """Return every local input needed to emit one gallery row."""
+    required_runs = [svg_run, pptx_run]
+    if generate_browser_assets:
+        required_runs.append(runtime_run)
+
+    paths = [source, svg_path, deck, capture]
+    paths.extend(
+        run / name
+        for run in required_runs
+        for name in ("final.raw.json", "run_manifest.json")
+    )
+    if not generate_browser_assets:
+        paths.extend(
+            (
+                GALLERY / "css" / f"{image}.html",
+                GALLERY / "runtime" / f"{image}.html",
+            )
+        )
+    return paths
+
+
+def _require_gallery_assets(paths: List[Path]) -> None:
+    """Fail closed when any input needed by the gallery is absent."""
+    for path in paths:
+        if not path.exists():
+            raise TOOL.LedgerError(
+                f"cannot emit gallery assets: missing {path.relative_to(REPO)}"
+            )
+
+
 def emit_assets(registry: Dict[str, Any]) -> None:
     """Materialize gallery assets from local repository state (not in CI).
 
@@ -183,27 +224,18 @@ def emit_assets(registry: Dict[str, Any]) -> None:
         capture = REPO / "result" / "corpus" / ppt_row["capture"]
         deck = capture.with_name(capture.name.replace("_powerpoint_slide.png", ".pptx"))
         pptx_run = deck.with_name(f"{deck.stem}_art")
-        required_runs = [svg_run, pptx_run]
-        if generate_browser_assets:
-            required_runs.append(runtime_run)
-        needed_paths = [source, svg_path, deck, capture]
-        needed_paths.extend(
-            run / name
-            for run in required_runs
-            for name in ("final.raw.json", "run_manifest.json")
+        needed_paths = _gallery_asset_paths(
+            source,
+            svg_path,
+            deck,
+            capture,
+            svg_run,
+            pptx_run,
+            runtime_run,
+            image,
+            generate_browser_assets,
         )
-        if not generate_browser_assets:
-            needed_paths.extend(
-                (
-                    GALLERY / "css" / f"{image}.html",
-                    GALLERY / "runtime" / f"{image}.html",
-                )
-            )
-        for needed in needed_paths:
-            if not needed.exists():
-                raise TOOL.LedgerError(
-                    f"cannot emit gallery assets: missing {needed.relative_to(REPO)}"
-                )
+        _require_gallery_assets(needed_paths)
         width, height = _png_size(source)
 
         shutil.copy2(source, GALLERY / "src" / f"{image}.png")

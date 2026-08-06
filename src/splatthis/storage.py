@@ -66,7 +66,7 @@ def load_png(
     """Load a PNG as normalized float32 RGB(A), optionally in linear RGB."""
 
     try:
-        img = Image.open(path)
+        img: Image.Image = Image.open(path)
         logger.info("Loaded %s×%s image: %s", img.size[0], img.size[1], path)
         if img.mode == "P":
             img = img.convert("RGBA")

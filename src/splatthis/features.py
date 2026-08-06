@@ -349,7 +349,7 @@ def _is_valid_poisson_point(
 
 def create_spatial_grid(
     positions: List[Tuple[float, float]], width: int, height: int, grid_size: int = 32
-) -> dict:
+) -> dict[tuple[int, int], list[int]]:
     """
     Create spatial grid for fast neighbor queries.
 
@@ -362,7 +362,7 @@ def create_spatial_grid(
     Returns:
         Dictionary mapping (grid_x, grid_y) to list of position indices
     """
-    grid = {}
+    grid: dict[tuple[int, int], list[int]] = {}
 
     for i, (x, y) in enumerate(positions):
         grid_x = int(x / grid_size)
