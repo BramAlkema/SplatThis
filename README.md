@@ -173,9 +173,10 @@ supported floor, as well as Python 3.13.
 Version 0.3 is intentionally breaking. It retains the five deliverables plus
 isolated MLX, Chromium capture, native PowerPoint OSA capture, and population
 carriers. It removes the experimental pipeline framework, WebGL and pixel
-runtimes, corpus website, research harnesses, generated ledgers, and one-off
-tools. Git history retains that experimental work without keeping it in the
-package.
+runtimes, research harnesses, and one-off tools. The deployed 21-image corpus
+gallery and its minimal provenance ledgers remain as public evidence, without
+shipping in the PyPI package. Git history retains the rest of the experimental
+work.
 
 ## License
 

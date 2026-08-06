@@ -165,7 +165,7 @@ class GaussianSplat:
         default=None, init=False, repr=False, compare=False
     )
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate and ensure proper types."""
         self.mu = np.array(self.mu, dtype=np.float32)
         self.sigma = np.array(self.sigma, dtype=np.float32)
@@ -177,7 +177,7 @@ class GaussianSplat:
 
         self._validate()
 
-    def _validate(self):
+    def _validate(self) -> None:
         """Validate splat parameters."""
         if self.mu.shape != (2,):
             raise ValueError(f"mu must be 2D, got shape {self.mu.shape}")
@@ -209,7 +209,7 @@ class GaussianSplat:
         try:
             sigma_inv = np.linalg.inv(self.sigma)
             quadratic_form = delta.T @ sigma_inv @ delta
-            return np.exp(-0.5 * quadratic_form)
+            return float(np.exp(-0.5 * quadratic_form))
         except np.linalg.LinAlgError:
             logger.warning("Singular covariance matrix in evaluation")
             return 0.0
@@ -277,7 +277,7 @@ class GaussianSplat:
     def area(self) -> float:
         """Compute ellipse area (π * sqrt(det(Σ)))."""
         det = np.linalg.det(self.sigma)
-        return np.pi * np.sqrt(max(det, 1e-8))  # Prevent negative determinant
+        return float(np.pi * np.sqrt(max(det, 1e-8)))  # Prevent a negative radicand
 
     def copy(self) -> "GaussianSplat":
         """Create deep copy."""
@@ -446,7 +446,7 @@ def is_positive_definite(matrix: np.ndarray, tolerance: float = 1e-8) -> bool:
     """Check if matrix is positive definite."""
     try:
         eigenvals = np.linalg.eigvals(matrix)
-        return np.all(eigenvals > tolerance)
+        return bool(np.all(eigenvals > tolerance))
     except np.linalg.LinAlgError:
         return False
 
