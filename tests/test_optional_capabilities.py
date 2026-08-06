@@ -62,6 +62,14 @@ def test_optional_capabilities_do_not_expand_default_dependencies():
     assert extras["mlx"][0].startswith("mlx>=0.15;")
 
 
+def test_project_metadata_pins_tested_python_floor():
+    root = Path(__file__).resolve().parents[1]
+    project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
+
+    assert project["requires-python"] == ">=3.11"
+    assert "Programming Language :: Python :: 3.11" in project["classifiers"]
+
+
 def test_population_envelope_round_trip():
     _assert_population_matches(decode_population(encode_population(_splats())))
 

@@ -165,7 +165,8 @@ python -m build
 Tests enforce the numerical quality floor, each artifact contract, optional
 dependency isolation, browser-capture geometry, PowerPoint OSA routing, MLX
 fallback, and population round-trips through SVG, PPTX, PNG metadata, and PNG
-low bits.
+low bits. CI runs the complete suite and package build on Python 3.11, the
+supported floor, as well as Python 3.13.
 
 ## Scope
 

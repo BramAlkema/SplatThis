@@ -18,6 +18,9 @@ pytest
 python -m build
 ```
 
+Python 3.11 is the supported floor and must pass the same suite and package
+build as the current CI interpreter.
+
 Bug fixes should include a focused regression test. Fitter changes must
 preserve the end-to-end numerical floor; emitter changes must preserve the
 format contracts documented in the README.
