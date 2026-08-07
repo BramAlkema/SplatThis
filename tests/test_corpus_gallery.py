@@ -10,6 +10,13 @@ REPO = Path(__file__).resolve().parents[1]
 GENERATOR = REPO / "tools" / "build_corpus_gallery.py"
 
 
+def test_pages_root_opens_the_corpus_study() -> None:
+    html = (REPO / "docs" / "index.html").read_text(encoding="utf-8")
+
+    assert 'content="0; url=corpus/"' in html
+    assert 'href="corpus/"' in html
+
+
 def test_corpus_gallery_matches_assets_and_ledgers() -> None:
     result = subprocess.run(
         [sys.executable, str(GENERATOR), "--check"],
