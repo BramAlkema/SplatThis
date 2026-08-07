@@ -1,6 +1,8 @@
 name: Release
 
-# Fires on the tag itself, and creates the GitHub Release as part of the run.
+# Tags are the normal release path. Manual dispatch is a recovery path for a
+# release whose original workflow run was lost to GitHub Actions infrastructure.
+# Both paths create the GitHub Release as part of the run.
 # The previous trigger was `release: published`, which required hand-creating a
 # release before the workflow would do anything -- pushing a tag alone was a
 # no-op. Same shape as the sibling openxml-audit repo, which has shipped five
@@ -9,6 +11,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
