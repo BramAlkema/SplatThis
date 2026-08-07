@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.1
+
+- Recast the deployed 21-image corpus as a ledger-backed artifact study with
+  an abstract, explicit experimental design, aggregate results, limitations,
+  reproducibility instructions, and the live gallery as its qualitative
+  appendix.
+- Add a README showcase comparing the chameleon corpus image as scriptless
+  CSS, live SVG, and an editable native PowerPoint deck.
+- Allow the release workflow to be retriggered manually when GitHub Actions
+  infrastructure loses the original tag-triggered run.
+
 ## 0.3.0
 
 Breaking simplification:

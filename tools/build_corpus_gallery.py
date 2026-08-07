@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Build the live corpus gallery for GitHub Pages.
+"""Build the live corpus study and artifact appendix for GitHub Pages.
 
-The gallery shows the whole 21-image governing corpus side by side, one row
-per image, five columns: the original, the scripted pixel runtime rendering
+The page presents the aggregate evidence as a small artifact study, then shows
+the whole 21-image governing corpus side by side as its qualitative appendix.
+Each row has five columns: the original, the scripted pixel runtime rendering
 live, the scriptless CSS build as live DOM, the corrected-exporter SVG as a
 live vector, and the PowerPoint deck as a real slideshow capture with the
-editable deck for download. Everything except PowerPoint renders live --
-these are the deployed artifacts themselves, not screenshots -- because
-GitHub Pages, unlike the README, applies no sanitizer.
+editable deck for download. Everything except PowerPoint renders live -- these
+are the deployed artifacts themselves, not screenshots -- because GitHub
+Pages, unlike the README, applies no sanitizer.
 
 Two modes:
 
@@ -335,23 +336,39 @@ PAGE_HEAD = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>SplatThis — corpus gallery, rendered live</title>
+<title>Portable 2D Gaussian Splats Across Document Renderers — corpus study</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: #0e0e10; color: #eaeaea; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  html, body { margin: 0; padding: 0; background: #0e0e10; color: #eaeaea; font-family: Charter, "Bitstream Charter", Georgia, serif; }
   main { max-width: 1680px; margin: 0 auto; padding: 48px 24px 80px; }
-  h1 { font-size: 30px; margin: 0 0 8px; letter-spacing: -0.02em; }
-  p { line-height: 1.55; color: #d5d5dd; max-width: 76ch; }
+  .paper { max-width: 960px; margin: 0 auto 64px; }
+  .eyebrow { color: #9c9ca5; font: 12px/1.4 ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; }
+  h1 { font-size: clamp(34px, 5vw, 58px); line-height: 1.04; margin: 12px 0 12px; letter-spacing: -0.035em; }
+  h2 { font-size: 24px; line-height: 1.2; margin: 42px 0 12px; letter-spacing: -0.015em; }
+  .byline { color: #b9b9c2; margin: 0 0 36px; }
+  p, li { line-height: 1.62; color: #d5d5dd; max-width: 78ch; }
   a { color: #6fa8ff; }
   .note { color: #9c9ca5; font-size: 13px; }
+  .abstract { border: 1px solid #323238; border-width: 1px 0; padding: 5px 0 18px; }
+  .abstract h2 { font-size: 18px; margin-top: 18px; }
+  .study-nav { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 20px 0 0; font: 12px/1.5 ui-monospace, monospace; }
+  .study-nav a { color: #aaaab4; text-decoration: none; }
+  .table-wrap { overflow-x: auto; margin: 18px 0 8px; }
+  table { width: 100%; border-collapse: collapse; font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  th, td { padding: 9px 10px; border-bottom: 1px solid #303036; text-align: right; vertical-align: top; white-space: nowrap; }
+  th { color: #b9b9c2; font-weight: 600; }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  .findings { padding-left: 22px; }
+  .findings li { margin: 8px 0; }
+  .appendix-intro { max-width: 960px; margin: 0 auto 28px; }
   .row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 24px 0; }
   .row figure { background: #1a1a1d; border-radius: 8px; padding: 9px; margin: 0; border: 1px solid #2a2a2e; }
   .row img { width: 100%; height: auto; display: block; border-radius: 4px; }
   .row figcaption { color: #9c9ca5; font-size: 11px; line-height: 1.5; margin-top: 7px; font-family: ui-monospace, monospace; }
   .row figcaption strong { color: #eaeaea; }
-  h2.img { font-size: 17px; margin: 40px 0 0; font-family: ui-monospace, monospace; }
-  h2.img span { color: #9c9ca5; font-weight: 400; font-size: 13px; }
+  h3.img { font-size: 17px; margin: 40px 0 0; font-family: ui-monospace, monospace; }
+  h3.img span { color: #9c9ca5; font-weight: 400; font-size: 13px; }
   .fitframe { position: relative; overflow: hidden; border-radius: 4px; }
   .fitframe iframe { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; }
   @media (max-width: 1100px) { .row { grid-template-columns: repeat(2, 1fr); } }
@@ -359,25 +376,10 @@ PAGE_HEAD = """<!doctype html>
 </head>
 <body>
 <main>
-<h1>The whole corpus, rendered live</h1>
-<p>All 21 governing-corpus images side by side: the original, the historical
-scripted pixel runtime retained as deployed evidence, the scriptless CSS build
-as real DOM composited from a stylesheet, and the
-corrected-exporter SVG as a true vector — every one of them the deployed
-artifact itself, drawn live by your browser, because GitHub Pages applies no
-sanitizer. PowerPoint is the one target that cannot render live: its column
-is a real Microsoft PowerPoint slideshow capture, with the editable deck one
-click away. The pixel runtime is no longer part of the installable package.</p>
-<p class="note">Rows are ordered best-to-worst by deployed SVG LPIPS. Every
-score is a seed-0 measurement of these exact artifact families against the
-source in the governing renderer — Chromium for the browser targets, real
-PowerPoint for the decks — quoted from the versioned ledgers. The page is
-generated by <code>tools/build_corpus_gallery.py</code>; SVGs use the newest
-successful deployed ledger row per image and PowerPoint uses the newest real
-PowerPoint capture. It goes stale loudly in CI.</p>
 """
 
 PAGE_FOOT = """
+</section>
 <p class="note"><a href="https://github.com/BramAlkema/SplatThis">← SplatThis repository</a></p>
 </main>
 <script>
@@ -399,6 +401,207 @@ PAGE_FOOT = """
 """
 
 
+def _study_intro(
+    registry: Dict[str, Any],
+    ppt: Dict[str, Dict[str, Any]],
+    svg: Dict[str, Dict[str, Any]],
+    stats: Dict[str, Dict[str, int]],
+    classes: Dict[str, str],
+) -> str:
+    """Build the paper-like study framing from the evidence shown below it."""
+
+    def summary(
+        rows: List[Dict[str, Any]], lpips_key: str, ssim_key: str
+    ) -> Dict[str, float]:
+        lpips = [float(row[lpips_key]) for row in rows]
+        ssim = [float(row[ssim_key]) for row in rows]
+        return {
+            "lpips_median": statistics.median(lpips),
+            "lpips_p90": _percentile(lpips, 0.9),
+            "ssim_median": statistics.median(ssim),
+        }
+
+    runtime = summary(
+        registry["per_image"]["pixel-runtime"],
+        "deployed_lpips",
+        "deployed_ssim_srgb",
+    )
+    css = summary(
+        registry["per_image"]["css"],
+        "deployed_lpips",
+        "deployed_ssim_srgb",
+    )
+    svg_summary = summary(list(svg.values()), "lpips", "ssim_srgb")
+    ppt_summary = summary(list(ppt.values()), "lpips", "ssim_srgb")
+    summaries = (
+        (
+            "Historical pixel runtime",
+            "Chromium / WebGL",
+            runtime,
+            statistics.median(row["runtime_splats"] for row in stats.values()),
+            "splats",
+        ),
+        (
+            "Scriptless CSS",
+            "Chromium / CSS",
+            css,
+            statistics.median(row["css_splats"] for row in stats.values()),
+            "splats",
+        ),
+        (
+            "SVG",
+            "Chromium / SVG",
+            svg_summary,
+            statistics.median(row["svg_splats"] for row in stats.values()),
+            "splats",
+        ),
+        (
+            "PowerPoint",
+            "Microsoft PowerPoint",
+            ppt_summary,
+            statistics.median(row["pptx_splats"] for row in stats.values()),
+            "shapes",
+        ),
+    )
+    result_rows = "\n".join(
+        "<tr>"
+        f"<td>{name}</td><td>{renderer}</td>"
+        f"<td>{values['lpips_median']:.4f}</td>"
+        f"<td>{values['lpips_p90']:.4f}</td>"
+        f"<td>{values['ssim_median']:.4f}</td>"
+        f"<td>{complexity:,.0f} {unit}</td>"
+        "</tr>"
+        for name, renderer, values, complexity, unit in summaries
+    )
+    browser_medians = [
+        runtime["lpips_median"],
+        css["lpips_median"],
+        svg_summary["lpips_median"],
+    ]
+    easiest = min(svg.values(), key=lambda row: float(row["lpips"]))
+    hardest = max(svg.values(), key=lambda row: float(row["lpips"]))
+    class_count = len({classes[image] for image in svg})
+
+    return f"""
+<article class="paper">
+<div class="eyebrow">Technical report · August 2026 · artifact study</div>
+<h1>Portable 2D Gaussian Splats Across Document Renderers</h1>
+<p class="byline">Bram Alkema · SplatThis · 21-image governing corpus</p>
+
+<section class="abstract" id="abstract">
+<h2>Abstract</h2>
+<p>We study how fitted anisotropic 2D Gaussian splats survive deployment into
+portable document artifacts rather than judging only the optimizer's internal
+render. The corpus contains 21 images across {class_count} content classes at
+a maximum edge of 384 pixels. Browser artifacts are evaluated in Chromium;
+editable decks are captured from Microsoft PowerPoint. LPIPS is the primary
+metric. In the evidence snapshot presented here, median deployed LPIPS is
+{svg_summary["lpips_median"]:.4f} for the newest SVG artifacts,
+{css["lpips_median"]:.4f} for the versioned scriptless-CSS comparator,
+{runtime["lpips_median"]:.4f} for the historical pixel runtime, and
+{ppt_summary["lpips_median"]:.4f} for PowerPoint. The narrow browser-format
+median range suggests that fitting error, not browser emitter choice, dominates
+typical deployed fidelity. Per-image tails remain wide, so the aggregate is
+not evidence that splats suit every kind of image.</p>
+</section>
+
+<nav class="study-nav" aria-label="Study sections">
+  <a href="#question">1. Question</a>
+  <a href="#method">2. Method</a>
+  <a href="#results">3. Results</a>
+  <a href="#limitations">4. Limitations</a>
+  <a href="#artifact-appendix">5. Artifact appendix</a>
+</nav>
+
+<section id="question">
+<h2>1. Research question</h2>
+<p>How much image fidelity remains when fitted Gaussian populations are
+delivered through document renderers that the optimizer does not control? The
+study focuses on deployment fidelity and inspectable native artifacts. It is
+not a compression benchmark: editability, script policy, and document-format
+compatibility are the reasons to choose these outputs.</p>
+</section>
+
+<section id="method">
+<h2>2. Experimental design</h2>
+<p><strong>Corpus.</strong> The governing set comprises 21 source images in
+{class_count} labelled content classes, normalized to at most 384 pixels on
+the longest edge. Each row below is one image observed across the available
+artifact families.</p>
+<p><strong>Protocol.</strong> Scores are seed-0 measurements against the source
+at native source resolution. Browser targets are rasterized in Chromium and
+PowerPoint decks in the native Microsoft PowerPoint slideshow renderer. The
+SVG column selects the newest successful deployed ledger row for each image;
+PowerPoint selects the versioned real-renderer capture. CSS and the removed
+pixel runtime remain versioned comparator snapshots.</p>
+<p><strong>Metrics.</strong> LPIPS is primary and lower is better. SSIM is shown
+for continuity and higher is better, but it is not used to rank conclusions:
+on this corpus its preference for smooth output can reward blur. Median reports
+the typical image; p90 LPIPS exposes the difficult tail.</p>
+<p><strong>Artifact audit.</strong> The generator checks corpus coverage,
+cross-checks registry aggregates against all per-image measurements, verifies
+the selected SVG and PPTX hashes, and fails when committed evidence or the
+generated page goes stale.</p>
+</section>
+
+<section id="results">
+<h2>3. Results</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Artifact family</th><th>Governing renderer</th><th>Median LPIPS ↓</th><th>p90 LPIPS ↓</th><th>Median SSIM ↑</th><th>Median complexity</th></tr></thead>
+  <tbody>
+{result_rows}
+  </tbody>
+</table>
+</div>
+<ol class="findings">
+  <li>The three browser-delivered families have median LPIPS between
+  {min(browser_medians):.4f} and {max(browser_medians):.4f}. At the level of
+  this single-seed snapshot, typical fidelity is substantially more stable
+  across browser emitters than across images.</li>
+  <li>The difficult-image tail is material: p90 LPIPS ranges from
+  {svg_summary["lpips_p90"]:.4f} for the newest SVG snapshot to
+  {ppt_summary["lpips_p90"]:.4f} for PowerPoint. Median-only reporting would
+  conceal that applicability boundary.</li>
+  <li>In the current SVG evidence, <code>{easiest["image"]}</code> is best
+  (LPIPS {float(easiest["lpips"]):.4f}) and
+  <code>{hardest["image"]}</code> is worst
+  (LPIPS {float(hardest["lpips"]):.4f}). The qualitative appendix makes the
+  corresponding content differences inspectable.</li>
+</ol>
+</section>
+
+<section id="limitations">
+<h2>4. Limitations and validity</h2>
+<p>This is a small, deliberately heterogeneous artifact study, not a claim of
+population-level performance. It uses one seed per published artifact, has no
+confidence intervals or hypothesis tests, and is limited to images no larger
+than 384 pixels. The four columns are not one synchronized experimental run:
+SVG and PowerPoint are the newest verified deployed rows, while CSS and the
+historical runtime are retained comparator measurements. Consequently the
+table supports an evidence-snapshot comparison, not a causal format ranking.
+The PowerPoint ledger identifies the real capture backend but does not record
+the application and operating-system versions for these captures. Finally,
+LPIPS and SSIM are proxies for visual similarity; neither measures editability,
+accessibility, browser cost, or authoring usefulness.</p>
+<p class="note"><strong>Reproduce the audit:</strong>
+<code>./venv/bin/python tools/build_corpus_gallery.py --check</code>. Local
+evidence holders can use <code>--emit</code> first to rematerialize the gallery.
+Rows below are ordered best-to-worst by the displayed SVG LPIPS.</p>
+</section>
+</article>
+
+<section id="artifact-appendix">
+<div class="appendix-intro">
+<h2>5. Qualitative artifact appendix</h2>
+<p>Each row shows the source and four deployed output families. Browser targets
+render live on this page. PowerPoint is represented by its native slideshow
+capture; the editable deck is linked. The historical pixel runtime is retained
+as evidence but is no longer part of the installable package.</p>
+</div>
+"""
+
+
 def build_index(registry: Dict[str, Any]) -> str:
     classes = content_classes()
     stats = json.loads(STATS.read_text(encoding="utf-8")) if STATS.is_file() else None
@@ -412,11 +615,14 @@ def build_index(registry: Dict[str, Any]) -> str:
         fmt: {p["image"]: p for p in registry["per_image"][fmt]}
         for fmt in ("svg", "css", "pixel-runtime")
     }
-    parts: List[str] = [PAGE_HEAD]
     ordered = sorted(
         corpus_images(registry),
         key=lambda image: svg_rows_by_image[image]["lpips"],
     )
+    parts: List[str] = [
+        PAGE_HEAD,
+        _study_intro(registry, ppt, svg_rows_by_image, stats, classes),
+    ]
     for image in ordered:
         svg_row = svg_rows_by_image[image]
         ppt_row = ppt[image]
@@ -457,9 +663,9 @@ def build_index(registry: Dict[str, Any]) -> str:
         runtime_row = per_image["pixel-runtime"][image]
         counts = stats[image]
         parts.append(
-            f'<h2 class="img">{image} '
+            f'<h3 class="img">{image} '
             f"<span>· {classes.get(image, 'unclassified')} · "
-            f"{width}×{height}</span></h2>\n"
+            f"{width}×{height}</span></h3>\n"
             f'<div class="row">\n'
             f"  <figure>\n"
             f'    <img src="src/{image}.png" loading="lazy" '

@@ -11,6 +11,19 @@ fitted scene in five portable formats:
 | `css` | HTML | Script-free CSS gradient elements |
 | `eml` | Email message | Inline email-safe CSS plus plain-text and Outlook fallbacks |
 
+## Chameleon showcase
+
+One 364x384 corpus image, fitted for three portable output targets:
+
+| Scriptless CSS | SVG | PowerPoint |
+| :---: | :---: | :---: |
+| <a href="https://bramalkema.github.io/SplatThis/corpus/css/chameleon.html"><img src="docs/corpus/css/chameleon.png" alt="Chromium capture of the scriptless CSS chameleon" width="240"></a> | <a href="https://bramalkema.github.io/SplatThis/corpus/svg/chameleon.svg"><img src="docs/corpus/svg/chameleon.svg" alt="Live SVG chameleon" width="240"></a> | <a href="https://bramalkema.github.io/SplatThis/corpus/pptx/chameleon.pptx"><img src="docs/corpus/pptx/chameleon.png" alt="Microsoft PowerPoint capture of the editable chameleon deck" width="240"></a> |
+| [Open the live CSS](https://bramalkema.github.io/SplatThis/corpus/css/chameleon.html)<br>1,634 DOM splats | [Open the live SVG](https://bramalkema.github.io/SplatThis/corpus/svg/chameleon.svg)<br>1,634 vector splats | [Download the editable PPTX](https://bramalkema.github.io/SplatThis/corpus/pptx/chameleon.pptx)<br>1,778 native shapes |
+
+The SVG is rendered directly in this README. GitHub cannot embed the CSS page
+or run PowerPoint, so those columns use captures from Chromium and Microsoft
+PowerPoint respectively; each preview links to its actual artifact.
+
 The fitting path is deliberately singular: Pillow loads the image, NumPy
 computes image structure, Torch fits one Gaussian population, and a direct
 emitter writes the selected artifact. MLX, Chromium capture, native PowerPoint
